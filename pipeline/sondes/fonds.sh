@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
 # Vérifie les fonds de carte, le géocodage et le listing Arcep depuis un runner.
 set -u
-T=/tmp/sonde; mkdir -p "$T"
-get() { # get <fichier> <url> : télécharge et affiche code HTTP, taille, type
-  local code
-  code=$(curl -sS -L -m 120 -A "carte-zones-blanches-sonde/1.0" -o "$1" -w "%{http_code} %{size_download}o %{content_type}" "$2" 2>&1)
-  echo "  -> $code  $2"
-}
-command -v curl >/dev/null || { apt-get update -qq && apt-get install -y -qq curl >/dev/null; }
+. "$(dirname "$0")/_lib.sh"
 
 echo "##### 1. Styles vectoriels Plan IGN"
 for s in classique standard; do

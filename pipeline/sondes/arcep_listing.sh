@@ -1,16 +1,7 @@
 #!/usr/bin/env bash
 # Vérifie le listing Arcep (noms et tailles des fichiers), le style classique, et les en-têtes CORS des géocodeurs.
 set -u
-T=/tmp/sonde; mkdir -p "$T"
-UA="carte-zones-blanches-sonde/1.0"
-get() { # get <fichier> <url> : télécharge (3 essais) et affiche code HTTP, taille, type
-  local code i
-  for i in 1 2 3; do
-    code=$(curl -sS -L -m 180 -A "$UA" -o "$1" -w "%{http_code} %{size_download}o %{content_type}" "$2" 2>&1) && break
-    sleep 3
-  done
-  echo "  -> $code  $2"
-}
+. "$(dirname "$0")/_lib.sh"
 
 echo "##### 1. Style classique"
 get "$T/classique.json" "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/classique.json"
