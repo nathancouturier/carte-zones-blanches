@@ -19,6 +19,7 @@
     "pmtiles": "^4.5.0"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "@xmldom/xmldom": "^0.9.12",
     "fast-png": "^8.0.0",
     "typescript": "^7.0.2",

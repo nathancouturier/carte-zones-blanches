@@ -1,0 +1,87 @@
+{
+ "version": 1,
+ "generated": "2026-11-13",
+ "scope": "hautes-alpes",
+ "encoding": {
+  "R": "internet mobile : 2 bits par emplacement d'opérateur (emplacement i sur les bits 2i et 2i+1)",
+  "G": "appels et SMS : même encodage",
+  "B": "bits 0 à 3 : code du pays ; bits 4 et 5 : type de source (0 officielle par opérateur, 1 officielle agrégée, 2 estimée)",
+  "A": "255 dans la zone couverte par les données, 0 ailleurs",
+  "levels": "0 pas de couverture, 1 couverture limitée, 2 bonne couverture, 3 très bonne couverture"
+ },
+ "tiles": {
+  "size": 256,
+  "minzoom": 0,
+  "maxzoom": 12,
+  "format": "png"
+ },
+ "bounds": [
+  5.537109,
+  44.276671,
+  6.503906,
+  44.902578
+ ],
+ "archives": [
+  {
+   "file": "couverture-20261113-00.pmtiles",
+   "minzoom": 0,
+   "maxzoom": 12,
+   "bytes": 75635
+  }
+ ],
+ "countries": [
+  {
+   "code": 1,
+   "iso": "FR",
+   "euRoaming": true,
+   "slots": [
+    {
+     "id": "orange",
+     "name": "Orange"
+    },
+    {
+     "id": "sfr",
+     "name": "SFR"
+    },
+    {
+     "id": "bouygues",
+     "name": "Bouygues Telecom"
+    },
+    {
+     "id": "free",
+     "name": "Free"
+    }
+   ],
+   "sources": [
+    {
+     "type": 0,
+     "id": "fr_arcep",
+     "name": "Arcep, Mon réseau mobile : couvertures théoriques",
+     "url": "https://www.data.gouv.fr/datasets/mon-reseau-mobile",
+     "date": "2026-T2",
+     "licence": "Licence Ouverte / Open Licence (Etalab)",
+     "licenceUrl": "https://www.etalab.gouv.fr/licence-ouverte-open-licence",
+     "attribution": "Arcep",
+     "services": [
+      "data",
+      "voice"
+     ],
+     "levels": "four",
+     "levelMap": [
+      0,
+      1,
+      2,
+      3
+     ],
+     "perOperator": true,
+     "technology": {
+      "data": "4G",
+      "voice": "2G3G"
+     },
+     "dataDate": "2026-06-30",
+     "resolutionM": 50
+    }
+   ]
+  }
+ ]
+}

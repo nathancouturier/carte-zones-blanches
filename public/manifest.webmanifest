@@ -1,0 +1,12 @@
+{
+  "name": "Carte des zones blanches",
+  "short_name": "Zones blanches",
+  "description": "Réseau mobile pour la randonnée : France, Corse, Alpes et Pyrénées.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f3a5f",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

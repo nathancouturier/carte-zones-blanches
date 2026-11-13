@@ -1,4 +1,4 @@
 scope=hautes-alpes
-services=data
+services=data,voice
 force=true
-# essai 1
+# essai 2 : avec les appels et SMS

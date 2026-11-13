@@ -1,0 +1,82 @@
+# Construit le site et le publie sur GitHub Pages.
+# Se lance à chaque push sur main, après chaque nouvelle release de données, et à la main.
+name: Déploiement
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Construire le site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Données de la dernière release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p public/data
+          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,createdAt \
+            --jq '[.[] | select(.isDraft | not) | select(.tagName | startswith("data-"))] | sort_by(.createdAt) | last | .tagName // empty')
+          if [ -z "$tag" ]; then
+            echo "::warning::Aucune release de données : le site sera publié sans couche réseau."
+            exit 0
+          fi
+          echo "Release de données : $tag"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir public/data --pattern '*.pmtiles' --pattern 'manifest.json'
+          ls -la public/data
+
+      - name: Construire
+        run: npm run build
+
+      - name: Contrôle des tailles
+        shell: bash
+        run: |
+          # Chaque fichier doit rester sous 95 Mo, et le site complet sous 900 Mo.
+          gros=$(find dist -type f -size +95M)
+          if [ -n "$gros" ]; then echo "Fichier(s) de plus de 95 Mo : $gros"; exit 1; fi
+          total=$(du -sm dist | cut -f1)
+          echo "Taille du site : ${total} Mo"
+          if [ "$total" -gt 900 ]; then echo "Le site dépasse 900 Mo"; exit 1; fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    name: Publier sur GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

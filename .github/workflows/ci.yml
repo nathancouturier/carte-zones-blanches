@@ -1,0 +1,45 @@
+# Vérifie le front (types, tests, build) et le pipeline (tests sur données synthétiques).
+name: Tests
+
+on:
+  push:
+    branches-ignore: [main] # sur main, deploy.yml lance déjà les tests du front
+    paths-ignore: ["pipeline/sondes/**", "pipeline/DEMANDE-DONNEES", "**.md"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  front:
+    name: Front
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  pipeline:
+    name: Pipeline
+    runs-on: ubuntu-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-small-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Outils
+        shell: bash
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends p7zip-full python3-pip >/dev/null
+          python3 -m pip install --break-system-packages -q -r pipeline/requirements.txt
+      - name: Tests du pipeline
+        working-directory: pipeline
+        run: python3 -m pytest -q tests
