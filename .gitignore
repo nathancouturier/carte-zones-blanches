@@ -8,3 +8,6 @@ __pycache__/
 /pipeline/work/
 /pipeline/out/
 .venv/
+e2e/captures/
+e2e/node_modules/
+e2e/package-lock.json

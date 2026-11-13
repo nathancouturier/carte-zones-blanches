@@ -1,0 +1,52 @@
+# Vérifie le site déployé dans un vrai navigateur : ordinateur et vue mobile, plusieurs langues.
+# Se lance après chaque déploiement, et à la main.
+name: Vérification
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Adresse du site à vérifier"
+        type: string
+        default: "https://nathancouturier.github.io/carte-zones-blanches/"
+  workflow_run:
+    workflows: ["Déploiement"]
+    types: [completed]
+  # Depuis une branche de travail : modifier e2e/DEMANDE et pousser.
+  push:
+    branches: ["claude/**"]
+    paths: ["e2e/DEMANDE"]
+
+permissions:
+  contents: read
+
+jobs:
+  verification:
+    name: Navigateur
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SITE_URL: ${{ inputs.url || 'https://nathancouturier.github.io/carte-zones-blanches/' }}
+      CAPTURES_DANS_LES_LOGS: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Navigateur
+        working-directory: e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Contrôles
+        working-directory: e2e
+        run: node verif.mjs
+      - name: Captures d'écran
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: captures
+          path: e2e/captures/
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,0 +1,12 @@
+{
+  "name": "carte-zones-blanches-verification",
+  "private": true,
+  "type": "module",
+  "description": "Vérification du site déployé dans un vrai navigateur.",
+  "scripts": {
+    "verif": "node verif.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.65.0"
+  }
+}
