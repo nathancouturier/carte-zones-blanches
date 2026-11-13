@@ -1,0 +1,39 @@
+# Sonde : lance un petit script de vérification sur un runner GitHub (qui a accès à internet).
+# Sert à vérifier une URL, un identifiant de couche, un schéma (ogrinfo) ou une licence
+# avant d'intégrer une source. On lit le résultat dans les logs du job.
+name: Sonde
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "Nom du script dans pipeline/sondes/ (par exemple fonds.sh)"
+        required: true
+        type: string
+  push:
+    branches: ["claude/**"]
+    paths: ["pipeline/sondes/DEMANDE"]
+
+permissions:
+  contents: read
+
+jobs:
+  sonde:
+    runs-on: ubuntu-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-small-latest
+    timeout-minutes: 90
+    env:
+      SCRIPT_DEMANDE: ${{ inputs.script }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Lancer la sonde
+        shell: bash
+        run: |
+          script="$SCRIPT_DEMANDE"
+          if [ -z "$script" ]; then script="$(head -n1 pipeline/sondes/DEMANDE | tr -d '[:space:]')"; fi
+          case "$script" in
+            *[!A-Za-z0-9._-]*|"") echo "Nom de script invalide : $script"; exit 1 ;;
+          esac
+          echo "== Sonde : $script =="
+          df -h . | tail -1
+          bash "pipeline/sondes/$script"
