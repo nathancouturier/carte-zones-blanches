@@ -37,7 +37,7 @@ jobs:
   construire:
     name: Construire
     runs-on: ubuntu-latest
-    container: ghcr.io/osgeo/gdal:ubuntu-small-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-small-3.13.3
     timeout-minutes: 300
     outputs:
       changed: ${{ steps.detect.outputs.changed }}

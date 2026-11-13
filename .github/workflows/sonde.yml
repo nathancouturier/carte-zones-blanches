@@ -20,7 +20,7 @@ permissions:
 jobs:
   sonde:
     runs-on: ubuntu-latest
-    container: ghcr.io/osgeo/gdal:ubuntu-small-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-small-3.13.3
     timeout-minutes: 90
     env:
       SCRIPT_DEMANDE: ${{ inputs.script }}
