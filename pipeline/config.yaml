@@ -1,0 +1,80 @@
+# Configuration du pipeline de données de couverture.
+# Tout ce qui est ajustable est ici : grille, limites de taille, emprise (pays et
+# régions), opérateurs et sources.
+
+grid:
+  max_zoom: 12        # zoom de la grille commune (tuiles de 256 px, EPSG:3857)
+  min_zoom: 0
+  tile_size: 256
+  block_zoom: 8       # zoom des blocs qui servent à répartir les tuiles entre les archives
+
+limits:
+  archive_max_mb: 90  # chaque fichier doit rester sous 95 Mo
+  site_max_mb: 900    # taille totale du site publié
+  target_archive_mb: 70
+
+# Nombre de points tirés au hasard par fichier source pour le test de cohérence
+# (source contre pixels décodés du PMTiles).
+verification:
+  candidates_per_file: 240
+  points_per_file: 60
+  seed: 20261113
+
+# ---------------------------------------------------------------------------
+# Emprise : pays couverts, dans l'ordre de priorité aux frontières (le premier
+# pays qui revendique un pixel le garde).
+#   code      : valeur du pays dans les bits 0 à 3 du canal B des tuiles
+#   eu_roaming: faux pour les pays hors de l'itinérance UE (avertissement dans le rapport)
+#   slots     : opérateurs rangés dans les emplacements 0 à 3 des canaux R et G
+# ---------------------------------------------------------------------------
+countries:
+  FR:
+    code: 1
+    eu_roaming: true
+    mask:
+      type: etalab_departements
+      url: https://etalab-datasets.geo.data.gouv.fr/contours-administratifs/latest/geojson/departements-5m.geojson.gz
+      # France métropolitaine, Corse comprise : les départements dont le code a 2 caractères.
+      metropole_only: true
+    slots:
+      - {id: orange, name: Orange, arcep: OF}
+      - {id: sfr, name: SFR, arcep: SFR0}
+      - {id: bouygues, name: Bouygues Telecom, arcep: BOUY}
+      - {id: free, name: Free, arcep: FREE}
+    sources: [fr_arcep]
+
+# ---------------------------------------------------------------------------
+# Sources de données. Un module Python par source dans czb/sources/.
+# ---------------------------------------------------------------------------
+sources:
+  fr_arcep:
+    country: FR
+    type: 0             # 0 officielle par opérateur, 1 officielle agrégée, 2 estimée
+    name: "Arcep, Mon réseau mobile : couvertures théoriques"
+    attribution: Arcep
+    url: https://www.data.gouv.fr/datasets/mon-reseau-mobile
+    licence: Licence Ouverte / Open Licence (Etalab)
+    licence_url: https://www.etalab.gouv.fr/licence-ouverte-open-licence
+    listing_url: https://data.arcep.fr/mobile/couvertures_theoriques/last/Metropole/00_Metropole/
+    # Nom des fichiers : {trimestre}_couv_Metropole_{OP}_{TECHNO}_{USAGE}.gpkg.7z
+    services:
+      data: {techno: 4G, usage: data}
+      voice: {techno: 2G3G, usage: voix}
+    # Champ « niveau » des fichiers. L'absence de polygone vaut 0 (pas de couverture).
+    level_field: niveau
+    levels: {CL: 1, BC: 2, TBC: 3}
+    levels_kind: four
+    resolution_m: 50
+
+# ---------------------------------------------------------------------------
+# Périmètres de construction (option --scope).
+# ---------------------------------------------------------------------------
+scopes:
+  # Prototype : un département de montagne.
+  hautes-alpes:
+    countries: [FR]
+    departements: ["05"]
+  france:
+    countries: [FR]
+  complet:
+    countries: [FR]

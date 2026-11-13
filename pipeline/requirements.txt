@@ -1,0 +1,6 @@
+# GDAL (bindings Python osgeo) et numpy viennent de l'image ghcr.io/osgeo/gdal.
+numpy
+pillow>=10
+pmtiles>=3.4
+pyyaml>=6
+pytest>=8

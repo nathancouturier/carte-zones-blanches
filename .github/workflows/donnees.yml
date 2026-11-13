@@ -1,0 +1,157 @@
+# Construit les tuiles de couverture et les publie dans une release data-AAAA-MM-JJ.
+# Se lance à la main et une fois par mois. Ne reconstruit que si une source a changé
+# (nouveau trimestre Arcep, nouvelle version d'une source étrangère).
+name: Données
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Périmètre (voir pipeline/config.yaml)"
+        type: choice
+        options: [complet, france, hautes-alpes]
+        default: complet
+      services:
+        description: "Services à construire : data ou data,voice"
+        type: string
+        default: data
+      force:
+        description: "Reconstruire même si aucune source n'a changé"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "23 3 5 * *" # le 5 de chaque mois à 3 h 23 UTC
+  # Depuis une branche de travail : modifier pipeline/DEMANDE-DONNEES et pousser.
+  push:
+    branches: ["claude/**"]
+    paths: ["pipeline/DEMANDE-DONNEES"]
+
+concurrency:
+  group: donnees
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  construire:
+    name: Construire
+    runs-on: ubuntu-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-small-latest
+    timeout-minutes: 300
+    outputs:
+      changed: ${{ steps.detect.outputs.changed }}
+      date: ${{ steps.params.outputs.date }}
+      scope: ${{ steps.params.outputs.scope }}
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      OPENCELLID_TOKEN: ${{ secrets.OPENCELLID_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Paramètres
+        id: params
+        shell: bash
+        env:
+          IN_SCOPE: ${{ inputs.scope }}
+          IN_SERVICES: ${{ inputs.services }}
+          IN_FORCE: ${{ inputs.force }}
+        run: |
+          scope="${IN_SCOPE:-complet}"; services="${IN_SERVICES:-data}"; force="${IN_FORCE:-false}"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            f=pipeline/DEMANDE-DONNEES
+            scope=$(sed -n 's/^scope=//p' "$f" | head -1)
+            services=$(sed -n 's/^services=//p' "$f" | head -1)
+            force=$(sed -n 's/^force=//p' "$f" | head -1)
+          fi
+          case "$scope" in *[!a-z0-9-]*|"") echo "scope invalide : $scope"; exit 1 ;; esac
+          case "$services" in data|data,voice) ;; *) echo "services invalides : $services"; exit 1 ;; esac
+          case "$force" in true|false) ;; *) force=false ;; esac
+          {
+            echo "scope=$scope"
+            echo "services=$services"
+            echo "force=$force"
+            echo "date=$(date -u +%F)"
+          } >> "$GITHUB_OUTPUT"
+          echo "Périmètre : $scope, services : $services, forcé : $force"
+
+      - name: Outils
+        shell: bash
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends p7zip-full python3-pip >/dev/null
+          python3 -m pip install --break-system-packages -q -r pipeline/requirements.txt
+          gdalinfo --version
+          python3 -c "import numpy, PIL, pmtiles, yaml; print('numpy', numpy.__version__, 'pillow', PIL.__version__)"
+
+      - name: Tests du pipeline (données synthétiques)
+        working-directory: pipeline
+        run: python3 -m pytest -q tests
+
+      - name: Une source a-t-elle changé ?
+        id: detect
+        working-directory: pipeline
+        shell: bash
+        run: |
+          extra=""
+          if [ "${{ steps.params.outputs.force }}" = "true" ]; then extra="--force"; fi
+          python3 -m czb.cli changed --repo "$GITHUB_REPOSITORY" --scope "${{ steps.params.outputs.scope }}" --services "${{ steps.params.outputs.services }}" $extra
+
+      - name: Construire les tuiles
+        if: steps.detect.outputs.changed == 'true'
+        working-directory: pipeline
+        run: python3 -m czb.cli build --scope "${{ steps.params.outputs.scope }}" --services "${{ steps.params.outputs.services }}" --work work --out out --date "${{ steps.params.outputs.date }}"
+
+      - name: Test de cohérence (source contre pixels du PMTiles)
+        if: steps.detect.outputs.changed == 'true'
+        working-directory: pipeline
+        run: python3 -m czb.cli verify --out out
+
+      - name: Conserver le résultat
+        if: steps.detect.outputs.changed == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: donnees
+          path: pipeline/out/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+  publier:
+    name: Publier la release
+    needs: construire
+    if: needs.construire.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: data-${{ needs.construire.outputs.date }}
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: donnees
+          path: out
+
+      - name: Créer la release
+        shell: bash
+        run: |
+          ls -la out
+          {
+            echo "Tuiles de couverture mobile (PMTiles) et manifest, générés par le workflow Données."
+            echo
+            echo "- Périmètre : ${{ needs.construire.outputs.scope }}"
+            echo "- Taille totale : $(du -ch out/*.pmtiles | tail -1 | cut -f1)"
+            echo "- Sources, dates et licences : voir manifest.json et docs/sources.md"
+          } > notes.md
+          # Une seule release par jour : on remplace celle du jour si elle existe.
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Données de couverture du ${{ needs.construire.outputs.date }}" --notes-file notes.md
+
+      - name: Relancer le déploiement du site
+        shell: bash
+        run: |
+          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}" \
+            || echo "Déploiement non relancé : deploy.yml n'est pas encore sur la branche par défaut."
