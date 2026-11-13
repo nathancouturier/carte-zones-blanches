@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           script="$SCRIPT_DEMANDE"
-          if [ -z "$script" ]; then script="$(head -n1 pipeline/sondes/DEMANDE | tr -d '[:space:]')"; fi
+          if [ -z "$script" ]; then script="$(awk 'NR==1{print $1}' pipeline/sondes/DEMANDE)"; fi
           case "$script" in
             *[!A-Za-z0-9._-]*|"") echo "Nom de script invalide : $script"; exit 1 ;;
           esac

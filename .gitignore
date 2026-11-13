@@ -1,0 +1,10 @@
+node_modules/
+dist/
+public/data/
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+/pipeline/work/
+/pipeline/out/
+.venv/
