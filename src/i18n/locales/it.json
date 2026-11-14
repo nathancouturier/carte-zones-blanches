@@ -116,6 +116,8 @@
   "report.outsideLine": "Fuori dalla zona coperta dai dati: {km} km, esclusi dalle percentuali.",
   "report.unknownLine": "Senza dati per questo servizio: {km} km, esclusi dalle percentuali.",
   "report.noData": "Il percorso è interamente fuori dalla zona coperta dai dati.",
+  "report.noServiceData": "Nessun dato per questo servizio su questo percorso.",
+  "report.zeroLength": "Il percorso ha lunghezza zero: tutti i suoi punti sono nello stesso luogo.",
   "report.zonesHeading_one": "Zona senza copertura ({count})",
   "report.zonesHeading_other": "Zone senza copertura ({count})",
   "report.zonesTitle_one": "Zona senza copertura ({count}):",

@@ -116,6 +116,8 @@
   "report.outsideLine": "Außerhalb des von den Daten abgedeckten Gebiets: {km} km, in den Prozentwerten nicht enthalten.",
   "report.unknownLine": "Ohne Daten für diesen Dienst: {km} km, in den Prozentwerten nicht enthalten.",
   "report.noData": "Die Route liegt vollständig außerhalb des von den Daten abgedeckten Gebiets.",
+  "report.noServiceData": "Für diesen Dienst gibt es auf dieser Route keine Daten.",
+  "report.zeroLength": "Die Route hat die Länge null: Alle ihre Punkte liegen an derselben Stelle.",
   "report.zonesHeading_one": "Funkloch ({count})",
   "report.zonesHeading_other": "Funklöcher ({count})",
   "report.zonesTitle_one": "Funkloch ({count}):",

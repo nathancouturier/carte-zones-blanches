@@ -116,6 +116,8 @@
   "report.outsideLine": "Hors de la zone couverte par les données : {km} km, exclus des pourcentages.",
   "report.unknownLine": "Sans donnée pour ce service : {km} km, exclus des pourcentages.",
   "report.noData": "Le tracé est entièrement hors de la zone couverte par les données.",
+  "report.noServiceData": "Aucune donnée pour ce service sur ce parcours.",
+  "report.zeroLength": "Le tracé a une longueur nulle : tous ses points sont au même endroit.",
   "report.zonesHeading_one": "Zone blanche ({count})",
   "report.zonesHeading_other": "Zones blanches ({count})",
   "report.zonesTitle_one": "Zone blanche ({count}) :",

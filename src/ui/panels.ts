@@ -16,7 +16,7 @@ import {
 import { LEVEL_SOLID } from '../coverage/render';
 import { hasThresholdSlots, networkCount, slotLabel } from '../coverage/slotLabel';
 import type { CoverageStats } from '../gpx/analyze';
-import { describeOperators, describeZone, LEVEL_KEYS, noZonesMessage } from '../gpx/report';
+import { describeOperators, describeZone, LEVEL_KEYS, noDataMessage, noZonesMessage } from '../gpx/report';
 import {
   availableLanguages,
   countryName,
@@ -488,7 +488,7 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
       ),
     );
   } else {
-    parts.push(note(t('report.noData'), 'warning'));
+    parts.push(note(noDataMessage(track.analysis, report), 'warning'));
   }
 
   // Profil altimétrique coloré selon la couverture (seulement si le GPX a des altitudes).

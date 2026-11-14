@@ -446,6 +446,26 @@ describe('rapport en texte', () => {
     }
   });
 
+  it('explique pourquoi aucune part du parcours n\'est mesurée', () => {
+    const textOf = (track: { samples: Sample[]; raw: RawCoverage }, service: 'data' | 'voice'): string => {
+      const analysis = analyzeTrack(track.samples, track.raw);
+      return reportText(analysis, buildReport(analysis, manifest, { service, operators: {} }), manifest, { service, operators: {} }, null);
+    };
+    // Andorre (source estimée, internet seulement), avec le service Appels et SMS.
+    const andorra = textOf(synthetic(repeat(2, 30), { country: 5, sourceType: 2 }), 'voice');
+    expect(andorra).toContain('Aucune donnée pour ce service sur ce parcours.');
+    expect(andorra).toContain('Sans donnée pour ce service : 0,6 km');
+    expect(andorra).not.toContain('hors de la zone couverte');
+    // Tout le tracé hors de la zone couverte par les données.
+    const outside = textOf(synthetic(repeat('out' as const, 30)), 'data');
+    expect(outside).toContain('Le tracé est entièrement hors de la zone couverte par les données.');
+    expect(outside).not.toContain('Aucune donnée pour ce service');
+    // Points tous confondus : le tracé ne mesure rien.
+    const same = textOf(synthetic([3]), 'data');
+    expect(same).toContain('Le tracé a une longueur nulle : tous ses points sont au même endroit.');
+    expect(same).not.toContain('hors de la zone couverte');
+  });
+
   it('donne une longueur cohérente avec les bornes affichées', () => {
     const zone = (start: number, end: number): WhiteZone => ({
       index: 1,

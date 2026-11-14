@@ -142,6 +142,13 @@ export function describeZone(zone: WhiteZone, manifest: Manifest): string {
   return parts.join(', ');
 }
 
+/** Message à afficher quand aucune part du parcours n'est mesurée, selon la cause. */
+export function noDataMessage(analysis: TrackAnalysis, report: Report): string {
+  if (!(analysis.length > 0)) return t('report.zeroLength'); // points tous confondus
+  if (report.stats.unknown > 0) return t('report.noServiceData'); // pays sans donnée pour ce service
+  return t('report.noData'); // hors de la zone couverte par les données
+}
+
 /** « Aucune zone blanche de plus de 100 m sur ce parcours. », dans le panneau comme dans le texte. */
 export function noZonesMessage(): string {
   return t('report.noZones', { min: formatNumber(WHITE_ZONE_MIN_LENGTH_M) });
@@ -205,7 +212,7 @@ export function reportText(
       lines.push(...statsLines(report.statsAll));
     }
   } else {
-    lines.push(t('report.noData'));
+    lines.push(noDataMessage(analysis, report));
   }
   if (report.stats.outside > 0) lines.push(t('report.outsideLine', { km: formatKm(report.stats.outside) }));
   if (report.stats.unknown > 0) lines.push(t('report.unknownLine', { km: formatKm(report.stats.unknown) }));
