@@ -56,6 +56,8 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
                 entry["licenceNotice"] = scfg["licence_notice"]
             if scfg.get("licence_logo"):
                 entry["licenceLogo"] = scfg["licence_logo"]
+                if scfg.get("licence_logo_url"):
+                    entry["licenceLogoUrl"] = scfg["licence_logo_url"]
             if scfg.get("resolution_m"):
                 entry["resolutionM"] = scfg["resolution_m"]
             sources.append({k: v for k, v in entry.items() if v is not None})

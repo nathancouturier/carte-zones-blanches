@@ -228,7 +228,9 @@ sources:
     licence: Creative Commons Attribuzione 4.0 Internazionale (CC BY 4.0)
     licence_url: https://www.agcom.it/termini-e-condizioni
     # La licence demande d'afficher ce logo dans toute œuvre dérivée (fichier public/licences/).
+    # Sur le site de l'AGCOM, le logo renvoie vers le portail de la carte.
     licence_logo: licences/agcom-bbmap.jpg
+    licence_logo_url: https://maps.agcom.it/
     licence_notice: "BroadbandMap di Agcom - Autorità per le garanzie nelle comunicazioni è distribuito con Licenza Creative Commons Attribuzione 4.0 Internazionale."
     service_url: https://geo3.agcom.it/MapET-SFS/rest/services/Grid100/mobile_4G/MapServer
     query_url: https://geo3.agcom.it/MapET-SFS/rest/services/Grid100/mobile_4G/MapServer/0/query

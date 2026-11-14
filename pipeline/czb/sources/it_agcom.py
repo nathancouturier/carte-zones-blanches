@@ -14,8 +14,9 @@ Vérifié par sonde sur l'édition du 27 janvier 2026 :
 - licence CC BY 4.0, avec le logo et l'adresse du portail à afficher.
 
 Comme pour la Suisse, les emplacements portent des seuils : « au moins 1 réseau »,
-« au moins 2 », « au moins 3 », « les 4 ». Il n'y a ni 2G ni 3G dans cette carte :
-rien pour les appels et SMS.
+« au moins 2 », « au moins 3 », « les 4 » (l'AGCOM parle de « N. Operatori di rete »).
+La carte n'a pas de données 2G ou 3G récentes ni interrogeables (seulement d'anciens
+caches de tuiles de 2016 et 2019) : rien pour les appels et SMS.
 """
 
 from __future__ import annotations
