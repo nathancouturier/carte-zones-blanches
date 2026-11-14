@@ -51,12 +51,13 @@ const ARCHIVE = 'couverture-20261113-00.pmtiles';
 const pmBytes = readFixture(`synthetique/${ARCHIVE}`);
 const manifest = readJsonFixture<Record<string, unknown>>('synthetique/manifest.json');
 
-/** Vue dans les données du jeu synthétique (France). */
+/** Vue dans les données du jeu synthétique (France), puis vue sur Milan, hors des données. */
 const grille = (lon: number, lat: number, pas: number): { lon: number; lat: number }[] => [
   { lon, lat },
   ...[-1, 0, 1].flatMap((dy) => [-1, 0, 1].filter((dx) => dx !== 0 || dy !== 0).map((dx) => ({ lon: lon + dx * pas, lat: lat + dy * pas }))),
 ];
 const EN_FRANCE = grille(6.0, 44.55, 0.05);
+const MILAN = grille(9.19, 45.46, 0.05);
 
 /** Une barrière : les réponses attendent qu'on la lève. */
 function barriere(): { attendre: Promise<void>; lever: () => void } {
@@ -197,5 +198,41 @@ describe('import et analyse d\'un GPX', () => {
     expect(app.state.trackStatus).toBe('ready'); // et non « analyse en cours » pour toujours
     expect(app.state.trackError).toBeNull();
     expect(app.state.panel).toBe('report');
+  });
+});
+
+describe('fond Auto', () => {
+  async function deplacer(vue: { lon: number; lat: number }[]): Promise<void> {
+    carte.vue = vue;
+    carte.finDeMouvement();
+    await attendre(300);
+  }
+
+  it('hors des données, passe au fond OpenStreetMap, puis revient au fond national (ui-10)', async () => {
+    const app = await demarrer();
+    expect(app.state.activeBasemap).toBe('ign-classique');
+    await deplacer(MILAN);
+    expect(app.state.activeBasemap).toBe('osm');
+    await deplacer(EN_FRANCE);
+    expect(app.state.activeBasemap).toBe('ign-classique');
+  });
+
+  it('centre hors des données (en mer, au bord des données) : fond du pays le plus présent dans la vue (ui-10)', async () => {
+    const app = await demarrer();
+    await deplacer(MILAN);
+    expect(app.state.activeBasemap).toBe('osm');
+    // Centre à l'ouest de l'emprise du jeu synthétique, les huit autres points en France.
+    await deplacer([{ lon: 5.4, lat: 44.55 }, ...EN_FRANCE.slice(1)]);
+    expect(app.state.activeBasemap).toBe('ign-classique');
+  });
+
+  it('une lecture de tuile qui échoue ne change pas de fond (ui-10)', async () => {
+    const app = await demarrer();
+    app.setBasemapChoice('swisstopo');
+    app.setBasemapChoice('auto');
+    expect(app.state.activeBasemap).toBe('swisstopo');
+    reseau.tuilesEnPanne = true;
+    await deplacer(grille(6.2, 44.7, 0.05)); // dans les données, mais rien ne se lit
+    expect(app.state.activeBasemap).toBe('swisstopo');
   });
 });

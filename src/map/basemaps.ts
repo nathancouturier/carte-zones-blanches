@@ -152,10 +152,31 @@ const NATIONAL_BASEMAP: Record<string, BasemapId> = {
 export const DEFAULT_BASEMAP: BasemapId = 'ign-classique';
 export const FALLBACK_BASEMAP: BasemapId = 'osm';
 
-/** Fond du mode Auto pour le pays au centre de la carte. null : pays inconnu, on garde le fond courant. */
+/** Fond du mode Auto pour un pays. null : pas de pays (hors des données). */
 export function autoBasemap(iso: string | null): BasemapId | null {
   if (!iso) return null;
   return NATIONAL_BASEMAP[iso] ?? FALLBACK_BASEMAP;
+}
+
+/**
+ * Fond du mode Auto pour la vue : celui du pays au centre de la carte. Centre hors
+ * des données (en mer près d'une côte, par exemple) : celui du pays le plus présent
+ * dans le reste de la vue. Hors de tout pays couvert : le fond OpenStreetMap.
+ */
+export function autoBasemapForView(center: string | null, others: readonly (string | null)[]): BasemapId {
+  return autoBasemap(center ?? mostFrequent(others)) ?? FALLBACK_BASEMAP;
+}
+
+function mostFrequent(values: readonly (string | null)[]): string | null {
+  const counts = new Map<string, number>();
+  let best: string | null = null;
+  for (const value of values) {
+    if (value === null) continue;
+    const count = (counts.get(value) ?? 0) + 1;
+    counts.set(value, count);
+    if (best === null || count > (counts.get(best) ?? 0)) best = value;
+  }
+  return best;
 }
 
 export function isBasemapChoice(value: unknown): value is BasemapChoice {

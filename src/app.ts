@@ -28,7 +28,7 @@ import { decodeGpx, GpxError, parseGpx } from './gpx/parse';
 import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/report';
 import { resample } from './gpx/resample';
 import { getLanguage, setLanguage, t } from './i18n';
-import { autoBasemap, basemapPack, BASEMAPS, type BasemapChoice, type BasemapId } from './map/basemaps';
+import { autoBasemapForView, basemapPack, BASEMAPS, type BasemapChoice, type BasemapId } from './map/basemaps';
 import { clearOffline, offlineSupported, prepareOffline, storedCoverageTile, storedTrack } from './offline/manager';
 import { MapView, type Padding } from './map/mapView';
 import { samplesBounds, trackToGeoJson, zoneToGeoJson, EMPTY_COLLECTION } from './map/trackGeojson';
@@ -314,9 +314,10 @@ export class App {
     if (!manifest || !store) return;
     const zoom = this.mapView.dataZoom(manifest.tiles.minzoom, manifest.tiles.maxzoom);
     const points = this.mapView.viewSamplePoints();
-    let pixels: (Awaited<ReturnType<TileStore['sample']>> | null)[];
+    // undefined : la lecture a échoué (réseau) ; null : pas de données à cet endroit.
+    let pixels: (Awaited<ReturnType<TileStore['sample']>> | undefined)[];
     try {
-      pixels = await Promise.all(points.map((p) => store.sample(p.lon, p.lat, zoom).catch(() => null)));
+      pixels = await Promise.all(points.map((p) => store.sample(p.lon, p.lat, zoom).catch(() => undefined)));
     } catch {
       return;
     }
@@ -324,14 +325,16 @@ export class App {
       if (!pixel || pixel[3] === 0) return null;
       return countryByCode(manifest, unpackCountry(pixel[2]))?.iso ?? null;
     };
-    const visible = [...new Set(pixels.map(isoAt).filter((iso): iso is string => iso !== null))];
+    const countries = pixels.map(isoAt);
+    const visible = [...new Set(countries.filter((iso): iso is string => iso !== null))];
     const patch: Partial<AppState> = {};
     const current = this.state;
     if (visible.join() !== current.visibleCountries.join()) patch.visibleCountries = visible;
-    // Mode Auto : le fond national du pays au centre de la carte.
-    if (current.basemap.choice === 'auto') {
-      const wanted = autoBasemap(isoAt(pixels[0]));
-      if (wanted && wanted !== current.activeBasemap) patch.activeBasemap = wanted;
+    // Mode Auto : le fond national du pays au centre de la carte, le fond OpenStreetMap hors des
+    // données. Si la lecture du centre a échoué, on ne sait rien : le fond affiché reste.
+    if (current.basemap.choice === 'auto' && pixels[0] !== undefined) {
+      const wanted = autoBasemapForView(countries[0], countries.slice(1));
+      if (wanted !== current.activeBasemap) patch.activeBasemap = wanted;
     }
     if (Object.keys(patch).length === 0) return;
     this.store.set(patch);
