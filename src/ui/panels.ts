@@ -498,6 +498,7 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
   const profile = elevationProfile({
     samples: track.samples,
     classes: report.classes,
+    raw: track.analysis.raw,
     onHover: (index) => app.showTrackCursor(index),
   });
   if (profile) parts.push(section(t('report.profile'), profile));

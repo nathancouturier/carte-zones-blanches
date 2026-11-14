@@ -157,6 +157,14 @@ try {
       const lecture = (await page.locator('.profile__readout').textContent()) ?? '';
       controle('fr : le profil altimétrique situe un point', /^km \d/.test(lecture) && (await page.locator('.track-cursor').count()) === 1, lecture);
       await capture(page, '5b-ordinateur-fr-profil');
+      // Au clavier : le profil prend le focus, les touches déplacent le curseur, la valeur et le résumé sont dits.
+      await page.mouse.move(5, 5);
+      await profil.focus();
+      await page.keyboard.press('End');
+      await page.keyboard.press('ArrowLeft');
+      const clavier = { role: await profil.getAttribute('role'), valeur: (await profil.getAttribute('aria-valuetext')) ?? '', resume: (await profil.getAttribute('aria-label')) ?? '' };
+      const repere = (await page.locator('.track-cursor').count()) === 1;
+      controle('fr : le profil se parcourt au clavier et se résume', clavier.role === 'slider' && /^km \d/.test(clavier.valeur) && repere && /sans couverture\.$/.test(clavier.resume), `${clavier.valeur} | ${clavier.resume}`);
     } else {
       controle('fr : profil altimétrique', false, 'absent alors que le GPX a des altitudes');
     }
