@@ -128,6 +128,38 @@ try {
     }
     const [telechargement] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }).catch(() => null), page.click('[data-focus="gpx-enrichi"]')]);
     controle('fr : le GPX enrichi se télécharge', telechargement !== null, telechargement?.suggestedFilename() ?? '');
+
+    // Profil altimétrique : présent, et le survol place un repère sur la carte.
+    const profil = page.locator('.profile__svg');
+    if (await profil.count()) {
+      await profil.scrollIntoViewIfNeeded();
+      const boite = await profil.boundingBox();
+      await page.mouse.move(boite.x + boite.width * 0.6, boite.y + boite.height / 2);
+      await page.waitForTimeout(500);
+      const lecture = (await page.locator('.profile__readout').textContent()) ?? '';
+      controle('fr : le profil altimétrique situe un point', /^km \d/.test(lecture) && (await page.locator('.track-cursor').count()) === 1, lecture);
+      await capture(page, '5b-ordinateur-fr-profil');
+    } else {
+      controle('fr : profil altimétrique', false, 'absent alors que le GPX a des altitudes');
+    }
+
+    // Appels et SMS, si le service est publié.
+    await page.click('[data-panel="network"]');
+    await page.waitForSelector('.chips');
+    const voix = page.locator('.chip:has-text("Appels et SMS")');
+    if (await voix.count()) {
+      await voix.click();
+      await page.waitForTimeout(1500);
+      await page.click('[data-panel="report"]');
+      await page.waitForSelector('.report-text', { state: 'attached' });
+      const texteVoix = await page.locator('.report-text').inputValue();
+      controle('fr : rapport pour les appels et SMS', texteVoix.includes('Service : Appels et SMS') && /Part du parcours/.test(texteVoix));
+      await page.click('[data-panel="network"]');
+      await page.click('.chip:has-text("Internet mobile")');
+      await page.waitForTimeout(800);
+    } else {
+      console.log('INFO  le service Appels et SMS n\'est pas publié dans cette release');
+    }
     controle('fr : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
@@ -156,6 +188,50 @@ try {
     await page.waitForSelector('#langue');
     await capture(page, '8-telephone-de-parametres');
     controle('de : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 2b. Téléphone, français : mode hors ligne --------------------------------
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42');
+    const controleParSw = await page.evaluate(async () => {
+      if (!('serviceWorker' in navigator)) return false;
+      await navigator.serviceWorker.ready;
+      return true;
+    });
+    controle('hors ligne : Service Worker enregistré', controleParSw);
+    await importer(page, gpx('test-alpes.gpx'));
+    await page.locator('[data-focus="hors-ligne"]').scrollIntoViewIfNeeded();
+    await page.click('[data-focus="hors-ligne"]');
+    const pret = await page.waitForSelector('.offline-ready', { timeout: 180000 }).then(() => true, () => false);
+    const bilan = pret ? ((await page.locator('.offline-ready').textContent()) ?? '') : '';
+    controle('hors ligne : le tracé est enregistré', pret && /tuiles de couverture/.test(bilan), bilan);
+    if (!HORS_LIGNE) controle('hors ligne : le fond Plan IGN est enregistré', /et \d[\d\s\u202f]* tuiles de fond/.test(bilan), bilan);
+    await capture(page, '8b-telephone-fr-hors-ligne-pret');
+
+    // Coupure du réseau, puis rechargement complet de la page.
+    const servies = [];
+    page.on('response', (r) => {
+      if (r.fromServiceWorker() && r.status() === 200) servies.push(new URL(r.url()).host);
+    });
+    await contexte.setOffline(true);
+    await page.reload({ waitUntil: 'load' });
+    const recharge = await page.waitForSelector('.panel[data-panel="report"] .stats', { timeout: 60000 }).then(() => true, () => false);
+    controle('hors ligne : le site redémarre et recharge le tracé sans réseau', recharge);
+    await page.waitForTimeout(4000);
+    if (!HORS_LIGNE) {
+      const fond = servies.filter((h) => h === 'data.geopf.fr').length;
+      controle('hors ligne : le fond est servi depuis la copie locale', fond >= 3, `${fond} réponses de data.geopf.fr sans réseau`);
+    }
+    if (recharge) {
+      const texte = await page.locator('.report-text').inputValue();
+      controle('hors ligne : le rapport est recalculé', /Zones? blanches? \(\d+\)|Aucune zone blanche/.test(texte));
+      await page.click('.icon-btn[data-role="close"]');
+      await page.waitForTimeout(2500);
+    }
+    await capture(page, '8c-telephone-fr-hors-ligne-carte');
+    await contexte.setOffline(false);
+    controle('hors ligne : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
 
