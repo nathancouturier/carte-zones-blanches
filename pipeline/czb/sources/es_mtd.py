@@ -47,14 +47,15 @@ CACHE_FORMAT = 1
 NO_DATA = 255
 #: Un point témoin à moins de cette fraction de maille d'un bord de maille est écarté.
 WITNESS_MARGIN = 0.03
-#: Contrôle de la copie de travail contre les polygones : nombre de points tirés par région et part d'écarts tolérée
-#: (les mailles coupées par une limite de commune ou de région ne sont pas des carrés entiers).
 #: Les bords de la fenêtre de la copie de travail tombent sur des multiples de ce nombre de mailles (environ 7 km).
 WINDOW_SNAP = 256
 #: Nombre de sommets examinés, au début de chaque région, pour mesurer le calage de la grille.
 ALIGNMENT_SAMPLE = 3000
-CHECK_POINTS = 400
-CHECK_TOLERANCE = 0.01
+#: Contrôle de la copie de travail contre les polygones : nombre de points tirés par région et part d'écarts tolérée.
+#: Les mailles coupées par une limite de commune ne sont pas des carrés entiers : sur les données réelles, 0,7 % des
+#: points tirés au hasard tombent dans un tel éclat. Une erreur de calage ou de rastérisation en donnerait bien plus.
+CHECK_POINTS = 1200
+CHECK_TOLERANCE = 0.03
 
 
 class EsMtd(Source):
