@@ -109,38 +109,74 @@ const CROSS_CHECKS = 3;
 export interface DecoderStatus {
   /** « canvas » tant que le navigateur est fiable, « js » sinon. */
   mode: 'canvas' | 'js';
+  /** Vérifications terminées sans écart. */
   checked: number;
 }
 
 /**
  * Crée le décodeur de tuiles. Il utilise le canvas du navigateur et contrôle
- * les premières tuiles avec le décodeur JavaScript.
+ * les premières tuiles avec le décodeur JavaScript. Les tests peuvent fournir
+ * leurs propres décodeurs (« canvas » à null : pas de canvas).
+ *
+ * Les tuiles se décodent en parallèle : tant que les premières vérifications ne
+ * sont pas toutes terminées sans écart, aucune tuile ne sort du canvas sans
+ * contrôle. Elle est vérifiée elle-même si moins de CROSS_CHECKS vérifications
+ * sont lancées, sinon elle attend leur issue.
  */
-export function createTileDecoder(onFallback?: (reason: string) => void): TileDecoder & { status: DecoderStatus } {
-  const status: DecoderStatus = { mode: canvasDecodingAvailable() ? 'canvas' : 'js', checked: 0 };
+export function createTileDecoder(
+  onFallback?: (reason: string) => void,
+  decoders: { canvas?: TileDecoder | null; js?: TileDecoder } = {},
+): TileDecoder & { status: DecoderStatus } {
+  const canvas = decoders.canvas === undefined ? (canvasDecodingAvailable() ? decodeWithCanvas : null) : decoders.canvas;
+  const js = decoders.js ?? decodeWithJs;
+  const status: DecoderStatus = { mode: canvas ? 'canvas' : 'js', checked: 0 };
+  /** Vérifications lancées et pas encore terminées. */
+  let running = 0;
+  /** Tuiles qui attendent l'issue des vérifications en cours. */
+  const waiting = new Set<() => void>();
   const fallback = (reason: string): void => {
     if (status.mode === 'js') return;
     status.mode = 'js';
     onFallback?.(reason);
   };
+  // Relu à chaque fois : une vérification peut changer de mode pendant qu'une tuile attend.
+  const usingJs = (): boolean => status.mode === 'js';
+
+  /** Décode la tuile une seconde fois en JavaScript et compare. */
+  const verify = async (bytes: ArrayBuffer, fromCanvas: Uint8ClampedArray): Promise<Uint8ClampedArray> => {
+    running++;
+    try {
+      const reference = await js(bytes);
+      if (sameData(fromCanvas, reference)) status.checked++;
+      else fallback('le navigateur modifie les pixels relus du canvas');
+      return reference;
+    } catch (error) {
+      // Le décodeur de référence ne lit pas cette tuile : elle ne compte pas comme vérifiée, mais
+      // elle s'affiche quand même (sinon elle échouerait à chaque essai) ; une autre tuile sera vérifiée.
+      console.warn('Vérification du décodage impossible :', error);
+      return fromCanvas;
+    } finally {
+      running--;
+      for (const wake of waiting) wake();
+      waiting.clear();
+    }
+  };
+
   const decoder = async (bytes: ArrayBuffer): Promise<Uint8ClampedArray> => {
-    if (status.mode === 'js') return decodeWithJs(bytes);
+    if (usingJs() || !canvas) return js(bytes);
     let fromCanvas: Uint8ClampedArray;
     try {
-      fromCanvas = await decodeWithCanvas(bytes);
+      fromCanvas = await canvas(bytes);
     } catch (error) {
       fallback(`décodage par le navigateur impossible (${String(error)})`);
-      return decodeWithJs(bytes);
+      return js(bytes);
     }
-    if (status.checked < CROSS_CHECKS) {
-      const reference = await decodeWithJs(bytes);
-      status.checked++;
-      if (!sameData(fromCanvas, reference)) {
-        fallback('le navigateur modifie les pixels relus du canvas');
-        return reference;
-      }
+    while (!usingJs() && status.checked < CROSS_CHECKS) {
+      if (status.checked + running < CROSS_CHECKS) return verify(bytes, fromCanvas);
+      await new Promise<void>((resolve) => waiting.add(resolve));
     }
-    return fromCanvas;
+    // Un écart a pu être trouvé pendant que la tuile sortait du canvas : ses pixels ne sont pas fiables.
+    return usingJs() ? js(bytes) : fromCanvas;
   };
   return Object.assign(decoder, { status });
 }
