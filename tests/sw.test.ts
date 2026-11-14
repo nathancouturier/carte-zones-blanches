@@ -43,13 +43,14 @@ function build(version: string): Deployment {
 
 function makeServer() {
   let files = new Map<string, string>();
-  const state = { mode: 'up' as 'up' | 'down' | 'hang' | 'slow', hits: [] as string[] };
+  const state = { mode: 'up' as 'up' | 'down' | 'hang' | 'slow' | 'error', hits: [] as string[] };
   const network = async (req: unknown): Promise<Response> => {
     const url = keyOf(req).split('?')[0]; // GitHub Pages ignore la chaîne de requête
     state.hits.push(url);
     if (state.mode === 'hang') return new Promise<Response>(() => undefined);
     if (state.mode === 'down') throw new TypeError('Failed to fetch');
     if (state.mode === 'slow') await new Promise((resolve) => setTimeout(resolve, DELAI * 3));
+    if (state.mode === 'error') return new Response('Service Unavailable', { status: 503 });
     const body = files.get(url);
     const r = new Response(body ?? 'Not found', { status: body === undefined ? 404 : 200 });
     Object.defineProperty(r, 'type', { value: 'basic' });
@@ -63,9 +64,10 @@ type Caches = FakeCaches;
 /** Une version du Service Worker : celle que la construction de « deployment » a écrite. */
 function serviceWorker(caches: Caches, network: (req: unknown) => Promise<Response>, deployment: Deployment) {
   const listeners: Record<string, (event: unknown) => void> = {};
+  const skipWaiting = vi.fn(async () => undefined);
   const self = {
     addEventListener: (type: string, fn: (event: unknown) => void) => (listeners[type] = fn),
-    skipWaiting: async () => undefined,
+    skipWaiting,
     clients: { claim: async () => undefined },
     registration: { scope: BASE },
     location: { origin: ORIGIN, href: `${BASE}sw.js?delai=${DELAI}` },
@@ -96,7 +98,7 @@ function serviceWorker(caches: Caches, network: (req: unknown) => Promise<Respon
       return `PAGE BLANCHE (${step} : ${String(error)})`;
     }
   };
-  return { install: () => lifecycle('install'), activate: () => lifecycle('activate'), swFetch, loadPage };
+  return { install: () => lifecycle('install'), activate: () => lifecycle('activate'), swFetch, loadPage, skipWaiting };
 }
 
 let server: ReturnType<typeof makeServer>;
@@ -163,12 +165,42 @@ describe('Service Worker : coque hors ligne', () => {
     expect(await v1.loadPage()).toBe('// code V1');
   });
 
-  it('par réseau faible, sert la copie locale après un court délai (hl-4)', async () => {
+  it('par réseau faible juste après une mise en ligne, la page vient de la coque enregistrée, avec ses scripts', async () => {
+    const v1 = await deployAndInstall('AAAA');
+    server.deploy(build('BBBB')); // nouvelle version en ligne, Service Worker pas encore à jour
+    server.state.hits = [];
+    const html = await (await v1.swFetch(`${BASE}?lang=de`, 'navigate')).text();
+    server.state.mode = 'down'; // le réseau tombe juste après le document
+    const js = /src="\/carte-zones-blanches\/(assets\/[^"]+\.js)"/.exec(html)![1];
+    const script = await v1.swFetch(`${BASE}${js}`);
+    expect(await script.text()).toBe('// code AAAA');
+    // La page n'a rien demandé au réseau : coque complète, une seule version.
+    expect(server.state.hits).toEqual([]);
+  });
+
+  it('la nouvelle version s\'installe en arrière-plan et ne sert qu\'à la visite suivante', async () => {
+    const v1 = await deployAndInstall('AAAA');
+    const deployment = build('BBBB');
+    server.deploy(deployment);
+    const v2 = serviceWorker(caches, server.network, deployment);
+    await v2.install();
+    // Installée sans prendre la place de la version en cours, dont la coque reste entière.
+    expect(v2.skipWaiting).not.toHaveBeenCalled();
+    expect(shellCaches().sort()).toEqual(['czb-coque-vAAAA', 'czb-coque-vBBBB']);
+    server.state.mode = 'down';
+    expect(await v1.loadPage()).toBe('// code AAAA');
+    // Visite suivante : la nouvelle version, seule.
+    await v2.activate();
+    expect(shellCaches()).toEqual(['czb-coque-vBBBB']);
+    expect(await v2.loadPage()).toBe('// code BBBB');
+  });
+
+  it('par réseau faible, la page vient tout de suite de la coque, sans attendre le délai (hl-4)', async () => {
     const sw = await deployAndInstall('AAAA');
     server.state.mode = 'hang'; // « en ligne », mais rien ne revient
     const started = Date.now();
     expect(await sw.loadPage(`${BASE}?lang=it`)).toBe('// code AAAA');
-    expect(Date.now() - started).toBeLessThan(DELAI + 400);
+    expect(Date.now() - started).toBeLessThan(DELAI);
   });
 
   it('sert le manifest enregistré pour le hors ligne quand le réseau tarde, et seulement celui-là', async () => {
@@ -183,6 +215,17 @@ describe('Service Worker : coque hors ligne', () => {
     expect(copy.headers.get('x-czb-copie-locale')).toBe('1');
     server.state.mode = 'down';
     expect(await (await sw.swFetch(`${BASE}data/manifest.json`)).text()).toBe('{"generated":"préparation"}');
+  });
+
+  it('une erreur du serveur (5xx) ne remplace pas le manifest enregistré', async () => {
+    const sw = await deployAndInstall('AAAA');
+    const offline = await caches.open('czb-hors-ligne-v1');
+    await offline.put(`${BASE}data/manifest.json`, new Response('{"generated":"préparation"}', { headers: { 'x-czb-copie-locale': '1' } }));
+    server.state.mode = 'error';
+    expect(await (await sw.swFetch(`${BASE}data/manifest.json`)).text()).toBe('{"generated":"préparation"}');
+    // Sans copie enregistrée, l'erreur du serveur est rendue telle quelle.
+    await offline.delete(`${BASE}data/manifest.json`);
+    expect((await sw.swFetch(`${BASE}data/manifest.json`)).status).toBe(503);
   });
 
   it('sans copie locale, attend le réseau au-delà du délai', async () => {

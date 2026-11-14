@@ -302,6 +302,21 @@ try {
       return absents.length || horsListe.length ? `manquent : ${[...absents, ...horsListe].join(', ')}` : `${noms[0]}, ${files.length} fichiers`;
     });
     controle('hors ligne : coque complète, une seule version', /^czb-coque-\w+, \d+ fichiers$/.test(coque), coque);
+    // Coque complète : la page vient d'elle, même en ligne. Une version mise en ligne entre-temps, dont
+    // index.html arriverait sans ses scripts (réseau faible), ne donne plus une page blanche.
+    const chemin = new URL(SITE).pathname;
+    const estLaPage = (url) => url.pathname === chemin || url.pathname === `${chemin}index.html`;
+    let demandes = 0;
+    const nouvelleVersion = (route) => {
+      demandes += 1;
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Nouvelle version</title><script type="module" src="assets/index-absent.js"></script>' });
+    };
+    await contexte.route(estLaPage, nouvelleVersion);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForTimeout(2500);
+    const coqueDabord = await page.evaluate(() => ({ titre: document.title, outils: document.querySelectorAll('.toolbar .tool').length }));
+    await contexte.unroute(estLaPage, nouvelleVersion);
+    controle('hors ligne : la page vient de la coque enregistrée, jamais d\'une version sans ses scripts', coqueDabord.titre === 'Carte des zones blanches' && coqueDabord.outils > 0 && demandes === 0, `${coqueDabord.titre}, document demandé ${demandes} fois au réseau`);
     await importer(page, TRACE_FRANCE);
     await page.locator('[data-focus="hors-ligne"]').scrollIntoViewIfNeeded();
     await page.click('[data-focus="hors-ligne"]');
