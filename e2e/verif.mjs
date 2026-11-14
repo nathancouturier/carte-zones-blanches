@@ -248,6 +248,24 @@ try {
     await contexte.close();
   }
 
+  // --- 1b. Ordinateur : import d'un GPX vu de loin, la carte se cadre ensuite sur le tracé ---------
+  // L'analyse lit les tuiles du tracé, puis la carte, cadrée dessus, les affiche : aucune n'est lue deux
+  // fois dans les archives, la carte les prend dans le cache de l'analyse (archi-21).
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '#7/45.3/6.5');
+    const lectures = [];
+    page.on('request', (r) => {
+      const adresse = new URL(r.url());
+      if (adresse.pathname.endsWith('.pmtiles')) lectures.push(`${adresse.pathname} ${r.headers().range ?? ''}`);
+    });
+    await importer(page, gpx('test-alpes.gpx'));
+    await page.waitForTimeout(3000);
+    const relues = lectures.filter((lecture, i) => lectures.indexOf(lecture) !== i);
+    controle('import : aucune tuile de couverture lue deux fois quand la carte se cadre sur le tracé', relues.length === 0, relues.length > 0 ? `${relues.length} relue(s) : ${relues[0]}` : `${lectures.length} lectures, aucune relue`);
+    controle('import : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
   // --- 2. Téléphone, allemand : libellés, panneaux, fond suisse -----------------
   {
     const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '?lang=de#11/46.02/7.75');
