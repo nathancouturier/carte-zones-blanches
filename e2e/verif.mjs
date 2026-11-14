@@ -260,7 +260,8 @@ try {
     const pret = await page.waitForSelector('.offline-ready', { timeout: 180000 }).then(() => true, () => false);
     const bilan = pret ? ((await page.locator('.offline-ready').textContent()) ?? '') : '';
     controle('hors ligne : le tracé est enregistré', pret && /tuiles de couverture/.test(bilan), bilan);
-    if (!HORS_LIGNE) controle('hors ligne : le fond Plan IGN est enregistré', /et \d[\d\s\u202f]* tuiles de fond/.test(bilan), bilan);
+    const fonds = (await page.locator('.offline-basemaps li').allTextContents()).join(' | ');
+    if (!HORS_LIGNE) controle('hors ligne : le fond Plan IGN est enregistré', /Plan IGN classique\s*:\s*\d[\d\s\u202f]* tuiles? enregistrées?/.test(fonds), fonds);
     await capture(page, '8b-telephone-fr-hors-ligne-pret');
     // La suppression des données hors ligne demande confirmation : refusée, rien n'est effacé.
     const confirmations = [];
@@ -301,6 +302,51 @@ try {
     controle('hors ligne : ?lang=es retrouve la page sans réseau', signet.lang === 'es' && signet.titre === 'Mapa de zonas sin cobertura', `${signet.lang} | ${signet.titre}`);
     await contexte.setOffline(false);
     controle('hors ligne : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 2c. Téléphone : fonds enregistrés selon leur fournisseur (réponses simulées) ---
+  // Photos aériennes et estompage du relief de l'IGN, servis ici par une image simulée :
+  // on vérifie le plafond du fournisseur, le bilan fond par fond et l'affichage sans réseau.
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42');
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    let demandes = 0;
+    await contexte.route(/^https:\/\/data\.geopf\.fr\/wmts\?/, (route) => {
+      demandes += 1;
+      route.fulfill({ status: 200, contentType: 'image/png', body: image, headers: { 'access-control-allow-origin': '*' } });
+    });
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.click('[data-panel="basemap"]');
+    await page.click('label:has-text("Photos aériennes")');
+    await page.click('label:has-text("Estompage du relief")');
+    await page.click('.icon-btn[data-role="close"]');
+    await importer(page, gpx('test-alpes.gpx'));
+    await page.locator('[data-focus="hors-ligne"]').scrollIntoViewIfNeeded();
+    const avant = demandes;
+    await page.click('[data-focus="hors-ligne"]');
+    const pret = await page.waitForSelector('.offline-ready', { timeout: 180000 }).then(() => true, () => false);
+    const fonds = (await page.locator('.offline-basemaps li').allTextContents()).join(' | ');
+    const prechargees = demandes - avant;
+    controle('fonds : photos aériennes et estompage enregistrés, fond par fond', pret && /Photos aériennes \(IGN\)\s*:\s*\d+ tuiles enregistrées/.test(fonds) && /Estompage du relief\s*:\s*\d+ tuiles enregistrées/.test(fonds), fonds);
+    controle('fonds : plafond du fournisseur respecté', prechargees > 0 && prechargees <= 600 + 600, `${prechargees} requêtes pour les deux fonds`);
+    await capture(page, '8d-telephone-fr-fonds-enregistres');
+    const servies = [];
+    page.on('response', (r) => {
+      if (r.fromServiceWorker() && r.status() === 200 && new URL(r.url()).host === 'data.geopf.fr') servies.push(r.url());
+    });
+    // Sans réseau, plus aucune réponse simulée : ce qui s'affiche vient de la copie locale.
+    await contexte.unrouteAll();
+    await contexte.route(/^https:\/\/data\.geopf\.fr\//, (route) => route.abort('internetdisconnected'));
+    await contexte.setOffline(true);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForSelector('.panel[data-panel="report"] .stats', { timeout: 60000 }).catch(() => null);
+    await page.click('.icon-btn[data-role="close"]').catch(() => null);
+    await page.waitForTimeout(3000);
+    controle('fonds : photos aériennes servies sans réseau depuis la copie locale', servies.length >= 3, `${servies.length} tuiles servies par le Service Worker`);
+    await capture(page, '8e-telephone-fr-fonds-sans-reseau');
+    await contexte.setOffline(false);
+    controle('fonds : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
 

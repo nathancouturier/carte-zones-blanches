@@ -1006,3 +1006,11 @@ input[type="range"] {
 .actions--apart {
   margin-top: 24px;
 }
+
+/* Mode hors ligne : ce qui a été enregistré, fond par fond. */
+.offline-basemaps {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.45;
+}

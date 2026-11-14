@@ -8,8 +8,11 @@
 //   3. les tuiles de couverture du couloir du tracé (lues dans les archives PMTiles),
 //      rangées sous le nom de leur archive : celles d'une autre édition des données
 //      ne sont jamais relues avec ce manifest ;
-//   4. les tuiles du fond de carte affiché, si son fournisseur l'autorise, dans la
-//      limite qu'il tolère (voir src/map/basemaps.ts et docs/sources.md).
+//   4. les tuiles des fonds de carte le long du parcours, si leur fournisseur
+//      l'autorise, dans les limites qu'il tolère (plafond, requêtes simultanées,
+//      débit, attente sur 429 ou 503 : voir src/map/basemaps.ts et docs/sources.md).
+//      En mode Auto, chaque portion du tracé reçoit le fond que le mode Auto
+//      afficherait dans son pays ; l'estompage du relief suit s'il est affiché.
 // Un seul tracé à la fois : ce qui ne lui sert pas est effacé au début. L'information
 // sur l'enregistrement est écrite dès le début, marquée incomplète jusqu'à la fin :
 // interrompu, annulé ou en échec, il reste visible et peut être repris ou supprimé.
@@ -19,7 +22,7 @@ import { NETWORK_TIMEOUT_MS } from '../config';
 import { archiveForTile, type Manifest } from '../coverage/manifest';
 import type { ArchiveReader } from '../coverage/store';
 import type { Sample } from '../gpx/resample';
-import type { BasemapPack, PreloadPolicy } from '../map/basemaps';
+import { nationalBasemap, type BasemapChoice, type BasemapId, type BasemapPack, type PreloadPolicy } from '../map/basemaps';
 import { corridorTiles, planCorridor, tileUrl, type TileId } from './corridor';
 
 /** Doit rester identique à HORS_LIGNE dans public/sw.js. */
@@ -39,7 +42,16 @@ const SHELL_WAIT_MS = 30_000;
 export const CORRIDOR_BUFFER_M = 700;
 /** Zooms des tuiles de couverture enregistrées (le zoom 12 sert à l'analyse, les autres à l'affichage dézoomé). */
 const COVERAGE_ZOOMS = [8, 9, 10, 11, 12];
+/** Lectures simultanées dans les archives de couverture (publiées avec le site). */
 const CONCURRENCY = 4;
+/** Attente quand un serveur de fond demande de ralentir (429 ou 503) sans dire combien de temps, en millisecondes. */
+const RETRY_DEFAULT_MS = 5000;
+/** Au-delà de cette attente demandée, on renonce à ce fond plutôt que de bloquer la préparation. */
+const RETRY_MAX_WAIT_MS = 60_000;
+/** Refus (429 ou 503) d'une même tuile avant de renoncer à ce fond. */
+const RETRY_TRIES = 3;
+/** Échecs réseau d'affilée avant de renoncer à ce fond (serveur injoignable ou qui refuse). */
+const MAX_FAILURES_IN_A_ROW = 8;
 /** Les entrées sont rangées par adresse : on ignore l'en-tête Vary du serveur. */
 const IGNORE_VARY = { ignoreVary: true };
 
@@ -56,15 +68,32 @@ export interface OfflineInfo {
   archives: string[];
   /** Date de ces données (manifest.generated). */
   generated: string;
-  /** Identifiant du fond préchargé, ou null si aucun. */
-  basemap: string | null;
   coverageTiles: number;
-  /** Nombre de tuiles de fond effectivement enregistrées. */
-  basemapTiles: number;
-  /** Nombre de requêtes de fond qui ont échoué. */
-  failed: number;
+  /** Fonds de carte : ce qui a été enregistré ou non, fond par fond. */
+  basemaps: BasemapRecord[];
 }
 
+/** Ce qui a été enregistré pour un fond de carte (ou pour l'estompage du relief). */
+export interface BasemapRecord {
+  id: BasemapId | 'hillshade';
+  /** Pays du tracé pour lesquels le mode Auto a choisi ce fond (codes ISO) ; vide hors mode Auto. */
+  countries: string[];
+  /** Faux si le fournisseur ne permet pas l'enregistrement à l'avance. */
+  allowed: boolean;
+  /** Adresses prévues (tuiles, style, polices) et adresses enregistrées. */
+  total: number;
+  stored: number;
+  /** Tuiles enregistrées. */
+  tiles: number;
+}
+
+/** Un fond à enregistrer, pour une partie des points du tracé. */
+export interface BasemapJob {
+  pack: BasemapPack;
+  samples: readonly Sample[];
+  /** Pays concernés (mode Auto). */
+  countries: string[];
+}
 
 export interface PrepareOptions {
   samples: readonly Sample[];
@@ -75,7 +104,8 @@ export interface PrepareOptions {
   manifest: Manifest;
   /** Lecture des archives PMTiles en ligne. */
   readArchive: ArchiveReader;
-  basemap: BasemapPack | null;
+  /** Fonds à enregistrer (voir basemapGroups). */
+  basemaps: BasemapJob[];
   onProgress: (done: number, total: number) => void;
   signal?: AbortSignal;
 }
@@ -106,7 +136,7 @@ export class OfflineError extends Error {
   }
 }
 
-async function pool<T>(items: readonly T[], worker: (item: T) => Promise<void>, signal?: AbortSignal): Promise<void> {
+async function pool<T>(items: readonly T[], worker: (item: T) => Promise<void>, concurrency: number, signal?: AbortSignal): Promise<void> {
   let next = 0;
   const run = async (): Promise<void> => {
     while (next < items.length) {
@@ -115,7 +145,136 @@ async function pool<T>(items: readonly T[], worker: (item: T) => Promise<void>, 
       await worker(item);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, Math.max(1, items.length)) }, run));
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, run));
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException('Annulé', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
+}
+
+/**
+ * Attente demandée par l'en-tête Retry-After (en secondes, ou date HTTP), en millisecondes.
+ * Sur une autre origine, le navigateur ne laisse lire cet en-tête que si le serveur l'expose :
+ * à défaut, RETRY_DEFAULT_MS.
+ */
+export function retryAfterMs(value: string | null, now: number = Date.now()): number {
+  if (!value) return RETRY_DEFAULT_MS;
+  const seconds = Number(value);
+  if (value.trim() !== '' && Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - now) : RETRY_DEFAULT_MS;
+}
+
+/**
+ * Fonds à enregistrer et points du tracé que chacun doit couvrir. Hors mode Auto, le fond
+ * choisi pour tout le tracé. En mode Auto, chaque point reçoit le fond que le mode Auto
+ * afficherait dans son pays ; un point hors des données suit le pays qui le précède (ou,
+ * au départ, celui qui le suit), et sans aucun pays connu c'est le fond affiché.
+ */
+export function basemapGroups(
+  samples: readonly Sample[],
+  countryAt: (index: number) => string | null,
+  choice: BasemapChoice,
+  active: BasemapId,
+): { id: BasemapId; samples: Sample[]; countries: string[] }[] {
+  if (choice !== 'auto') return samples.length > 0 ? [{ id: choice, samples: [...samples], countries: [] }] : [];
+  const iso = samples.map((_, i) => countryAt(i));
+  const first = iso.find((code) => code !== null) ?? null;
+  let current = first;
+  const groups = new Map<BasemapId, { id: BasemapId; samples: Sample[]; countries: string[] }>();
+  samples.forEach((sample, i) => {
+    if (iso[i] !== null) current = iso[i];
+    const id = current === null ? active : nationalBasemap(current);
+    let group = groups.get(id);
+    if (!group) groups.set(id, (group = { id, samples: [], countries: [] }));
+    group.samples.push(sample);
+    if (current !== null && !group.countries.includes(current)) group.countries.push(current);
+  });
+  return [...groups.values()];
+}
+
+/** Fonds dont des tuiles ont été enregistrées : les seuls qu'on peut afficher sans réseau. */
+export function storedBasemaps(info: OfflineInfo | null): (BasemapId | 'hillshade')[] {
+  return info ? info.basemaps.filter((record) => record.tiles > 0).map((record) => record.id) : [];
+}
+
+/** Hôte dont les conditions interdisent l'usage hors ligne (« Offline use is not permitted »). */
+function forbiddenHost(url: string): boolean {
+  try {
+    return /(^|\.)tile\.openstreetmap\.org$/.test(new URL(url).hostname);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Télécharge et enregistre les adresses d'un fond, au rythme que permet son fournisseur :
+ * requêtes simultanées et débit plafonnés ; sur une réponse 429 ou 503, tout le fond
+ * attend la durée demandée puis reprend ; après RETRY_TRIES refus d'une même tuile, ou
+ * MAX_FAILURES_IN_A_ROW échecs d'affilée, le reste de ce fond est abandonné (il manquera).
+ * Renvoie les adresses enregistrées.
+ */
+async function download(cache: Cache, urls: readonly string[], policy: PreloadPolicy, step: () => void, signal?: AbortSignal): Promise<Set<string>> {
+  const stored = new Set<string>();
+  const spacing = policy.perSecond > 0 ? 1000 / policy.perSecond : 0;
+  let nextAt = 0; // aucune requête ne part avant cet instant
+  let failures = 0;
+  let gaveUp = false;
+  const slot = async (): Promise<void> => {
+    const now = Date.now();
+    const at = Math.max(now, nextAt);
+    nextAt = at + spacing;
+    if (at > now) await sleep(at - now, signal);
+  };
+  await pool(
+    urls,
+    async (url) => {
+      try {
+        if (gaveUp) return;
+        if (await cache.match(url, IGNORE_VARY)) {
+          stored.add(url);
+          return;
+        }
+        for (let attempt = 1; !gaveUp; attempt++) {
+          await slot();
+          if (gaveUp) return;
+          let response: Response;
+          try {
+            response = await fetch(url, { mode: 'cors', credentials: 'omit', signal });
+          } catch (error) {
+            if (signal?.aborted) throw error;
+            if (++failures >= MAX_FAILURES_IN_A_ROW) gaveUp = true;
+            return;
+          }
+          if (response.ok) {
+            await cache.put(url, response);
+            stored.add(url);
+            failures = 0;
+            return;
+          }
+          if (response.status !== 429 && response.status !== 503) return; // tuile absente ou refusée : elle manquera
+          const wait = retryAfterMs(response.headers.get('retry-after'));
+          if (attempt >= RETRY_TRIES || wait > RETRY_MAX_WAIT_MS) gaveUp = true;
+          else nextAt = Math.max(nextAt, Date.now() + wait); // tout le fond ralentit, pas seulement cette tuile
+        }
+      } finally {
+        step();
+      }
+    },
+    Math.max(1, policy.concurrency),
+    signal,
+  );
+  return stored;
 }
 
 /** Tuiles de couverture du couloir, aux zooms utiles. */
@@ -142,10 +301,19 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
     const file = archiveForTile(manifest, tile.z, tile.x, tile.y)?.file;
     return file ? [{ ...tile, file, key: coverageTileKey(base, file, tile.z, tile.x, tile.y) }] : [];
   });
-  const plan = options.basemap ? basemapCorridor(options.samples, options.basemap.policy) : { tiles: [], maxZoom: 0, reduced: false };
-  const template = options.basemap?.tileTemplates[0];
-  const basemapUrls = template ? plan.tiles.map((tile) => tileUrl(template, tile)) : [];
-  const extras = options.basemap?.policy.allowed ? options.basemap.extraUrls : [];
+  // Fonds de carte : tuiles du couloir de chaque partie du tracé, dans l'emprise du fournisseur.
+  const basemaps = options.basemaps.map((job) => {
+    const urls = [...job.pack.extraUrls];
+    const allowed = job.pack.policy.allowed && !job.pack.tileTemplates.some(forbiddenHost);
+    const template = job.pack.tileTemplates[0];
+    let tiles: string[] = [];
+    if (allowed && template) {
+      const bounds = job.pack.bounds;
+      const inside = bounds ? job.samples.filter((p) => p.lon >= bounds[0] && p.lat >= bounds[1] && p.lon <= bounds[2] && p.lat <= bounds[3]) : job.samples;
+      tiles = basemapCorridor(inside, job.pack.policy).tiles.map((tile) => tileUrl(template, tile));
+    }
+    return { job, allowed, extras: allowed ? urls.filter((url) => !forbiddenHost(url)) : [], tiles };
+  });
   const info: OfflineInfo = {
     name: options.trackName,
     date: new Date().toISOString(),
@@ -153,10 +321,15 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
     persisted,
     archives: manifest.archives.map((archive) => archive.file),
     generated: manifest.generated,
-    basemap: options.basemap?.policy.allowed ? options.basemap.id : null,
     coverageTiles: coverage.length,
-    basemapTiles: 0,
-    failed: 0,
+    basemaps: basemaps.map(({ job, allowed, extras, tiles }) => ({
+      id: job.pack.id,
+      countries: job.countries,
+      allowed,
+      total: extras.length + tiles.length,
+      stored: 0,
+      tiles: 0,
+    })),
   };
   // Écrite avant toute donnée : même interrompu, l'enregistrement reste visible, donc supprimable.
   saveInfo(info);
@@ -164,10 +337,11 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
   const cache = await caches.open(OFFLINE_CACHE);
   // Un seul tracé à la fois : ce qui ne sert pas à celui-ci (tracé précédent, autre édition des
   // données) est effacé ; ce qui resservira est gardé (mise à jour, reprise après une coupure).
-  const keep = new Set([trackKey(base), manifestKey(base), ...coverage.map((tile) => tile.key), ...extras, ...basemapUrls].map((url) => new URL(url, location.href).href));
+  const basemapUrls = basemaps.flatMap(({ extras, tiles }) => [...extras, ...tiles]);
+  const keep = new Set([trackKey(base), manifestKey(base), ...coverage.map((tile) => tile.key), ...basemapUrls].map((url) => new URL(url, location.href).href));
   for (const request of await cache.keys()) if (!keep.has(request.url)) await cache.delete(request);
 
-  const total = 1 + coverage.length + basemapUrls.length + extras.length;
+  const total = 1 + coverage.length + basemapUrls.length;
   let done = 0;
   const step = (): void => options.onProgress(++done, total);
   options.onProgress(0, total);
@@ -193,32 +367,16 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
         }
         step();
       },
+      CONCURRENCY,
       signal,
     );
 
-    // 4. Fond de carte : seulement si le fournisseur l'autorise.
-    await pool(
-      [...extras.map((url) => ({ url, tile: false })), ...basemapUrls.map((url) => ({ url, tile: true }))],
-      async ({ url, tile }) => {
-        try {
-          let stored = !!(await cache.match(url, IGNORE_VARY));
-          if (!stored) {
-            const response = await fetch(url, { mode: 'cors', credentials: 'omit', signal });
-            if (response.ok) {
-              await cache.put(url, response);
-              stored = true;
-            }
-          }
-          if (!stored) info.failed++;
-          else if (tile) info.basemapTiles++;
-        } catch (error) {
-          if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'QuotaExceededError')) throw error;
-          info.failed++;
-        }
-        step();
-      },
-      signal,
-    );
+    // 4. Fonds de carte, l'un après l'autre, chacun au rythme de son fournisseur.
+    for (const [i, { job, extras, tiles }] of basemaps.entries()) {
+      const stored = await download(cache, [...extras, ...tiles], job.pack.policy, step, signal);
+      info.basemaps[i].stored = stored.size;
+      info.basemaps[i].tiles = tiles.filter((url) => stored.has(url)).length;
+    }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'QuotaExceededError') throw new OfflineError('quota');
     throw error;
@@ -303,6 +461,7 @@ export function offlineInfo(): OfflineInfo | null {
     if (typeof info.generated !== 'string') info.generated = '';
     info.complete = info.complete === true;
     info.persisted = info.persisted === true;
+    if (!Array.isArray(info.basemaps)) info.basemaps = [];
     return info;
   } catch {
     return null;

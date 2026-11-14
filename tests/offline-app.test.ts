@@ -4,7 +4,10 @@
 // avec le tracé (public/sw.js).
 
 import { DOMParser } from '@xmldom/xmldom';
+import { encode } from 'fast-png';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { packMeta, packSlots, TILE_SIZE } from '../src/coverage/codec';
+import { lonLatToTilePixel } from '../src/coverage/tilemath';
 import { keyOf, makeCaches, type FakeCaches } from './fakeCaches';
 import { readFixture, readJsonFixture } from './helpers';
 
@@ -294,5 +297,74 @@ describe('cycle de vie de l\'enregistrement hors ligne', () => {
     await wait(100);
     expect(app.state.offline.info).toBeNull();
     expect(toasts.join(' | ')).toContain('Essai');
+  });
+});
+
+/** Tuile PNG 256 x 256 dont tous les pixels sont couverts, dans le pays « code ». */
+function countryTile(code: number): ArrayBuffer {
+  const data = new Uint8Array(TILE_SIZE * TILE_SIZE * 4);
+  for (let o = 0; o < data.length; o += 4) {
+    data[o] = packSlots([3, 3, 3, 3]);
+    data[o + 2] = packMeta(code, 0);
+    data[o + 3] = 255;
+  }
+  const png = encode({ width: TILE_SIZE, height: TILE_SIZE, data, channels: 4, depth: 8 });
+  return png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer;
+}
+
+describe('mode Auto sans réseau (hl-2)', () => {
+  const manifestAlpes = {
+    ...manifestA,
+    bounds: [5.0, 44.0, 8.0, 46.5],
+    countries: [
+      ...(manifestA.countries as unknown[]),
+      { code: 2, iso: 'CH', euRoaming: false, operators: ['Swisscom', 'Sunrise', 'Salt'], slots: [{ id: 'un', minOperators: 1 }], sources: [{ type: 1, id: 'ch_bakom', name: 'OFCOM', date: '2026-03', licence: 'Open data', attribution: 'OFCOM', services: ['data'], levels: 'binary', perOperator: true }] },
+      { code: 3, iso: 'IT', euRoaming: true, slots: [{ id: 'tim', name: 'TIM' }], sources: [{ type: 0, id: 'it_agcom', name: 'AGCOM', date: '2026-06', licence: 'CC BY 4.0', attribution: 'AGCOM', services: ['data'], levels: 'four', perOperator: true }] },
+    ],
+  };
+  const CHAMPEX = { lon: 7.12, lat: 46.03, code: 2 };
+  const COURMAYEUR = { lon: 6.97, lat: 45.79, code: 3 };
+
+  /** Tracé du Mont-Blanc préparé en mode Auto : seuls les fonds « stored » ont des tuiles enregistrées. */
+  async function recording(stored: string[], at: { lon: number; lat: number; code: number }) {
+    const { coverageTileKey, LOCAL_COPY_HEADER } = await import('../src/offline/manager');
+    const base = import.meta.env.BASE_URL;
+    const cache = await caches.open(OFFLINE);
+    await cache.put(new URL(`${base}data/manifest.json`, PAGE).href, new Response(JSON.stringify(manifestAlpes), { headers: { [LOCAL_COPY_HEADER]: '1' } }));
+    await cache.put(new URL(`${base}hors-ligne/trace.gpx`, PAGE).href, new Response(await (await essai.arrayBuffer()) as ArrayBuffer, { headers: { 'x-czb-nom': 'tmb.gpx' } }));
+    const tp = lonLatToTilePixel(at.lon, at.lat, 12)!;
+    await cache.put(coverageTileKey(base, ARCHIVE_A, 12, tp.x, tp.y), new Response(countryTile(at.code), { headers: { 'x-czb-vide': '0' } }));
+    const basemaps = stored.map((id) => ({ id, countries: [], allowed: true, total: 10, stored: 10, tiles: 10 }));
+    ls.set('czb.horsLigne', JSON.stringify({ name: 'TMB', date: '2026-11-14T10:00:00Z', complete: true, persisted: true, archives: [ARCHIVE_A], generated: '2026-11-13', coverageTiles: 1, basemaps }));
+    map.view = { lon: at.lon, lat: at.lat, zoom: 13 };
+  }
+
+  for (const [label, place] of [['Italie', COURMAYEUR], ['Suisse', CHAMPEX]] as const) {
+    it(`centre en ${label} : garde le fond enregistré au lieu d'un fond jamais enregistré`, async () => {
+      await recording(['ign-classique'], place);
+      net.mode = 'down';
+      nav.onLine = false;
+      const app = await newApp();
+      await wait(300);
+      expect(app.state.basemap.choice).toBe('auto');
+      expect(app.state.activeBasemap).toBe('ign-classique');
+    });
+  }
+
+  it('centre en Suisse, swisstopo enregistré : bascule vers lui', async () => {
+    await recording(['ign-classique', 'swisstopo'], CHAMPEX);
+    net.mode = 'down';
+    nav.onLine = false;
+    const app = await newApp();
+    await wait(300);
+    expect(app.state.activeBasemap).toBe('swisstopo');
+  });
+
+  it('en ligne, le mode Auto suit le pays au centre comme avant', async () => {
+    await recording(['ign-classique'], CHAMPEX);
+    net.manifest = manifestAlpes;
+    const app = await newApp();
+    await wait(300);
+    expect(app.state.activeBasemap).toBe('swisstopo');
   });
 });

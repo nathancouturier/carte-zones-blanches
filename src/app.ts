@@ -26,8 +26,22 @@ import { decodeGpx, GpxError, parseGpx } from './gpx/parse';
 import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/report';
 import { resample } from './gpx/resample';
 import { getLanguage, setLanguage, t } from './i18n';
-import { autoBasemap, basemapPack, BASEMAPS, type BasemapChoice, type BasemapId } from './map/basemaps';
-import { clearOffline, LOCAL_COPY_HEADER, offlineDataPresent, OfflineError, offlineInfo, offlineSupported, prepareOffline, storedTrack, withStoredTiles } from './offline/manager';
+import { autoBasemap, basemapPack, BASEMAPS, hillshadePack, type BasemapChoice, type BasemapId, type BasemapPack } from './map/basemaps';
+import {
+  basemapGroups,
+  clearOffline,
+  LOCAL_COPY_HEADER,
+  offlineDataPresent,
+  OfflineError,
+  offlineInfo,
+  offlineSupported,
+  prepareOffline,
+  storedBasemaps,
+  storedTrack,
+  withStoredTiles,
+  type BasemapJob,
+} from './offline/manager';
+import { loadVectorStyle } from './map/style';
 import { MapView, type Padding } from './map/mapView';
 import { samplesBounds, trackToGeoJson, zoneToGeoJson, EMPTY_COLLECTION } from './map/trackGeojson';
 import {
@@ -55,6 +69,8 @@ export class App {
   private importSeq = 0;
   private readArchive: ArchiveReader | null = null;
   private offlineAbort: AbortController | null = null;
+  /** Vrai quand le manifest est la copie enregistrée avec le tracé (réseau absent ou trop lent). */
+  private dataFromLocalCopy = false;
   private moveTimer: ReturnType<typeof setTimeout> | undefined;
   private hooks: AppHooks = { toast: () => undefined, padding: () => ({ top: 40, right: 40, bottom: 40, left: 40 }) };
 
@@ -75,6 +91,9 @@ export class App {
       onLocateError: () => this.hooks.toast(t('locate.error')),
       onStyleFallback: () => this.hooks.toast(t('basemap.fallback')),
     });
+    // Le mode Auto revoit son choix quand le réseau va et vient (fonds enregistrés seulement, sans réseau).
+    globalThis.addEventListener?.('online', () => this.scheduleViewUpdate());
+    globalThis.addEventListener?.('offline', () => this.scheduleViewUpdate());
   }
 
   setHooks(hooks: AppHooks): void {
@@ -101,6 +120,7 @@ export class App {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       // Copie enregistrée avec le tracé préparé, servie par le Service Worker faute de réseau assez rapide.
       localCopy = response.headers.get(LOCAL_COPY_HEADER) === '1';
+      this.dataFromLocalCopy = localCopy;
       manifest = parseManifest(await response.json());
     } catch (error) {
       console.warn('Données de couverture indisponibles :', error);
@@ -254,11 +274,17 @@ export class App {
     // Mode Auto : le fond national du pays au centre de la carte.
     if (current.basemap.choice === 'auto') {
       const wanted = autoBasemap(isoAt(pixels[0]));
-      if (wanted && wanted !== current.activeBasemap) patch.activeBasemap = wanted;
+      if (wanted && wanted !== current.activeBasemap && this.basemapUsable(wanted)) patch.activeBasemap = wanted;
     }
     if (Object.keys(patch).length === 0) return;
     this.store.set(patch);
     if (patch.activeBasemap) void this.applyStyle();
+  }
+
+  /** Sans réseau (ou presque), le mode Auto ne bascule que vers un fond enregistré pour le hors ligne. */
+  private basemapUsable(id: BasemapId): boolean {
+    const offline = this.dataFromLocalCopy || (typeof navigator !== 'undefined' && navigator.onLine === false);
+    return !offline || storedBasemaps(this.state.offline.info).includes(id);
   }
 
   // -- GPX ------------------------------------------------------------------
@@ -420,7 +446,7 @@ export class App {
 
   /** Enregistre dans le navigateur le tracé, sa couverture et le fond affiché, pour un usage sans réseau. */
   async prepareOffline(): Promise<void> {
-    const { track, manifest, activeBasemap } = this.state;
+    const { track, manifest } = this.state;
     const readArchive = this.readArchive;
     if (!track || !manifest || !readArchive || !offlineSupported()) return;
     this.offlineAbort?.abort();
@@ -428,6 +454,7 @@ export class App {
     this.offlineAbort = abort;
     this.store.set({ offline: { ...this.state.offline, status: 'preparing', progress: 0 } });
     try {
+      const basemaps = await this.offlineBasemaps();
       const info = await prepareOffline(import.meta.env.BASE_URL, {
         samples: track.samples,
         trackName: track.parsed.name ?? track.fileName,
@@ -435,7 +462,7 @@ export class App {
         fileName: track.fileName,
         manifest,
         readArchive,
-        basemap: basemapPack(activeBasemap, this.mapView.currentVectorStyle()),
+        basemaps,
         onProgress: (done, total) => {
           if (!abort.signal.aborted) this.store.set({ offline: { ...this.state.offline, progress: total > 0 ? done / total : 1 } });
         },
@@ -450,6 +477,31 @@ export class App {
       // L'enregistrement provisoire reste affiché, incomplet : il peut être repris ou supprimé.
       this.store.set({ offline: { status: 'error', progress: 0, error: error instanceof OfflineError ? error.code : undefined, info: offlineInfo() } });
     }
+  }
+
+  /**
+   * Fonds à enregistrer pour le tracé : le fond choisi ; en mode Auto, le fond national de
+   * chaque pays traversé (src/offline/manager.ts, basemapGroups) ; l'estompage s'il est affiché.
+   */
+  private async offlineBasemaps(): Promise<BasemapJob[]> {
+    const { track, manifest, basemap, activeBasemap } = this.state;
+    if (!track?.analysis || !manifest) return [];
+    const { raw } = track.analysis;
+    const countryAt = (i: number): string | null => (raw.inside[i] ? (countryByCode(manifest, unpackCountry(raw.meta[i]))?.iso ?? null) : null);
+    const jobs: BasemapJob[] = [];
+    for (const group of basemapGroups(track.samples, countryAt, basemap.choice, activeBasemap)) {
+      jobs.push({ pack: await this.basemapPackFor(group.id), samples: group.samples, countries: group.countries });
+    }
+    if (basemap.hillshade) jobs.push({ pack: hillshadePack(), samples: track.samples, countries: [] });
+    return jobs;
+  }
+
+  /** Ce qu'il faut enregistrer pour un fond : son style vectoriel est lu pour trouver ses tuiles, ses sprites et ses polices. */
+  private async basemapPackFor(id: BasemapId): Promise<BasemapPack> {
+    const basemap = BASEMAPS[id];
+    if (basemap.kind !== 'vector') return basemapPack(id, null);
+    if (id === this.state.activeBasemap) return basemapPack(id, this.mapView.currentVectorStyle());
+    return basemapPack(id, await loadVectorStyle(basemap.styleUrl).catch(() => null));
   }
 
   /** Arrête l'enregistrement en cours. Ce qui est déjà enregistré reste, marqué incomplet. */
