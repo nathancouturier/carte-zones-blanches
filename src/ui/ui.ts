@@ -44,6 +44,10 @@ export class Ui {
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
   private searchAbort: AbortController | null = null;
   private searchSeq = 0;
+  /** Saisie qui a produit la liste affichée : Entrée ne choisit que dans une liste à jour. */
+  private resultsQuery: string | null = null;
+  /** Entrée appuyée avant l'arrivée des résultats : le premier sera choisi. */
+  private pickFirst = false;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private attributionOpen = false;
   /** Panneau Rapport réduit à son titre (téléphone), pour voir la carte. */
@@ -387,6 +391,7 @@ export class Ui {
     this.searchInput.value = '';
     this.searchAbort?.abort();
     clearTimeout(this.searchTimer);
+    this.pickFirst = false;
     setChildren(this.searchResults);
     this.renderTopbar();
   }
@@ -394,6 +399,7 @@ export class Ui {
   private onSearchInput(): void {
     clearTimeout(this.searchTimer);
     this.searchAbort?.abort();
+    this.pickFirst = false;
     const query = this.searchInput.value.trim();
     if (query.length < SEARCH_MIN_CHARS) {
       setChildren(this.searchResults, query.length > 0 ? h('li', { class: 'search__info' }, t('search.hint', { count: SEARCH_MIN_CHARS })) : null);
@@ -415,9 +421,18 @@ export class Ui {
         signal: this.searchAbort.signal,
       });
       if (seq !== this.searchSeq || !this.searchOpen) return;
+      this.resultsQuery = query;
+      if (this.pickFirst && places.length > 0) {
+        this.pickFirst = false;
+        this.pickPlace(places[0]);
+        return;
+      }
+      this.pickFirst = false;
       this.showResults(places);
     } catch (error) {
       if (seq !== this.searchSeq || (error instanceof Error && error.name === 'AbortError')) return;
+      this.pickFirst = false;
+      this.resultsQuery = null;
       setChildren(this.searchResults, h('li', { class: 'search__info' }, t('search.error')));
     }
   }
@@ -454,12 +469,17 @@ export class Ui {
   private onSearchKey(event: KeyboardEvent): void {
     if (event.key === 'Enter') {
       event.preventDefault();
+      const query = this.searchInput.value.trim();
       const first = this.searchResults.querySelector<HTMLButtonElement>('.search__item');
-      if (first) first.click();
-      else {
+      // La liste affichée peut venir de la saisie précédente (« Bri » pour « Brides ») : on ne
+      // la prend que si elle répond à la saisie actuelle ; sinon on cherche tout de suite et on
+      // prendra le premier résultat à son arrivée.
+      if (first && query === this.resultsQuery) first.click();
+      else if (query.length >= SEARCH_MIN_CHARS) {
         clearTimeout(this.searchTimer);
-        const query = this.searchInput.value.trim();
-        if (query.length >= SEARCH_MIN_CHARS) void this.runSearch(query);
+        this.searchAbort?.abort();
+        this.pickFirst = true;
+        void this.runSearch(query);
       }
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
