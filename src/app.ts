@@ -444,7 +444,7 @@ export class App {
 
   // -- hors ligne -----------------------------------------------------------
 
-  /** Enregistre dans le navigateur le tracé, sa couverture et le fond affiché, pour un usage sans réseau. */
+  /** Enregistre dans le navigateur le tracé, sa couverture et les fonds de carte le long du parcours, pour un usage sans réseau. */
   async prepareOffline(): Promise<void> {
     const { track, manifest } = this.state;
     const readArchive = this.readArchive;

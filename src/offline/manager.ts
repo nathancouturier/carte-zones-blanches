@@ -376,6 +376,7 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
       const stored = await download(cache, [...extras, ...tiles], job.pack.policy, step, signal);
       info.basemaps[i].stored = stored.size;
       info.basemaps[i].tiles = tiles.filter((url) => stored.has(url)).length;
+      saveInfo(info); // interrompu ensuite, l'enregistrement dit quand même ce fond
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'QuotaExceededError') throw new OfflineError('quota');
