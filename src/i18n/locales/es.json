@@ -181,5 +181,21 @@
   "network.allNOperators": "Los {count} operadores a la vez",
   "network.atLeastOperators_one": "Al menos {count} operador",
   "network.atLeastOperators_other": "Al menos {count} operadores",
-  "network.thresholdHint": "Esta fuente no indica qué operador da cobertura. «Los {count} operadores a la vez» muestra dónde tendrás red sea cual sea el operador utilizado en itinerancia."
+  "network.thresholdHint": "Esta fuente no indica qué operador da cobertura. «Los {count} operadores a la vez» muestra dónde tendrás red sea cual sea el operador utilizado en itinerancia.",
+  "offline.heading": "Sin conexión",
+  "offline.intro": "Guarda en este navegador la ruta, su cobertura y el mapa de fondo a lo largo del recorrido, para consultarlos sin red.",
+  "offline.prepare": "Preparar esta ruta para usarla sin conexión",
+  "offline.update": "Actualizar los datos guardados",
+  "offline.preparing": "Guardando",
+  "offline.ready": "Lista para usar sin conexión: {name}, {coverage} teselas de cobertura y {basemap} teselas de fondo.",
+  "offline.readyNoBasemap": "Lista para usar sin conexión: {name}, {coverage} teselas de cobertura. El mapa de fondo no se ha guardado.",
+  "offline.basemapNotAllowed": "El fondo «{name}» no se puede guardar por adelantado: su proveedor no lo permite. Elige otro fondo antes de preparar la ruta.",
+  "offline.failed_one": "No se ha podido guardar {count} elemento del fondo.",
+  "offline.failed_other": "No se han podido guardar {count} elementos del fondo.",
+  "offline.clear": "Borrar los datos sin conexión",
+  "offline.cleared": "Datos sin conexión borrados",
+  "offline.error": "No se ha podido guardar. Comprueba tu conexión y el espacio disponible.",
+  "offline.unsupported": "Este navegador no permite el modo sin conexión.",
+  "offline.restored": "Ruta sin conexión recuperada: {name}",
+  "offline.resume": "Recuperar la ruta guardada: {name}"
 }

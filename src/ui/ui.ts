@@ -128,6 +128,16 @@ export class Ui {
       for (const el of this.panelBody.querySelectorAll<HTMLProgressElement>('progress[data-role="progress"]')) el.value = state.progress;
       return;
     }
+    // Idem pendant l'enregistrement hors ligne.
+    const onlyOffline =
+      state.offline !== previous.offline &&
+      state.offline.status === 'preparing' &&
+      previous.offline.status === 'preparing' &&
+      (Object.keys(state) as (keyof AppState)[]).every((key) => key === 'offline' || state[key] === previous[key]);
+    if (onlyOffline) {
+      for (const el of this.panelBody.querySelectorAll<HTMLProgressElement>('progress[data-role="offline-progress"]')) el.value = state.offline.progress;
+      return;
+    }
     this.renderToolbar();
     const panelChanged =
       state.panel !== previous.panel ||
@@ -139,7 +149,8 @@ export class Ui {
       state.track !== previous.track ||
       state.trackStatus !== previous.trackStatus ||
       state.trackError !== previous.trackError ||
-      state.selectedZone !== previous.selectedZone;
+      state.selectedZone !== previous.selectedZone ||
+      state.offline !== previous.offline;
     if (panelChanged) this.renderPanel(state.panel !== previous.panel);
     this.renderAttribution();
   }

@@ -4,12 +4,23 @@
 export type BasemapId = 'ign-classique' | 'ign-standard' | 'swisstopo' | 'ign-es' | 'osm' | 'ortho';
 export type BasemapChoice = BasemapId | 'auto';
 
+/** Ce que le fournisseur d'un fond permet d'enregistrer à l'avance pour le mode hors ligne. */
+export interface PreloadPolicy {
+  allowed: boolean;
+  /** Nombre maximal de tuiles enregistrées par tracé. */
+  maxTiles: number;
+  minZoom: number;
+  maxZoom: number;
+}
+
 interface BasemapBase {
   id: BasemapId;
   /** Clé de traduction du nom. */
   labelKey: string;
   /** Mention à afficher dans le pied de carte. */
   attribution: string;
+  /** Préchargement pour le mode hors ligne, selon les conditions du fournisseur (voir docs/sources.md). */
+  offline: PreloadPolicy;
 }
 
 export interface VectorBasemap extends BasemapBase {
@@ -45,12 +56,16 @@ const PLAN_IGN_RASTER: RasterSpec = {
   maxzoom: 19,
 };
 
+/** Tuiles vectorielles du Plan IGN : légères, on peut descendre jusqu'au zoom 15. */
+const IGN_OFFLINE: PreloadPolicy = { allowed: true, maxTiles: 900, minZoom: 7, maxZoom: 15 };
+
 export const BASEMAPS: Record<BasemapId, Basemap> = {
   'ign-classique': {
     id: 'ign-classique',
     kind: 'vector',
     labelKey: 'basemap.ignClassique',
     attribution: '© IGN',
+    offline: IGN_OFFLINE,
     styleUrl: `${IGN_STYLES}/classique.json`,
     fallback: PLAN_IGN_RASTER,
   },
@@ -59,6 +74,7 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     kind: 'vector',
     labelKey: 'basemap.ignStandard',
     attribution: '© IGN',
+    offline: IGN_OFFLINE,
     styleUrl: `${IGN_STYLES}/standard.json`,
     fallback: PLAN_IGN_RASTER,
   },
@@ -67,6 +83,7 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     kind: 'raster',
     labelKey: 'basemap.swisstopo',
     attribution: '© swisstopo',
+    offline: { allowed: true, maxTiles: 600, minZoom: 9, maxZoom: 15 },
     tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg'],
     tileSize: 256,
     minzoom: 0,
@@ -78,6 +95,7 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     kind: 'raster',
     labelKey: 'basemap.ignEs',
     attribution: 'CC BY 4.0 ign.es',
+    offline: { allowed: true, maxTiles: 600, minZoom: 9, maxZoom: 15 },
     tiles: [
       'https://www.ign.es/wmts/mapa-raster?service=WMTS&request=GetTile&version=1.0.0&layer=MTN&style=default&tilematrixset=GoogleMapsCompatible&format=image/jpeg&TileMatrix={z}&TileCol={x}&TileRow={y}',
     ],
@@ -91,6 +109,8 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     kind: 'raster',
     labelKey: 'basemap.osm',
     attribution: '© OpenStreetMap, SRTM | © OpenTopoMap (CC BY-SA)',
+    // Serveur bénévole : pas de téléchargement à l'avance.
+    offline: { allowed: false, maxTiles: 0, minZoom: 0, maxZoom: 0 },
     tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png', 'https://b.tile.opentopomap.org/{z}/{x}/{y}.png', 'https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
     tileSize: 256,
     minzoom: 0,
@@ -101,6 +121,7 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     kind: 'raster',
     labelKey: 'basemap.ortho',
     attribution: '© IGN',
+    offline: { allowed: true, maxTiles: 600, minZoom: 9, maxZoom: 16 },
     tiles: [`${GEOPF_WMTS}&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&FORMAT=image/jpeg&STYLE=normal`],
     tileSize: 256,
     minzoom: 0,
@@ -139,4 +160,59 @@ export function autoBasemap(iso: string | null): BasemapId | null {
 
 export function isBasemapChoice(value: unknown): value is BasemapChoice {
   return value === 'auto' || (typeof value === 'string' && value in BASEMAPS);
+}
+
+/** Plages de glyphes enregistrées pour le hors ligne : latin de base, latin étendu, ponctuation générale. */
+const GLYPH_RANGES = ['0-255', '256-511', '8192-8447'];
+
+export interface BasemapPack {
+  id: BasemapId;
+  policy: PreloadPolicy;
+  /** Gabarits d'URL des tuiles ({z}, {x}, {y}). */
+  tileTemplates: string[];
+  /** Ressources à enregistrer en plus des tuiles : style, sprites, polices. */
+  extraUrls: string[];
+}
+
+interface VectorStyleLike {
+  sources?: Record<string, { type?: string; tiles?: string[] }>;
+  sprite?: unknown;
+  glyphs?: string;
+  layers?: { layout?: Record<string, unknown> }[];
+}
+
+/**
+ * Ce qu'il faut enregistrer pour afficher un fond sans réseau. Pour un fond
+ * vectoriel, il faut le style déjà téléchargé : on y lit l'adresse des tuiles,
+ * des sprites et des polices, sans rien supposer.
+ */
+export function basemapPack(id: BasemapId, vectorStyle: VectorStyleLike | null): BasemapPack {
+  const basemap = BASEMAPS[id];
+  if (basemap.kind === 'raster') {
+    return { id, policy: basemap.offline, tileTemplates: basemap.tiles, extraUrls: [] };
+  }
+  if (!vectorStyle) {
+    // Style vectoriel injoignable : c'est le Plan IGN en images qui est affiché.
+    return { id, policy: basemap.offline, tileTemplates: basemap.fallback.tiles, extraUrls: [] };
+  }
+  const tileTemplates = Object.values(vectorStyle.sources ?? {})
+    .filter((source) => source.type === 'vector')
+    .flatMap((source) => source.tiles ?? []);
+  const extraUrls = [basemap.styleUrl];
+  if (typeof vectorStyle.sprite === 'string') {
+    for (const suffix of ['.json', '.png', '@2x.json', '@2x.png']) extraUrls.push(`${vectorStyle.sprite}${suffix}`);
+  }
+  if (vectorStyle.glyphs) {
+    const stacks = new Set<string>();
+    for (const layer of vectorStyle.layers ?? []) {
+      const font = layer.layout?.['text-font'];
+      if (Array.isArray(font) && font.every((f) => typeof f === 'string')) stacks.add(font.join(','));
+    }
+    for (const stack of stacks) {
+      for (const range of GLYPH_RANGES) {
+        extraUrls.push(vectorStyle.glyphs.replace('{fontstack}', encodeURIComponent(stack)).replace('{range}', range));
+      }
+    }
+  }
+  return { id, policy: basemap.offline, tileTemplates, extraUrls };
 }

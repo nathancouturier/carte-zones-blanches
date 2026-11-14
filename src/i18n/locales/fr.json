@@ -181,5 +181,21 @@
   "network.allNOperators": "Les {count} opérateurs à la fois",
   "network.atLeastOperators_one": "Au moins {count} opérateur",
   "network.atLeastOperators_other": "Au moins {count} opérateurs",
-  "network.thresholdHint": "Cette source ne dit pas quel opérateur couvre. « Les {count} opérateurs à la fois » montre où vous aurez du réseau quel que soit l'opérateur utilisé en itinérance."
+  "network.thresholdHint": "Cette source ne dit pas quel opérateur couvre. « Les {count} opérateurs à la fois » montre où vous aurez du réseau quel que soit l'opérateur utilisé en itinérance.",
+  "offline.heading": "Hors ligne",
+  "offline.intro": "Enregistre dans ce navigateur le tracé, sa couverture et le fond de carte le long du parcours, pour les consulter sans réseau.",
+  "offline.prepare": "Préparer ce tracé pour le hors ligne",
+  "offline.update": "Mettre à jour l'enregistrement",
+  "offline.preparing": "Enregistrement en cours",
+  "offline.ready": "Prêt pour le hors ligne : {name}, {coverage} tuiles de couverture et {basemap} tuiles de fond.",
+  "offline.readyNoBasemap": "Prêt pour le hors ligne : {name}, {coverage} tuiles de couverture. Le fond de carte n'est pas enregistré.",
+  "offline.basemapNotAllowed": "Le fond « {name} » ne peut pas être enregistré à l'avance : son fournisseur ne le permet pas. Choisissez un autre fond avant de préparer le tracé.",
+  "offline.failed_one": "{count} élément du fond n'a pas pu être enregistré.",
+  "offline.failed_other": "{count} éléments du fond n'ont pas pu être enregistrés.",
+  "offline.clear": "Supprimer les données hors ligne",
+  "offline.cleared": "Données hors ligne supprimées",
+  "offline.error": "L'enregistrement a échoué. Vérifiez votre connexion et l'espace disponible.",
+  "offline.unsupported": "Ce navigateur ne permet pas le mode hors ligne.",
+  "offline.restored": "Tracé hors ligne rechargé : {name}",
+  "offline.resume": "Reprendre le tracé enregistré : {name}"
 }

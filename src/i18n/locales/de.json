@@ -181,5 +181,21 @@
   "network.allNOperators": "Alle {count} Anbieter gleichzeitig",
   "network.atLeastOperators_one": "Mindestens {count} Anbieter",
   "network.atLeastOperators_other": "Mindestens {count} Anbieter",
-  "network.thresholdHint": "Diese Quelle gibt nicht an, welcher Anbieter abdeckt. „Alle {count} Anbieter gleichzeitig“ zeigt, wo du Netz hast, egal welchen Anbieter dein Roaming nutzt."
+  "network.thresholdHint": "Diese Quelle gibt nicht an, welcher Anbieter abdeckt. „Alle {count} Anbieter gleichzeitig“ zeigt, wo du Netz hast, egal welchen Anbieter dein Roaming nutzt.",
+  "offline.heading": "Offline",
+  "offline.intro": "Speichert die Route, ihre Abdeckung und die Hintergrundkarte entlang der Strecke in diesem Browser, damit du sie ohne Netz ansehen kannst.",
+  "offline.prepare": "Diese Route für die Offline-Nutzung vorbereiten",
+  "offline.update": "Gespeicherte Daten aktualisieren",
+  "offline.preparing": "Wird gespeichert",
+  "offline.ready": "Bereit für die Offline-Nutzung: {name}, {coverage} Abdeckungskacheln und {basemap} Kartenkacheln.",
+  "offline.readyNoBasemap": "Bereit für die Offline-Nutzung: {name}, {coverage} Abdeckungskacheln. Die Hintergrundkarte ist nicht gespeichert.",
+  "offline.basemapNotAllowed": "Die Karte „{name}“ kann nicht im Voraus gespeichert werden: Der Anbieter erlaubt es nicht. Wähle eine andere Karte, bevor du die Route vorbereitest.",
+  "offline.failed_one": "{count} Element der Karte konnte nicht gespeichert werden.",
+  "offline.failed_other": "{count} Elemente der Karte konnten nicht gespeichert werden.",
+  "offline.clear": "Offline-Daten löschen",
+  "offline.cleared": "Offline-Daten gelöscht",
+  "offline.error": "Das Speichern ist fehlgeschlagen. Prüfe deine Verbindung und den freien Speicherplatz.",
+  "offline.unsupported": "Dieser Browser unterstützt den Offline-Modus nicht.",
+  "offline.restored": "Offline-Route geladen: {name}",
+  "offline.resume": "Gespeicherte Route laden: {name}"
 }

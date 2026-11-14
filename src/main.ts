@@ -4,10 +4,12 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
 import { App } from './app';
 import { initLanguage, t } from './i18n';
+import { registerServiceWorker } from './offline/manager';
 import { initialState, Store } from './state';
 import { Ui } from './ui/ui';
 
 initLanguage();
+registerServiceWorker(import.meta.env.BASE_URL);
 
 const mapElement = document.getElementById('map');
 const uiElement = document.getElementById('ui');

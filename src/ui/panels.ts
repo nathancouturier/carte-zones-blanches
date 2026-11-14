@@ -30,6 +30,7 @@ import {
 } from '../i18n';
 import { BASEMAP_ORDER, BASEMAPS, HILLSHADE, type BasemapChoice } from '../map/basemaps';
 import { OUTSIDE_COLOR } from '../map/style';
+import { offlineSupported } from '../offline/manager';
 import { h, icon, ICONS } from './dom';
 import { elevationProfile } from './profile';
 
@@ -312,6 +313,17 @@ export function gpxPanel(app: App, chooseFile: () => void): Node_[] {
     );
   } else {
     parts.push(h('p', null, t('gpx.intro')));
+    // Un tracé a été préparé pour le hors ligne : on propose de le reprendre.
+    const stored = app.state.offline.info;
+    if (stored) {
+      parts.push(
+        h(
+          'div',
+          { class: 'actions' },
+          h('button', { type: 'button', class: 'btn', dataset: { focus: 'reprendre' }, onclick: () => void app.restoreOfflineTrack() }, icon(ICONS.report, 20), t('offline.resume', { name: stored.name })),
+        ),
+      );
+    }
   }
 
   parts.push(
@@ -532,9 +544,56 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
         h('textarea', { class: 'report-text', readonly: true, rows: '12', 'aria-label': t('report.textTitle'), onfocus: (event: Event) => (event.target as HTMLTextAreaElement).select() }, text),
       ),
     ),
+    offlineSection(app),
     h('p', { class: 'disclaimer' }, t('sources.disclaimer')),
   );
   return parts;
+}
+
+/** Mode hors ligne : enregistrer le tracé, sa couverture et le fond affiché dans le navigateur. */
+function offlineSection(app: App): Node_ {
+  const { offline, activeBasemap, track } = app.state;
+  if (!track?.analysis) return null;
+  if (!offlineSupported()) return section(t('offline.heading'), h('p', { class: 'muted' }, t('offline.unsupported')));
+  const basemap = BASEMAPS[activeBasemap];
+  const parts: Node_[] = [h('p', { class: 'hint hint--first' }, t('offline.intro'))];
+  if (!basemap.offline.allowed) parts.push(note(t('offline.basemapNotAllowed', { name: t(basemap.labelKey) })));
+  if (offline.status === 'preparing') {
+    parts.push(
+      h('div', { class: 'progress', role: 'status' }, h('span', null, t('offline.preparing')), h('progress', { max: '1', value: String(offline.progress), dataset: { role: 'offline-progress' } })),
+    );
+  } else {
+    if (offline.status === 'error') parts.push(note(t('offline.error'), 'warning'));
+    const info = offline.info;
+    if (info) {
+      parts.push(
+        h(
+          'p',
+          { class: 'offline-ready' },
+          info.basemapTiles > 0
+            ? t('offline.ready', { name: info.name, coverage: formatNumber(info.coverageTiles), basemap: formatNumber(info.basemapTiles) })
+            : t('offline.readyNoBasemap', { name: info.name, coverage: formatNumber(info.coverageTiles) }),
+        ),
+      );
+      if (info.failed > 0) parts.push(note(t('offline.failed', { count: info.failed }), 'warning'));
+    }
+    parts.push(
+      h(
+        'div',
+        { class: 'actions' },
+        h(
+          'button',
+          { type: 'button', class: 'btn', dataset: { focus: 'hors-ligne' }, onclick: () => void app.prepareOffline() },
+          icon(ICONS.download, 20),
+          info ? t('offline.update') : t('offline.prepare'),
+        ),
+        info
+          ? h('button', { type: 'button', class: 'btn btn--danger', dataset: { focus: 'hors-ligne-effacer' }, onclick: () => void app.clearOfflineData() }, icon(ICONS.trash, 20), t('offline.clear'))
+          : null,
+      ),
+    );
+  }
+  return section(t('offline.heading'), parts);
 }
 
 // ---------------------------------------------------------------------------

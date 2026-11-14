@@ -819,6 +819,16 @@ input[type="range"] {
   color: var(--c-muted);
 }
 
+.hint--first {
+  margin-top: 0;
+}
+
+.offline-ready {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .country-choice + .country-choice {
   margin-top: 4px;
 }

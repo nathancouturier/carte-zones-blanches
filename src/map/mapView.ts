@@ -58,6 +58,7 @@ export class MapView {
   private zone: GeoJSON.FeatureCollection = EMPTY_COLLECTION;
   private markers: Marker[] = [];
   private cursor: Marker | null = null;
+  private vectorStyle: StyleSpecification | null = null;
   private inputs: StyleInputs | null = null;
 
   constructor(private readonly options: MapViewOptions) {
@@ -116,6 +117,7 @@ export class MapView {
       }
     }
     if (seq !== this.styleSeq) return; // un autre changement est arrivé entre-temps
+    this.vectorStyle = vectorStyle;
     const style = buildStyle({
       basemap: inputs.basemap,
       vectorStyle,
@@ -125,6 +127,11 @@ export class MapView {
       zone: this.zone,
     });
     this.map.setStyle(style, { diff: true });
+  }
+
+  /** Style vectoriel du fond affiché, ou null si le fond est en images. */
+  currentVectorStyle(): StyleSpecification | null {
+    return this.vectorStyle;
   }
 
   /** Redessine la couche réseau après un changement de réglage, sans rien retélécharger. */

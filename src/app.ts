@@ -18,6 +18,7 @@ import {
   type ServiceId,
 } from './coverage/manifest';
 import { registerCoverageProtocol, type CoverageRenderState } from './coverage/protocol';
+import { archiveForTile } from './coverage/manifest';
 import { TileStore, type ArchiveReader } from './coverage/store';
 import { sampleCoverage } from './gpx/analyze';
 import { enrichedFileName, enrichGpx } from './gpx/export';
@@ -25,7 +26,8 @@ import { GpxError, parseGpx } from './gpx/parse';
 import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/report';
 import { resample } from './gpx/resample';
 import { getLanguage, setLanguage, t } from './i18n';
-import { autoBasemap, BASEMAPS, type BasemapChoice, type BasemapId } from './map/basemaps';
+import { autoBasemap, basemapPack, BASEMAPS, type BasemapChoice, type BasemapId } from './map/basemaps';
+import { clearOffline, offlineSupported, prepareOffline, storedCoverageTile, storedTrack } from './offline/manager';
 import { MapView, type Padding } from './map/mapView';
 import { samplesBounds, trackToGeoJson, zoneToGeoJson, EMPTY_COLLECTION } from './map/trackGeojson';
 import {
@@ -51,6 +53,8 @@ export class App {
   private tables: LevelTables = [];
   private renderState: CoverageRenderState | null = null;
   private importSeq = 0;
+  private readArchive: ArchiveReader | null = null;
+  private offlineAbort: AbortController | null = null;
   private moveTimer: ReturnType<typeof setTimeout> | undefined;
   private hooks: AppHooks = { toast: () => undefined, padding: () => ({ top: 40, right: 40, bottom: 40, left: 40 }) };
 
@@ -100,7 +104,7 @@ export class App {
       return;
     }
     const archives = new Map<string, PMTiles>();
-    const read: ArchiveReader = async (file, z, x, y) => {
+    const online: ArchiveReader = async (file, z, x, y) => {
       let archive = archives.get(file);
       if (!archive) {
         archive = new PMTiles(`${DATA_BASE_URL}${file}`);
@@ -108,6 +112,21 @@ export class App {
       }
       return (await archive.getZxy(z, x, y))?.data;
     };
+    // Sans réseau, on sert les tuiles enregistrées par « Préparer le hors ligne ».
+    const read: ArchiveReader = async (file, z, x, y) => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        const stored = await storedCoverageTile(import.meta.env.BASE_URL, z, x, y);
+        if (stored !== undefined) return stored ?? undefined;
+      }
+      try {
+        return await online(file, z, x, y);
+      } catch (error) {
+        const stored = await storedCoverageTile(import.meta.env.BASE_URL, z, x, y);
+        if (stored === undefined) throw error;
+        return stored ?? undefined;
+      }
+    };
+    this.readArchive = online;
     const decoder = createTileDecoder((reason) => console.warn(`Décodage des tuiles en JavaScript : ${reason}`));
     this.tileStore = new TileStore(manifest, read, decoder);
     const network = this.sanitizeNetwork(this.state.network, manifest);
@@ -115,6 +134,8 @@ export class App {
     this.rebuildTables();
     await this.applyStyle();
     this.scheduleViewUpdate();
+    // Sans réseau, on recharge tout seul le tracé préparé pour le hors ligne.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false && !this.state.track) void this.restoreOfflineTrack();
   }
 
   /** Écarte les réglages mémorisés qui ne correspondent plus aux données. */
@@ -276,6 +297,16 @@ export class App {
       fail('gpx.error.read');
       return;
     }
+    await this.importGpxText(xml, file.name, seq);
+  }
+
+  /** Charge et analyse un GPX déjà lu (import d'un fichier, ou tracé enregistré pour le hors ligne). */
+  private async importGpxText(xml: string, fileName: string, seq: number = ++this.importSeq): Promise<void> {
+    const file = { name: fileName };
+    const fail = (key: string, params?: Record<string, string | number>): void => {
+      if (seq !== this.importSeq) return;
+      this.store.set({ trackStatus: this.state.track ? 'ready' : 'error', trackError: { key, params }, panel: 'gpx' });
+    };
     let track: LoadedTrack;
     try {
       const parsed = parseGpx(xml);
@@ -395,6 +426,58 @@ export class App {
     if (!track) return;
     this.mapView.setZone(zoneToGeoJson(track.samples, zone));
     if (zone) this.mapView.fitBounds(zone.bbox, this.hooks.padding(), 16);
+  }
+
+  // -- hors ligne -----------------------------------------------------------
+
+  /** Enregistre dans le navigateur le tracé, sa couverture et le fond affiché, pour un usage sans réseau. */
+  async prepareOffline(): Promise<void> {
+    const { track, manifest, activeBasemap } = this.state;
+    const readArchive = this.readArchive;
+    if (!track || !manifest || !readArchive || !offlineSupported()) return;
+    this.offlineAbort?.abort();
+    const abort = new AbortController();
+    this.offlineAbort = abort;
+    this.store.set({ offline: { ...this.state.offline, status: 'preparing', progress: 0 } });
+    try {
+      const info = await prepareOffline(import.meta.env.BASE_URL, {
+        samples: track.samples,
+        trackName: track.parsed.name ?? track.fileName,
+        gpxText: track.xml,
+        fileName: track.fileName,
+        coverageMaxZoom: manifest.tiles.maxzoom,
+        readCoverageTile: async (z, x, y) => {
+          const archive = archiveForTile(manifest, z, x, y);
+          return archive ? readArchive(archive.file, z, x, y) : undefined;
+        },
+        basemap: basemapPack(activeBasemap, this.mapView.currentVectorStyle()),
+        onProgress: (done, total) => {
+          if (!abort.signal.aborted) this.store.set({ offline: { ...this.state.offline, progress: total > 0 ? done / total : 1 } });
+        },
+        signal: abort.signal,
+      });
+      this.store.set({ offline: { status: 'idle', progress: 1, info } });
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      console.warn('Préparation du hors ligne :', error);
+      this.store.set({ offline: { ...this.state.offline, status: 'error', progress: 0 } });
+    }
+  }
+
+  async clearOfflineData(): Promise<void> {
+    this.offlineAbort?.abort();
+    await clearOffline();
+    this.store.set({ offline: { status: 'idle', progress: 0, info: null } });
+    this.hooks.toast(t('offline.cleared'));
+  }
+
+  /** Recharge le tracé enregistré pour le hors ligne. */
+  async restoreOfflineTrack(): Promise<void> {
+    const stored = await storedTrack(import.meta.env.BASE_URL);
+    if (!stored) return;
+    await this.importGpxText(stored.text, stored.fileName);
+    const name = this.state.track?.parsed.name ?? stored.fileName;
+    if (this.state.track) this.hooks.toast(t('offline.restored', { name }));
   }
 
   // -- export ---------------------------------------------------------------

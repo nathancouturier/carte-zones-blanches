@@ -181,5 +181,21 @@
   "network.allNOperators": "Els {count} operadors alhora",
   "network.atLeastOperators_one": "Almenys {count} operador",
   "network.atLeastOperators_other": "Almenys {count} operadors",
-  "network.thresholdHint": "Aquesta font no indica quin operador dona cobertura. «Els {count} operadors alhora» mostra on tindràs xarxa sigui quin sigui l'operador utilitzat en itinerància."
+  "network.thresholdHint": "Aquesta font no indica quin operador dona cobertura. «Els {count} operadors alhora» mostra on tindràs xarxa sigui quin sigui l'operador utilitzat en itinerància.",
+  "offline.heading": "Sense connexió",
+  "offline.intro": "Desa en aquest navegador la ruta, la seva cobertura i el mapa de fons al llarg del recorregut, per consultar-los sense xarxa.",
+  "offline.prepare": "Prepara aquesta ruta per fer-la servir sense connexió",
+  "offline.update": "Actualitza les dades desades",
+  "offline.preparing": "S'està desant",
+  "offline.ready": "A punt per fer-la servir sense connexió: {name}, {coverage} tessel·les de cobertura i {basemap} tessel·les de fons.",
+  "offline.readyNoBasemap": "A punt per fer-la servir sense connexió: {name}, {coverage} tessel·les de cobertura. El mapa de fons no s'ha desat.",
+  "offline.basemapNotAllowed": "El fons «{name}» no es pot desar per endavant: el proveïdor no ho permet. Tria un altre fons abans de preparar la ruta.",
+  "offline.failed_one": "No s'ha pogut desar {count} element del fons.",
+  "offline.failed_other": "No s'han pogut desar {count} elements del fons.",
+  "offline.clear": "Esborra les dades sense connexió",
+  "offline.cleared": "Dades sense connexió esborrades",
+  "offline.error": "No s'ha pogut desar. Comprova la connexió i l'espai disponible.",
+  "offline.unsupported": "Aquest navegador no permet el mode sense connexió.",
+  "offline.restored": "Ruta sense connexió recuperada: {name}",
+  "offline.resume": "Recupera la ruta desada: {name}"
 }

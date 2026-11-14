@@ -181,5 +181,21 @@
   "network.allNOperators": "Tutti e {count} gli operatori",
   "network.atLeastOperators_one": "Almeno {count} operatore",
   "network.atLeastOperators_other": "Almeno {count} operatori",
-  "network.thresholdHint": "Questa fonte non indica quale operatore copre. «Tutti e {count} gli operatori» mostra dove avrai rete qualunque sia l'operatore usato in roaming."
+  "network.thresholdHint": "Questa fonte non indica quale operatore copre. «Tutti e {count} gli operatori» mostra dove avrai rete qualunque sia l'operatore usato in roaming.",
+  "offline.heading": "Offline",
+  "offline.intro": "Salva in questo browser il percorso, la sua copertura e la mappa di sfondo lungo il tragitto, per consultarli senza rete.",
+  "offline.prepare": "Prepara questo percorso per l'uso offline",
+  "offline.update": "Aggiorna i dati salvati",
+  "offline.preparing": "Salvataggio in corso",
+  "offline.ready": "Pronto per l'uso offline: {name}, {coverage} tessere di copertura e {basemap} tessere di sfondo.",
+  "offline.readyNoBasemap": "Pronto per l'uso offline: {name}, {coverage} tessere di copertura. La mappa di sfondo non è stata salvata.",
+  "offline.basemapNotAllowed": "Lo sfondo «{name}» non può essere salvato in anticipo: il fornitore non lo consente. Scegli un altro sfondo prima di preparare il percorso.",
+  "offline.failed_one": "Non è stato possibile salvare {count} elemento dello sfondo.",
+  "offline.failed_other": "Non è stato possibile salvare {count} elementi dello sfondo.",
+  "offline.clear": "Elimina i dati offline",
+  "offline.cleared": "Dati offline eliminati",
+  "offline.error": "Salvataggio non riuscito. Controlla la connessione e lo spazio disponibile.",
+  "offline.unsupported": "Questo browser non supporta la modalità offline.",
+  "offline.restored": "Percorso offline ricaricato: {name}",
+  "offline.resume": "Riprendi il percorso salvato: {name}"
 }

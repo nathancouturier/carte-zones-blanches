@@ -5,6 +5,7 @@ import type { ParsedGpx } from './gpx/parse';
 import type { Report, TrackAnalysis } from './gpx/report';
 import type { Sample } from './gpx/resample';
 import { DEFAULT_BASEMAP, isBasemapChoice, type BasemapChoice, type BasemapId } from './map/basemaps';
+import { offlineInfo, type OfflineInfo } from './offline/manager';
 
 export type PanelId = 'network' | 'basemap' | 'gpx' | 'report' | 'settings' | 'sources';
 
@@ -36,6 +37,14 @@ export interface LoadedTrack {
 
 export type TrackStatus = 'idle' | 'reading' | 'analyzing' | 'ready' | 'error';
 
+export interface OfflineState {
+  status: 'idle' | 'preparing' | 'error';
+  /** Avancement de l'enregistrement, de 0 à 1. */
+  progress: number;
+  /** Tracé déjà préparé pour le hors ligne, s'il y en a un. */
+  info: OfflineInfo | null;
+}
+
 export interface AppState {
   panel: PanelId | null;
   network: NetworkSettings;
@@ -54,6 +63,7 @@ export interface AppState {
   selectedZone: number | null;
   /** Codes ISO des pays dont des données sont visibles à l'écran. */
   visibleCountries: string[];
+  offline: OfflineState;
 }
 
 const NETWORK_KEY = 'czb.reseau';
@@ -129,6 +139,7 @@ export function initialState(): AppState {
     trackError: null,
     selectedZone: null,
     visibleCountries: [],
+    offline: { status: 'idle', progress: 0, info: offlineInfo() },
   };
 }
 
