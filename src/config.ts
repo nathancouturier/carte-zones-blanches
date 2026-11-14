@@ -20,6 +20,13 @@ export const TILE_READ_TIMEOUT_MS = 20_000;
  */
 export const COVERAGE_DISPLAY_MAX_ZOOM = 16;
 
+/**
+ * Délai maximal de téléchargement du style vectoriel du Plan IGN, en millisecondes.
+ * En attendant, la carte montre le Plan IGN en images, avec la couche réseau et le
+ * tracé ; au-delà, elle le garde et le dit.
+ */
+export const VECTOR_STYLE_TIMEOUT_MS = 8000;
+
 /** Vue de départ : la France métropolitaine. */
 export const INITIAL_VIEW = { center: [2.6, 46.5] as [number, number], zoom: 5.2 };
 /** Emprise utile de la carte : ouest, sud, est, nord. */
@@ -78,6 +85,12 @@ export const SAMPLING_CONCURRENCY = 6;
 export const SEARCH_MIN_CHARS = 3;
 export const SEARCH_DEBOUNCE_MS = 350;
 export const SEARCH_MAX_RESULTS = 6;
+/**
+ * Délai maximal de réponse de chaque service de recherche, en millisecondes.
+ * Au-delà, ses lieux manquent et la liste le dit ; les résultats de l'autre
+ * service, eux, s'affichent dès leur arrivée.
+ */
+export const SEARCH_TIMEOUT_MS = 5000;
 /** Géocodage de la Géoplateforme (IGN) : autocomplétion, France. */
 export const IGN_COMPLETION_URL = 'https://data.geopf.fr/geocodage/completion';
 /** Photon (komoot), basé sur OpenStreetMap : pour les lieux hors de France. */

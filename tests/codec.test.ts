@@ -106,6 +106,29 @@ describe('lecture du manifest', () => {
     expect(() => parseManifest(reserved)).toThrow(/réservé/);
   });
 
+  it('lit les mentions facultatives : contour du pays, lien du logo de licence ; adresses https seulement', () => {
+    const base = JSON.parse(JSON.stringify(sampleManifest()));
+    base.countries[0].boundary = { text: "Contours administratifs, data.gouv.fr (licence ODbL), d'après ADMIN EXPRESS de l'IGN", url: 'https://www.data.gouv.fr/datasets/contours-administratifs' };
+    base.countries[1].boundary = { text: '©swisstopo, swissBOUNDARIES3D', url: 'javascript:alert(1)' };
+    base.countries[2].boundary = { url: 'https://exemple.test/' }; // sans texte : ignorée
+    Object.assign(base.countries[0].sources[0], {
+      url: 'http://exemple.test/en-clair',
+      licenceUrl: 'https://www.data.gouv.fr/pages/legal/licences/etalab-2-0',
+      licenceLogo: 'licences/agcom-bbmap.jpg',
+      licenceLogoUrl: 'https://maps.agcom.it/',
+    });
+    Object.assign(base.countries[1].sources[0], { licenceLogo: 'licences/logo.png', licenceLogoUrl: 'data:text/html,<p>' });
+    const [france, suisse, andorre] = parseManifest(base).countries;
+    expect(france.boundary).toEqual(base.countries[0].boundary);
+    expect(suisse.boundary).toEqual({ text: '©swisstopo, swissBOUNDARIES3D' }); // le texte reste, sans lien
+    expect(andorre.boundary).toBeUndefined();
+    expect(france.sources[0].url).toBeUndefined(); // page en clair : pas de lien
+    expect(france.sources[0].licenceUrl).toBe('https://www.data.gouv.fr/pages/legal/licences/etalab-2-0');
+    expect(france.sources[0].licenceLogoUrl).toBe('https://maps.agcom.it/');
+    expect(suisse.sources[0].licenceLogo).toBe('licences/logo.png');
+    expect(suisse.sources[0].licenceLogoUrl).toBeUndefined();
+  });
+
   it('nomme les emplacements : opérateur ou seuil', () => {
     const [france, suisse] = sampleManifest().countries;
     setLanguage('fr');

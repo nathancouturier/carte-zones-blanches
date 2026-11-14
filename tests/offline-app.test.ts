@@ -34,6 +34,9 @@ vi.mock('../src/map/mapView', () => ({
     viewSamplePoints(): { lon: number; lat: number }[] {
       return [{ lon: map.view.lon, lat: map.view.lat }];
     }
+    viewBounds(): [number, number, number, number] {
+      return [map.view.lon, map.view.lat, map.view.lon, map.view.lat];
+    }
     dataZoom(min: number, max: number): number {
       return Math.max(min, Math.min(max, Math.round(map.view.zoom + 1)));
     }

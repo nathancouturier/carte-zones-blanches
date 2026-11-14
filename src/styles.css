@@ -572,6 +572,24 @@ input[type="range"] {
   cursor: pointer;
 }
 
+/* Chevron des sections repliables (« display: flex » masque le triangle du navigateur). */
+.details > summary::after {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px 4px auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.details[open] > summary::after {
+  margin-bottom: 0;
+  margin-top: 4px;
+  transform: rotate(-135deg);
+}
+
 .legend {
   list-style: none;
   margin: 0;
@@ -706,6 +724,11 @@ input[type="range"] {
   border-radius: 4px;
 }
 
+/* Logo en lien : le contour du focus suit l'image. */
+.licence-logo__link {
+  display: inline-block;
+}
+
 .facts dd small {
   font-weight: 400;
   color: var(--c-muted);
@@ -719,6 +742,16 @@ input[type="range"] {
 
 .facts--stacked dd {
   font-weight: 400;
+}
+
+/* Panneau Sources : l'intitulé au-dessus de sa valeur, qui prend toute la largeur (mentions longues). */
+.facts--stacked > div {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.facts--stacked > div + div {
+  margin-top: 6px;
 }
 
 .stats {
@@ -929,6 +962,11 @@ input[type="range"] {
   display: block;
 }
 
+/* Mention d'un fond : sa forme courte sur téléphone, sa forme complète sur ordinateur. */
+.credit-long {
+  display: none;
+}
+
 @media (min-width: 900px) {
   .attribution {
     max-width: 42vw;
@@ -940,6 +978,14 @@ input[type="range"] {
 
   .attribution__text {
     display: block;
+  }
+
+  .credit-long {
+    display: inline;
+  }
+
+  .credit-short {
+    display: none;
   }
 }
 
@@ -1039,11 +1085,6 @@ input[type="range"] {
 .maplibregl-ctrl-group button {
   width: 44px;
   height: 44px;
-}
-
-/* Le bouton « Ma position » est dans la barre du haut : celui de MapLibre est masqué. */
-.maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) {
-  display: none;
 }
 
 @media (pointer: coarse) {

@@ -52,6 +52,8 @@ export interface ManifestSource {
   licenceNotice?: string;
   /** Logo que la licence demande d'afficher : chemin d'un fichier du site, relatif à sa racine. */
   licenceLogo?: string;
+  /** Adresse vers laquelle le logo de licence renvoie (https). */
+  licenceLogoUrl?: string;
   /** Mention courte pour le pied de carte. */
   attribution: string;
   /** Services fournis par cette source. */
@@ -82,6 +84,8 @@ export interface ManifestCountry {
   slots: ManifestSlot[];
   /** Noms des opérateurs du pays, quand la source ne les distingue pas. */
   operators?: string[];
+  /** Mention du contour du pays (source et licence), à afficher telle quelle, avec un lien éventuel (https). */
+  boundary?: { text: string; url?: string };
   sources: ManifestSource[];
 }
 
@@ -140,6 +144,19 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function str(value: unknown, where: string): string {
   if (typeof value !== 'string' || value === '') fail(`${where} doit être une chaîne non vide`);
   return value;
+}
+
+/**
+ * Adresse https lue dans le manifest, ou undefined : le site ne fait de liens que
+ * vers des pages https (jamais « javascript: », ni une page en clair).
+ */
+export function httpsUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    return new URL(value).protocol === 'https:' ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function int(value: unknown, where: string, min: number, max: number): number {
@@ -246,12 +263,16 @@ export function parseManifest(raw: unknown): Manifest {
         perOperator: s.perOperator,
       };
       if (levelMap) source.levelMap = levelMap;
-      if (typeof s.url === 'string') source.url = s.url;
-      if (typeof s.licenceUrl === 'string') source.licenceUrl = s.licenceUrl;
+      const url = httpsUrl(s.url);
+      if (url) source.url = url;
+      const licenceUrl = httpsUrl(s.licenceUrl);
+      if (licenceUrl) source.licenceUrl = licenceUrl;
       if (typeof s.licenceNotice === 'string' && s.licenceNotice !== '') source.licenceNotice = s.licenceNotice;
       // Un chemin simple à l'intérieur du site : jamais une adresse externe.
       if (typeof s.licenceLogo === 'string' && /^[a-z0-9][a-z0-9/_.-]*\.(?:png|jpe?g|svg|webp)$/i.test(s.licenceLogo) && !s.licenceLogo.includes('..')) {
         source.licenceLogo = s.licenceLogo;
+        const logoUrl = httpsUrl(s.licenceLogoUrl);
+        if (logoUrl) source.licenceLogoUrl = logoUrl;
       }
       if (isObject(s.technology)) source.technology = s.technology as Partial<Record<ServiceId, string>>;
       if (typeof s.resolutionM === 'number') source.resolutionM = s.resolutionM;
@@ -264,6 +285,11 @@ export function parseManifest(raw: unknown): Manifest {
         fail(`countries[${i}].operators doit être une liste de noms`);
       }
       country.operators = c.operators as string[];
+    }
+    // Facultatif : une mention mal formée est ignorée, elle ne rend pas les données illisibles.
+    if (isObject(c.boundary) && typeof c.boundary.text === 'string' && c.boundary.text !== '') {
+      const url = httpsUrl(c.boundary.url);
+      country.boundary = url ? { text: c.boundary.text, url } : { text: c.boundary.text };
     }
     return country;
   });

@@ -191,6 +191,42 @@ describe('enregistrement des fonds, au rythme de chaque fournisseur', () => {
     expect(info.complete).toBe(true);
   });
 
+  it('sur 429, plus aucune requête de ce fond avant la fin de l\'attente demandée, même une requête déjà prévue', async () => {
+    let refus: number | null = null;
+    stubNetwork((_url, attempt) => {
+      if (refus === null && attempt === 1) {
+        refus = Date.now();
+        return new Response('', { status: 429, headers: { 'retry-after': '1' } });
+      }
+      return new Response('tuile');
+    });
+    const samples = line(7.0, 46.0, 120);
+    // Deux requêtes simultanées, 4 par seconde : la seconde est prévue 250 ms après la première, refusée.
+    const info = await prepare([{ pack: pack('swisstopo', { maxTiles: 6, concurrency: 2, perSecond: 4 }), samples, countries: [] }]);
+    expect(refus).not.toBeNull();
+    const pendantAttente = requests.slice(1).filter((r) => r.at < refus! + 1000 - 5);
+    expect(pendantAttente.map((r) => r.at - refus!)).toEqual([]);
+    expect(info.basemaps[0].stored).toBe(info.basemaps[0].total);
+  });
+
+  it('l\'écart entre deux requêtes se mesure à leur départ réel : une minuterie en retard ne les rapproche pas', async () => {
+    // La deuxième réponse bloque la page 60 ms (calcul, rendu) : les minuteries prévues pendant ce temps partent en retard.
+    stubNetwork((url) => {
+      if (url === requests[1]?.url) {
+        const fin = Date.now() + 60;
+        while (Date.now() < fin) {
+          // page occupée
+        }
+      }
+      return new Response('tuile');
+    });
+    const samples = line(7.0, 46.0, 120);
+    await prepare([{ pack: pack('swisstopo', { maxTiles: 8, concurrency: 2, perSecond: 40 }), samples, countries: [] }]);
+    expect(requests.length).toBeGreaterThan(3);
+    const gaps = requests.slice(1).map((r, i) => r.at - requests[i].at);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(24); // 40 par seconde : 25 ms d'écart au moins
+  });
+
   it('ne demande rien à un fournisseur qui ne le permet pas, ni à tile.openstreetmap.org', async () => {
     stubNetwork();
     const samples = line(7.0, 46.0, 50);

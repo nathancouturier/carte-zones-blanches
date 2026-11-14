@@ -62,6 +62,9 @@ async function fetchManifest(cache: RequestCache, signal?: AbortSignal): Promise
   return parseManifest(await response.json());
 }
 
+/** Centre de la carte hors des données (aucun pays couvert). */
+const OUTSIDE_DATA = 'hors';
+
 export interface AppHooks {
   /** Affiche un message bref. */
   toast: (message: string) => void;
@@ -85,6 +88,10 @@ export class App {
   private offlineAbort: AbortController | null = null;
   /** Vrai quand le manifest est la copie enregistrée avec le tracé (réseau absent ou trop lent). */
   private dataFromLocalCopy = false;
+  /** Pays au centre de la carte : code ISO, OUTSIDE_DATA hors des données, null tant qu'on ne sait pas. */
+  private centerCountry: string | null = null;
+  /** Numéro de la dernière mise à jour de la vue : une lecture dépassée par un mouvement plus récent est ignorée. */
+  private viewSeq = 0;
   private moveTimer: ReturnType<typeof setTimeout> | undefined;
   private hooks: AppHooks = { toast: () => undefined, padding: () => ({ top: 40, right: 40, bottom: 40, left: 40 }) };
 
@@ -100,12 +107,14 @@ export class App {
         'Map.Title': t('app.mapLabel'),
         'NavigationControl.ZoomIn': t('action.zoomIn'),
         'NavigationControl.ZoomOut': t('action.zoomOut'),
+        // Nom du point qui montre la position de l'utilisateur.
         'GeolocateControl.FindMyLocation': t('action.locate'),
-        'GeolocateControl.LocationNotAvailable': t('locate.error'),
       }),
       onMoveEnd: () => this.scheduleViewUpdate(),
-      onLocateError: () => this.hooks.toast(t('locate.error')),
-      onStyleFallback: () => this.hooks.toast(t('basemap.fallback')),
+      // Un message par cause : refus d'autorisation, position indisponible, GPS qui cherche encore.
+      onLocateError: (problem) => this.hooks.toast(t(`locate.${problem}`)),
+      padding: () => this.hooks.padding(),
+      onStyleFallback: (_basemap, reason) => this.hooks.toast(t(reason === 'refused' ? 'basemap.styleRefused' : 'basemap.fallback')),
     });
     // Le mode Auto revoit son choix quand le réseau va et vient (fonds enregistrés seulement, sans réseau).
     globalThis.addEventListener?.('online', () => this.scheduleViewUpdate());
@@ -331,8 +340,12 @@ export class App {
     const { manifest } = this.state;
     const store = this.tileStore;
     if (!manifest || !store) return;
+    const seq = ++this.viewSeq;
     const zoom = this.mapView.dataZoom(manifest.tiles.minzoom, manifest.tiles.maxzoom);
     const points = this.mapView.viewSamplePoints();
+    // Ce que la carte affiche, lu dans toutes les tuiles de la vue : les mentions du pied de carte
+    // en dépendent, et un petit pays (Monaco) peut tenir entre les points ci-dessous.
+    const shown = store.metaInBounds(this.mapView.viewBounds(), zoom).catch(() => [] as number[]);
     // undefined : la lecture a échoué (réseau) ; null : pas de données à cet endroit.
     let pixels: (Awaited<ReturnType<TileStore['sample']>> | undefined)[];
     try {
@@ -345,20 +358,31 @@ export class App {
       return countryByCode(manifest, unpackCountry(pixel[2]))?.iso ?? null;
     };
     const countries = pixels.map(isoAt);
-    const visible = [...new Set(countries.filter((iso): iso is string => iso !== null))];
-    const patch: Partial<AppState> = {};
+    // Pays au centre, quel que soit le fond : il décide de l'ordre des résultats de recherche.
+    if (pixels[0] !== undefined) this.centerCountry = countries[0] ?? OUTSIDE_DATA;
     const current = this.state;
-    if (visible.join() !== current.visibleCountries.join()) patch.visibleCountries = visible;
     // Mode Auto : le fond national du pays au centre de la carte, le fond OpenStreetMap hors des
     // données. Si la lecture du centre a échoué, on ne sait rien : le fond affiché reste.
     // Sans réseau, on ne passe qu'à un fond enregistré.
     if (current.basemap.choice === 'auto' && pixels[0] !== undefined) {
       const wanted = autoBasemapForView(countries[0], countries.slice(1));
-      if (wanted !== current.activeBasemap && this.basemapUsable(wanted)) patch.activeBasemap = wanted;
+      if (wanted !== current.activeBasemap && this.basemapUsable(wanted)) {
+        this.store.set({ activeBasemap: wanted });
+        void this.applyStyle();
+      }
     }
-    if (Object.keys(patch).length === 0) return;
-    this.store.set(patch);
-    if (patch.activeBasemap) void this.applyStyle();
+    // Pays dont des données sont à l'écran (pied de carte, panneau Sources) : le pays au centre
+    // d'abord, puis les autres dans l'ordre du manifest.
+    const metas = await shown;
+    if (seq !== this.viewSeq || store !== this.tileStore) return; // la carte a bougé entre-temps
+    const found = new Set(countries.filter((iso): iso is string => iso !== null));
+    for (const meta of metas) {
+      const iso = countryByCode(manifest, unpackCountry(meta))?.iso;
+      if (iso) found.add(iso);
+    }
+    const others = manifest.countries.map((country) => country.iso).filter((iso) => found.has(iso) && iso !== countries[0]);
+    const visible = countries[0] && found.has(countries[0]) ? [countries[0], ...others] : others;
+    if (visible.join() !== this.state.visibleCountries.join()) this.store.set({ visibleCountries: visible });
   }
 
   /** Sans réseau (ou presque), le mode Auto ne bascule que vers un fond enregistré pour le hors ligne. */
@@ -720,10 +744,12 @@ export class App {
     else this.mapView.flyTo(place.lon, place.lat, place.zoom, this.hooks.padding());
   }
 
-  /** Vrai si le centre de la carte est hors de France (pour l'ordre des résultats de recherche). */
+  /**
+   * Vrai si le centre de la carte est hors de France (pour l'ordre des résultats de recherche :
+   * l'IGN ne couvre que la France, Photon l'étranger). Lu dans les données, quel que soit le fond.
+   */
   centerIsAbroad(): boolean {
-    const active = this.state.activeBasemap;
-    return this.state.basemap.choice === 'auto' && BASEMAPS[active].id !== 'ign-classique';
+    return this.centerCountry !== null && this.centerCountry !== 'FR';
   }
 
   language(): string {

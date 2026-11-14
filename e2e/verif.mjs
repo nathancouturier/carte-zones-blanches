@@ -118,6 +118,12 @@ try {
     controle('fr : titre', (await page.title()) === 'Carte des zones blanches', await page.title());
     if (!HORS_LIGNE) controle('fr : fond Plan IGN chargé', ok(suivi, 'data.geopf.fr') >= 4, `${ok(suivi, 'data.geopf.fr')} réponses de data.geopf.fr`);
     controle('fr : manifest et tuiles de couverture lus', suivi.manifest >= 1 && suivi.archives >= 1, `manifest lu ${suivi.manifest} fois, ${suivi.archives} lectures dans les archives PMTiles`);
+    // La mention du fond est un lien vers ses conditions, ouvert dans un nouvel onglet (carte-4).
+    const lienFond = await page.evaluate(() => {
+      const a = document.querySelector('.attribution a[href="https://cartes.gouv.fr/cgu/"]');
+      return a ? `${a.textContent} | ${a.target} | ${a.rel} | ${a.getClientRects().length > 0 ? 'visible' : 'caché'}` : 'aucun lien';
+    });
+    controle('fr : la mention du fond renvoie vers ses conditions d\'utilisation', lienFond === '© IGN | _blank | noopener noreferrer | visible', lienFond);
     await capture(page, '1-ordinateur-fr-carte');
 
     // Clavier : le focus va sur le titre du panneau ouvert, puis revient à son bouton à la fermeture.
@@ -483,7 +489,7 @@ try {
     const { contexte, page, suivi } = await ouvrir(navigateur, { ...telephone, ...position }, '#10/44.9/6.45', async (c) => {
       await c.route(/data\.geopf\.fr\/geocodage\/completion/, (route) => {
         const q = (new URL(route.request().url()).searchParams.get('text') ?? '').toLowerCase();
-        setTimeout(() => route.fulfill({ json: { status: 'OK', results: lieux(q).map((l) => ({ ...l, kind: 'municipality' })) } }).catch(() => undefined), 300);
+        setTimeout(() => route.fulfill({ json: { status: 'OK', results: lieux(q).map((l) => ({ ...l, country: 'StreetAddress', kind: 'municipality' })) } }).catch(() => undefined), 300);
       });
       await c.route(/photon\.komoot\.io/, (route) => route.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
     });
@@ -507,9 +513,22 @@ try {
     await page.tap('.topbar button[aria-label="Ma position"]');
     await page.waitForTimeout(2500);
     controle('interface : « Ma position » appuyé deux fois garde la position affichée', (await page.locator('.maplibregl-user-location-dot').count()) === 1);
+    // Le point suit la marche sans déplacer la carte ; un appui recentre la carte sur lui (carte-5).
+    const surEcran = () => page.evaluate(() => {
+      const r = document.querySelector('.maplibregl-user-location-dot')?.getBoundingClientRect();
+      return r ? `${Math.round(r.left)},${Math.round(r.top)}` : 'absent';
+    });
+    const avantPas = { vue: await page.evaluate(() => location.hash), point: await surEcran() };
+    await contexte.setGeolocation({ latitude: 44.9006, longitude: 6.4208, accuracy: 15 });
+    await page.waitForTimeout(1500);
+    const apresPas = { vue: await page.evaluate(() => location.hash), point: await surEcran() };
+    controle('interface : le point de « Ma position » suit la marche sans déplacer la carte', apresPas.vue === avantPas.vue && apresPas.point !== avantPas.point && apresPas.point !== 'absent', `${avantPas.vue} ${avantPas.point} puis ${apresPas.vue} ${apresPas.point}`);
+    await page.tap('.topbar button[aria-label="Ma position"]');
+    await page.waitForTimeout(2000);
+    const [, latPos, lonPos] = (await page.evaluate(() => location.hash)).slice(1).split('/').map(Number);
+    controle('interface : un appui sur « Ma position » recentre la carte sur le point', Math.abs(latPos - 44.9006) < 0.003 && Math.abs(lonPos - 6.4208) < 0.003, `${latPos}, ${lonPos}`);
 
     // Rapport : le tracé reste visible au-dessus du panneau, qui se réduit à son titre pour montrer la carte.
-    // Avant toute recherche : le recentrage sur un lieu laisse pour l'instant une marge à la carte (défaut à part).
     await importer(page, gpx('test-alpes.gpx'));
     const reperes = () =>
       page.evaluate(() => {
@@ -544,10 +563,47 @@ try {
     const [, latitude] = (await page.evaluate(() => location.hash)).slice(1).split('/').map(Number);
     controle('interface : Entrée dans la recherche choisit le lieu de la saisie complète', Math.abs(latitude - 45.45) < 0.05, `latitude ${latitude}`);
 
+    // Après un lieu choisi dans la recherche, les cadrages suivants restent justes (carte-1) : le tracé
+    // importé est au-dessus du rapport, et un appui sur une zone blanche zoome dessus.
+    await importer(page, gpx('test-alpes.gpx'));
+    const apresRecherche = await reperes();
+    controle('interface : après une recherche, le tracé importé est cadré au-dessus du rapport', apresRecherche.length === 2 && apresRecherche.every(Boolean), JSON.stringify(apresRecherche));
+    if (await page.locator('.zone').count()) {
+      const zoom = (hash) => Number(hash.slice(1).split('/')[0]);
+      const avantZone = await page.evaluate(() => location.hash);
+      await page.locator('.zone').first().tap();
+      await page.waitForTimeout(2500);
+      const apresZone = await page.evaluate(() => location.hash);
+      controle('interface : après une recherche, un appui sur une zone blanche zoome dessus', zoom(apresZone) > zoom(avantZone), `${avantZone} puis ${apresZone}`);
+    }
+    await page.tap('.icon-btn[data-role="close"]');
+
+    // Photon lent : les lieux de l'IGN s'affichent sans l'attendre, une ligne dit que la recherche continue,
+    // puis, le délai passé, que les lieux hors de France manquent (recherche-2) ; le type d'adresse est traduit (recherche-5).
+    const photonLent = (route) => setTimeout(() => route.fulfill({ json: { type: 'FeatureCollection', features: [] } }).catch(() => undefined), 20000);
+    await contexte.route(/photon\.komoot\.io/, photonLent);
+    await page.tap('button[aria-label="Rechercher un lieu"]');
+    await page.type('.search__input', 'Brides');
+    const sansAttendre = await page.waitForSelector('.search__item', { timeout: 3000 }).then(() => true, () => false);
+    const pendant = sansAttendre ? await page.locator('.search__results').innerText() : '';
+    await page.waitForTimeout(5500);
+    const apres = await page.locator('.search__results').innerText();
+    controle(
+      'interface : recherche, lieux de l\'IGN affichés sans attendre Photon, puis son absence dite',
+      sansAttendre && pendant.includes('Recherche en cours') && !apres.includes('Recherche en cours') && apres.includes('La recherche hors de France est indisponible pour le moment'),
+      `${pendant.replace(/\n/g, ' / ')} || ${apres.replace(/\n/g, ' / ')}`,
+    );
+    const detail = await page.locator('.search__detail').first().textContent().catch(() => '');
+    controle('interface : recherche, type d\'adresse traduit', detail === 'Commune', detail ?? '');
+    await contexte.unroute(/photon\.komoot\.io/, photonLent);
+    await page.tap('button[aria-label="Rechercher un lieu"]'); // referme la recherche
+
     // Un panneau qui s'ouvre ferme la recherche, dont les résultats le recouvriraient.
     await page.tap('button[aria-label="Rechercher un lieu"]');
     await page.type('.search__input', 'Bri');
     await page.waitForSelector('.search__item', { timeout: 10000 });
+    const credits = await page.evaluate(() => [...document.querySelectorAll('.search__credits a')].map((a) => `${a.textContent} ${a.getAttribute('href')} ${a.target}`).join(' | '));
+    controle('interface : les crédits de la recherche renvoient vers la licence d\'OpenStreetMap', credits === 'OpenStreetMap https://www.openstreetmap.org/copyright _blank', credits);
     await page.tap('.tool[data-panel="network"]');
     await page.waitForTimeout(500);
     controle('interface : ouvrir un panneau ferme la recherche', await page.locator('.search').isHidden());
@@ -565,6 +621,12 @@ try {
     await page.tap('.tool[data-panel="basemap"]');
     const auto = (await page.locator('.radio:has(input[value="auto"]) small').textContent()) ?? '';
     await page.tap('.icon-btn[data-role="close"]');
+    // Mention du fond OpenStreetMap : forme courte sur téléphone, avec les liens demandés par OpenTopoMap (carte-4).
+    const mentionOsm = await page.evaluate(() => {
+      const courte = document.querySelector('.attribution .credit-short');
+      return courte ? `${courte.textContent} | ${[...courte.querySelectorAll('a')].map((a) => a.getAttribute('href')).join(' ')}` : '';
+    });
+    controle('interface : mention du fond OpenStreetMap avec ses liens', mentionOsm === '© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA) | https://openstreetmap.org/copyright http://opentopomap.org https://creativecommons.org/licenses/by-sa/3.0/', mentionOsm);
     await page.evaluate(() => (location.hash = '#10/44.9/6.45'));
     await page.waitForTimeout(2500);
     await page.tap('.tool[data-panel="basemap"]');
@@ -573,6 +635,125 @@ try {
     controle('interface : fond Auto hors des données, fond OpenStreetMap', /OpenTopoMap/.test(auto) && /Plan IGN/.test(retour), `${auto} | ${retour}`);
 
     controle('interface : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 2g. Téléphone, français : style du Plan IGN sans réponse, puis refusé (réponses simulées) --
+  // Le Plan IGN en images s'affiche tout de suite avec la couche réseau ; le délai passé, ou le style
+  // refusé par la carte, un message le dit (carte-2).
+  {
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const invalide = { version: 8, sources: {}, layers: [{ id: 'noms', type: 'symbol', source: 'absente', layout: { 'text-field': 'x' } }] };
+    for (const [cas, repondre, attendu] of [
+      ['style sans réponse', () => undefined, /Le style du Plan IGN est injoignable/],
+      ['style refusé par la carte', (route) => route.fulfill({ json: invalide, headers: { 'access-control-allow-origin': '*' } }), /Le style du Plan IGN n'a pas pu être lu/],
+    ]) {
+      let images = 0;
+      const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42', async (c) => {
+        await c.addInitScript(() => localStorage.setItem('czb.fond', JSON.stringify({ choice: 'ign-classique', hillshade: false })));
+        await c.route(/PLAN\.IGN\/classique\.json/, repondre);
+        await c.route(/data\.geopf\.fr\/wmts\?.*PLANIGNV2/, (route) => {
+          images += 1;
+          route.fulfill({ status: 200, contentType: 'image/png', body: image, headers: { 'access-control-allow-origin': '*' } });
+        });
+        await c.addInitScript(() => {
+          window.messagesVus = [];
+          new MutationObserver(() => {
+            const toast = document.querySelector('.toast');
+            if (toast && !toast.hidden && !window.messagesVus.includes(toast.textContent)) window.messagesVus.push(toast.textContent);
+          }).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+        });
+      });
+      // ouvrir() a déjà attendu 6 s : le Plan IGN en images et la couverture sont là, le style vectoriel non.
+      const tot = { images, archives: suivi.archives };
+      await page.waitForTimeout(4000);
+      const messages = await page.evaluate(() => window.messagesVus.join(' | '));
+      controle(`style : ${cas}, Plan IGN en images et couche réseau sans attendre, puis message`, tot.images > 0 && tot.archives > 0 && attendu.test(messages), `${tot.images} images du Plan IGN, ${tot.archives} lectures de couverture, message : ${messages || 'aucun'}`);
+      controle(`style : ${cas}, aucune erreur JavaScript`, suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+      await contexte.close();
+    }
+  }
+
+  // --- 2h. Téléphone, français : « Ma position » avec une géolocalisation simulée (carte-5) ----
+  // Un message par cause d'échec, suivi arrêté quand la page est cachée, et un cadrage commandé par
+  // le site (import d'un GPX) jamais annulé par la position qui arrive ensuite.
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#12/44.9/6.42', (c) =>
+      c.addInitScript(() => {
+        const suivis = new Map();
+        let numero = 0;
+        window.gps = {
+          erreur: (code) => [...suivis.values()].forEach((s) => s.erreur?.({ code, message: 'simulée', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 })),
+          position: (lat, lon, accuracy) => [...suivis.values()].forEach((s) => s.succes({ coords: { latitude: lat, longitude: lon, accuracy }, timestamp: Date.now() })),
+          actifs: () => suivis.size,
+        };
+        Object.defineProperty(navigator, 'geolocation', {
+          configurable: true,
+          value: {
+            watchPosition: (succes, erreur) => (suivis.set(++numero, { succes, erreur }), numero),
+            getCurrentPosition: () => undefined,
+            clearWatch: (id) => suivis.delete(id),
+          },
+        });
+      }),
+    );
+    const bouton = '.topbar button[aria-label="Ma position"]';
+    const messages = [];
+    for (const [code, attendu] of [[1, /^Localisation refusée/], [2, /^Position indisponible pour le moment/], [3, /^Le GPS cherche encore votre position/]]) {
+      await page.tap(bouton);
+      await page.waitForTimeout(300);
+      await page.evaluate((c) => window.gps.erreur(c), code);
+      await page.waitForTimeout(500);
+      const vu = await page.evaluate(() => document.querySelector('.toast')?.textContent ?? '');
+      messages.push(attendu.test(vu) ? 'ok' : vu || 'aucun message');
+    }
+    controle('position : un message par cause (refus, position indisponible, délai dépassé)', messages.every((m) => m === 'ok'), messages.join(' | '));
+    const actifs = () => page.evaluate(() => window.gps.actifs());
+    const visibilite = (etat) =>
+      page.evaluate((e) => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => e });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, etat);
+    const avant = await actifs();
+    await visibilite('hidden');
+    const cache = await actifs();
+    await visibilite('visible');
+    const retour = await actifs();
+    controle('position : suivi arrêté quand la page est cachée, repris à son retour', avant === 1 && cache === 0 && retour === 1, `${avant} suivi, ${cache} page cachée, ${retour} au retour`);
+    await page.tap(bouton); // le GPS cherche encore : la carte attend le point
+    await importer(page, TRACE_FRANCE);
+    const cadrage = await page.evaluate(() => location.hash);
+    await page.evaluate(() => window.gps.position(44.92, 6.3, 25));
+    await page.waitForTimeout(1500);
+    const ensuite = await page.evaluate(() => location.hash);
+    const point = await page.locator('.maplibregl-user-location-dot').count();
+    controle('position : le cadrage d\'un GPX importé n\'est pas annulé par la position arrivée ensuite', ensuite === cadrage && point === 1, `${cadrage} puis ${ensuite}, ${point} point`);
+    controle('position : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 2i. Ordinateur, français : chaque source de données à l'écran est créditée en pied de carte ---
+  // Les mentions suivent ce que la carte affiche, lu dans toutes les tuiles de la vue : un pays visible
+  // entre les points de la vue (l'Italie au bord d'une vue des Alpes, Monaco à côté du centre) compte aussi.
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '#7/45.3/6.5');
+    const pied = () =>
+      page.evaluate(() => {
+        const texte = document.querySelector('.attribution__text');
+        return { texte: texte?.innerText.replace(/\s+/g, ' ') ?? '', liens: [...(texte?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href')) };
+      });
+    if (paysPublies.includes('IT')) {
+      const alpes = await pied();
+      controle('mentions : données italiennes au bord de la vue, source italienne créditée', alpes.texte.includes('BroadbandMap di Agcom'), alpes.texte);
+    }
+    if (paysPublies.includes('MC')) {
+      await page.evaluate(() => (location.hash = '#12/43.74/7.42'));
+      await page.waitForTimeout(3500);
+      const monaco = await pied();
+      const credite = monaco.texte.includes('Cell tower data from OpenCellID, licensed under CC BY-SA 4.0') && monaco.liens.includes('https://opencellid.org') && monaco.liens.includes('https://creativecommons.org/licenses/by-sa/4.0/');
+      controle('mentions : Monaco à l\'écran à côté du centre, crédit d\'OpenCellID avec ses liens', credite, monaco.texte);
+    }
+    controle('mentions : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
 
@@ -588,6 +769,22 @@ try {
     const credits = await page.locator('.panel .plain li').allTextContents();
     const francais = credits.find((c) => /\s[:;]/.test(c));
     controle('es : ponctuation des mentions selon la langue (pas de « : » à la française)', credits.length > 0 && !francais, francais ?? credits[0]);
+    // Champs du manifest : contour de chaque pays, logo de licence en lien, mention imposée des zones estimées ;
+    // tous les liens s'ouvrent dans un nouvel onglet et ne mènent qu'à des pages https (sauf l'adresse d'OpenTopoMap).
+    const publies = manifest?.countries ?? [];
+    const panneau = await page.evaluate(() => ({
+      contours: [...document.querySelectorAll('.panel__body p.hint')].filter((p) => p.textContent.startsWith('Límites del país: ')).length,
+      logos: [...document.querySelectorAll('.panel__body a img.licence-logo')].map((img) => img.closest('a').getAttribute('href')),
+      avis: [...document.querySelectorAll('.panel__body small')].map((s) => s.textContent),
+      douteux: [...document.querySelectorAll('.panel__body a')].filter((a) => a.target !== '_blank' || !a.rel.includes('noopener') || !(a.protocol === 'https:' || a.href === 'http://opentopomap.org/')).map((a) => a.href),
+    }));
+    const contoursAttendus = publies.filter((c) => c.boundary?.text).length;
+    controle('es : contour de chaque pays avec sa mention', contoursAttendus > 0 && panneau.contours === contoursAttendus, `${panneau.contours} sur ${contoursAttendus}`);
+    const logosAttendus = publies.flatMap((c) => c.sources.filter((s) => s.licenceLogo && s.licenceLogoUrl).map((s) => s.licenceLogoUrl));
+    controle('es : logo de licence en lien vers l\'adresse du manifest', panneau.logos.join() === logosAttendus.join(), panneau.logos.join() || 'aucun');
+    const avisAttendus = publies.flatMap((c) => c.sources.filter((s) => s.type === 2 && s.licenceNotice).map((s) => s.licenceNotice));
+    controle('es : mention de licence imposée des zones estimées', avisAttendus.every((a) => panneau.avis.includes(a)), `${avisAttendus.length} mention(s) attendue(s)`);
+    controle('es : liens des sources dans un nouvel onglet, vers des pages https', panneau.douteux.length === 0, panneau.douteux.join(', '));
     await capture(page, '9-telephone-es-sources');
     await page.click('.icon-btn[aria-label="Volver"]');
     await page.selectOption('#langue', 'ca');
@@ -596,6 +793,16 @@ try {
     await page.selectOption('#langue', 'it');
     await page.waitForTimeout(600);
     controle('it : changement de langue dans les paramètres', (await page.title()) === 'Mappa delle zone senza copertura', await page.title());
+    // Panneau Sources : les pays à l'écran sont ouverts d'emblée, et cette ouverture n'est pas retenue
+    // comme un choix de l'utilisateur quand la carte passe ailleurs (ici de l'Espagne à la Suisse).
+    await page.click('.icon-btn[data-role="close"]');
+    await page.evaluate(() => (location.hash = '#10/46.02/7.75'));
+    await page.waitForTimeout(3000);
+    await page.click('.topbar .fab:last-child');
+    await page.click('[data-focus="sources"]');
+    await page.waitForSelector('.disclaimer--strong');
+    const ouverts = await page.evaluate(() => [...document.querySelectorAll('.panel__body details[open] > summary')].map((s) => s.dataset.focus).join(' '));
+    controle('sources : sections ouvertes pour les pays à l\'écran seulement', ouverts.includes('sources-CH') && !ouverts.includes('sources-ES') && !ouverts.includes('sources-FR'), ouverts);
     controle('es : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }

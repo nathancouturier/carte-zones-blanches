@@ -17,6 +17,7 @@ import {
   langFromUrl,
   setLanguage,
   t,
+  tParts,
 } from '../src/i18n';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -81,14 +82,37 @@ describe('traductions', () => {
     const used = new Set<string>();
     for (const file of sourceFiles(join(root, 'src'))) {
       const text = readFileSync(file, 'utf-8');
-      for (const match of text.matchAll(/\bt\(\s*'([a-zA-Z0-9_.]+)'/g)) used.add(match[1]);
+      for (const match of text.matchAll(/\b(?:t|tParts(?:<[^>]+>)?)\(\s*'([a-zA-Z0-9_.]+)'/g)) used.add(match[1]);
       for (const match of text.matchAll(/(?:labelKey|key): '([a-zA-Z0-9_.]+\.[a-zA-Z0-9_.]+)'/g)) used.add(match[1]);
     }
     expect(used.size).toBeGreaterThan(80);
     const missing = [...used].filter((key) => !(key in french) && !(`${key}_other` in french));
     expect(missing).toEqual([]);
     // Clés composées à l'exécution.
-    for (const key of ['service.data', 'service.voice', 'gpx.error.invalid', 'gpx.error.empty', 'sources.method.official_operator', 'sources.method.official_aggregated', 'sources.method.estimated', 'sources.levels.four', 'sources.levels.three', 'sources.levels.binary', 'level.none', 'level.limited', 'level.good', 'level.veryGood']) {
+    for (const key of [
+      'service.data',
+      'service.voice',
+      'gpx.error.invalid',
+      'gpx.error.empty',
+      'sources.method.official_operator',
+      'sources.method.official_aggregated',
+      'sources.method.estimated',
+      'sources.levels.four',
+      'sources.levels.three',
+      'sources.levels.binary',
+      'level.none',
+      'level.limited',
+      'level.good',
+      'level.veryGood',
+      'locate.denied',
+      'locate.unavailable',
+      'locate.timeout',
+      'search.kind.municipality',
+      'search.kind.locality',
+      'search.kind.street',
+      'search.kind.housenumber',
+      'search.kind.department',
+    ]) {
       expect(key in french, key).toBe(true);
     }
   });
@@ -150,6 +174,22 @@ describe('choix de la langue', () => {
     expect(t('report.zonesHeading', { count: 1 })).toBe('Funkloch (1)');
     expect(t('report.zonesHeading', { count: 2 })).toBe('Funklöcher (2)');
     expect(t('basemap.current', { name: 'swisstopo' })).toBe('Angezeigte Karte: swisstopo.');
+  });
+
+  it('place des éléments (liens) dans un texte traduit, avec la ponctuation de la langue', () => {
+    const lien = { lien: true };
+    setLanguage('fr');
+    expect(tParts('sources.basemapItem', { name: 'Plan IGN classique', attribution: lien })).toEqual(['Plan IGN classique', ' : ', lien]);
+    expect(tParts('attribution.coverage', { names: lien })).toEqual(['Couverture : ', lien]);
+    setLanguage('de');
+    expect(tParts('sources.basemapItem', { name: 'Plan IGN klassisch', attribution: lien })).toEqual(['Plan IGN klassisch', ': ', lien]);
+    expect(tParts('report.zonesHeading', { count: 2 })).toEqual(['Funklöcher (', '2', ')']);
+    // Les textes qui citent OpenStreetMap le nomment dans toutes les langues : le nom devient le lien.
+    for (const code of ['fr', 'es', 'ca', 'it', 'de']) {
+      setLanguage(code);
+      expect(t('search.credits'), code).toContain('OpenStreetMap');
+      expect(t('sources.searchOsm'), code).toContain('OpenStreetMap');
+    }
   });
 
   it('ignore une langue inconnue', () => {

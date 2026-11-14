@@ -40,6 +40,11 @@ vi.mock('../src/map/mapView', () => ({
     viewSamplePoints(): { lon: number; lat: number }[] {
       return carte.vue;
     }
+    viewBounds(): [number, number, number, number] {
+      const lons = carte.vue.map((p) => p.lon);
+      const lats = carte.vue.map((p) => p.lat);
+      return [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+    }
     dataZoom(min: number, max: number): number {
       return Math.max(min, Math.min(max, Math.round(carte.zoom + 1)));
     }
@@ -295,6 +300,20 @@ describe('fond Auto', () => {
     // Centre à l'ouest de l'emprise du jeu synthétique, les huit autres points en France.
     await deplacer([{ lon: 5.4, lat: 44.55 }, ...EN_FRANCE.slice(1)]);
     expect(app.state.activeBasemap).toBe('ign-classique');
+  });
+
+  it('l\'ordre des résultats de recherche suit le pays au centre, quel que soit le fond choisi (recherche-4)', async () => {
+    const app = await demarrer();
+    app.setBasemapChoice('swisstopo'); // fond choisi à la main : le mode Auto ne dit plus rien
+    expect(app.centerIsAbroad()).toBe(false);
+    await deplacer(MILAN); // hors des données : l'étranger d'abord
+    expect(app.centerIsAbroad()).toBe(true);
+    await deplacer(EN_FRANCE);
+    expect(app.centerIsAbroad()).toBe(false);
+    await deplacer(MILAN);
+    reseau.tuilesEnPanne = true;
+    await deplacer(grille(6.2, 44.7, 0.05)); // en France, mais rien ne se lit : on garde ce qu'on savait
+    expect(app.centerIsAbroad()).toBe(true);
   });
 
   it('une lecture de tuile qui échoue ne change pas de fond (ui-10)', async () => {

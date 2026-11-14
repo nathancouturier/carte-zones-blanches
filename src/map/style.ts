@@ -7,6 +7,7 @@ import type {
   SourceSpecification,
   StyleSpecification,
 } from 'maplibre-gl';
+import { VECTOR_STYLE_TIMEOUT_MS } from '../config';
 import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD } from '../coverage/codec';
 import { LEVEL_SOLID } from '../coverage/render';
 import { CLASS_OUTSIDE, CLASS_UNKNOWN } from '../gpx/analyze';
@@ -38,15 +39,21 @@ export interface StyleOptions {
 }
 
 const styleCache = new Map<string, Promise<StyleSpecification>>();
+/** Styles déjà arrivés : ils s'appliquent sans attendre. */
+const loadedStyles = new Map<string, StyleSpecification>();
 
-/** Télécharge un style vectoriel (une seule fois). */
-export function loadVectorStyle(url: string): Promise<StyleSpecification> {
+/** Télécharge un style vectoriel (une seule fois), en un temps borné : au-delà, la promesse échoue. */
+export function loadVectorStyle(url: string, timeoutMs = VECTOR_STYLE_TIMEOUT_MS): Promise<StyleSpecification> {
   let promise = styleCache.get(url);
   if (!promise) {
-    promise = fetch(url)
+    promise = fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
       .then((response) => {
         if (!response.ok) throw new Error(`Style ${url} : HTTP ${response.status}`);
         return response.json() as Promise<StyleSpecification>;
+      })
+      .then((style) => {
+        loadedStyles.set(url, style);
+        return style;
       })
       .catch((error) => {
         styleCache.delete(url); // on réessaiera
@@ -55,6 +62,11 @@ export function loadVectorStyle(url: string): Promise<StyleSpecification> {
     styleCache.set(url, promise);
   }
   return promise;
+}
+
+/** Style vectoriel déjà téléchargé, ou null s'il n'est pas (encore) là. */
+export function loadedVectorStyle(url: string): StyleSpecification | null {
+  return loadedStyles.get(url) ?? null;
 }
 
 function rasterSource(spec: RasterSpec): SourceSpecification {
@@ -179,11 +191,9 @@ export function buildStyle(options: StyleOptions): StyleSpecification {
     // La couche réseau passe sous les libellés : juste avant la première couche « symbol » du style.
     let firstSymbol = layers.findIndex((layer) => layer.type === 'symbol');
     if (firstSymbol === -1) firstSymbol = layers.length;
-    return {
+    const style: StyleSpecification = {
       version: 8,
       name: basemap.id,
-      glyphs: base.glyphs,
-      sprite: base.sprite,
       sources: { ...base.sources, ...sources },
       layers: [
         background,
@@ -193,6 +203,10 @@ export function buildStyle(options: StyleOptions): StyleSpecification {
         ...trackLayers(),
       ],
     };
+    // Écrits seulement s'ils existent : « glyphs: undefined » ferait refuser tout le style par MapLibre.
+    if (base.glyphs) style.glyphs = base.glyphs;
+    if (base.sprite) style.sprite = base.sprite;
+    return style;
   }
 
   const spec: RasterSpec = basemap.kind === 'raster' ? basemap : basemap.fallback;

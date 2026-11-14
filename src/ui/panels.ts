@@ -12,6 +12,7 @@ import {
   SERVICES,
   SOURCE_TYPE_KEYS,
   type ManifestCountry,
+  type ManifestSource,
 } from '../coverage/manifest';
 import { LEVEL_SOLID } from '../coverage/render';
 import { hasThresholdSlots, networkCount, slotLabel } from '../coverage/slotLabel';
@@ -26,11 +27,12 @@ import {
   formatPercent,
   getLanguage,
   t,
+  tParts,
 } from '../i18n';
-import { BASEMAP_ORDER, BASEMAPS, HILLSHADE, type BasemapChoice } from '../map/basemaps';
+import { BASEMAP_ORDER, BASEMAPS, HILLSHADE, OSM_COPYRIGHT_URL, type BasemapChoice, type Credit } from '../map/basemaps';
 import { OUTSIDE_COLOR } from '../map/style';
 import { offlineOutdated, offlineSupported, type BasemapRecord } from '../offline/manager';
-import { h, icon, ICONS } from './dom';
+import { creditNodes, externalLink, h, icon, ICONS, linkName } from './dom';
 import { elevationProfile } from './profile';
 
 type Node_ = Node | string | null | false | undefined | Node_[];
@@ -62,7 +64,12 @@ function details(key: string, className: string, defaultOpen: boolean, ...childr
     {
       class: className,
       open: openDetails.get(key) ?? defaultOpen,
-      ontoggle: (event: Event) => openDetails.set(key, (event.currentTarget as HTMLDetailsElement).open),
+      ontoggle: (event: Event) => {
+        // Le navigateur signale aussi l'ouverture faite à la création : seul un état différent
+        // de celui par défaut (ou déjà retenu) est un choix de l'utilisateur.
+        const open = (event.currentTarget as HTMLDetailsElement).open;
+        if (openDetails.has(key) || open !== defaultOpen) openDetails.set(key, open);
+      },
     },
     children as never,
   );
@@ -697,24 +704,36 @@ export function settingsPanel(app: App): Node_[] {
   ];
 }
 
-function externalLink(label: string, url?: string): Node_ {
-  return url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, label) : label;
+/** Texte venu du manifest, en lien si une adresse l'accompagne (parseManifest ne garde que les adresses https). */
+function maybeLink(label: string, url?: string): Node_ {
+  return url ? externalLink(label, url) : label;
+}
+
+/** Logo que la licence demande d'afficher ; il renvoie vers l'adresse indiquée par le manifest, s'il y en a une. */
+function licenceLogo(source: ManifestSource): Node_ {
+  const image = h('img', { class: 'licence-logo', src: `${import.meta.env.BASE_URL}${source.licenceLogo}`, alt: source.attribution, loading: 'lazy' });
+  return source.licenceLogoUrl ? h('a', { href: source.licenceLogoUrl, target: '_blank', rel: 'noopener noreferrer', class: 'licence-logo__link' }, image) : image;
 }
 
 export function sourcesPanel(app: App): Node_[] {
-  const { manifest, dataStatus } = app.state;
+  const { manifest, dataStatus, visibleCountries } = app.state;
   const parts: Node_[] = [h('p', { class: 'disclaimer disclaimer--strong' }, t('sources.disclaimer')), h('p', null, t('sources.limits'))];
 
   if (manifest) {
     for (const country of manifest.countries) {
+      // Une section repliable par pays, pour que le panneau reste lisible sur téléphone :
+      // ouverte d'emblée pour les pays à l'écran, puis comme l'utilisateur la laisse.
       parts.push(
-        section(
-          t('sources.coverageIn', { country: countryName(country.iso) }),
+        details(
+          `sources-${country.iso}`,
+          'block details',
+          visibleCountries.includes(country.iso),
+          h('summary', { dataset: { focus: `sources-${country.iso}` } }, t('sources.coverageIn', { country: countryName(country.iso) })),
           country.sources.map((source) =>
             h(
               'dl',
               { class: 'facts facts--stacked' },
-              h('div', null, h('dt', null, t('sources.source')), h('dd', null, externalLink(source.name, source.url))),
+              h('div', null, h('dt', null, t('sources.source')), h('dd', null, maybeLink(source.name, source.url))),
               h('div', null, h('dt', null, t('sources.date')), h('dd', null, formatDataDate(source.date))),
               h(
                 'div',
@@ -739,18 +758,18 @@ export function sourcesPanel(app: App): Node_[] {
                 h(
                   'dd',
                   null,
-                  externalLink(source.licence, source.licenceUrl),
+                  maybeLink(source.licence, source.licenceUrl),
                   // Mention et logo que la licence demande d'afficher tels quels (dans la langue de la source).
                   source.licenceNotice ? [h('br'), h('small', { lang: 'mul' }, source.licenceNotice)] : null,
-                  source.licenceLogo
-                    ? [h('br'), h('img', { class: 'licence-logo', src: `${import.meta.env.BASE_URL}${source.licenceLogo}`, alt: source.attribution, loading: 'lazy' })]
-                    : null,
+                  source.licenceLogo ? [h('br'), licenceLogo(source)] : null,
                 ),
               ),
               source.levels === 'binary' ? h('p', { class: 'hint' }, t('sources.binaryNote')) : null,
               source.type === SOURCE_ESTIMATED ? h('p', { class: 'hint' }, t('sources.estimatedNote')) : null,
             ),
           ),
+          // Contour qui dit quels pixels appartiennent au pays : sa mention, telle que le manifest la donne.
+          country.boundary ? h('p', { class: 'hint' }, tParts<Node_>('sources.boundary', { boundary: maybeLink(country.boundary.text, country.boundary.url) })) : null,
           operatorNames(country).length > 0 ? h('p', { class: 'hint' }, t('sources.operators', { operators: operatorNames(country).join(', ') })) : null,
           country.euRoaming ? null : h('p', { class: 'hint' }, t('report.roamingWarning', { country: countryName(country.iso) })),
         ),
@@ -764,14 +783,18 @@ export function sourcesPanel(app: App): Node_[] {
     parts.push(note(t('network.noData'), 'warning'));
   }
 
-  // « Plan IGN classique : © IGN » ; la ponctuation suit la langue (« Plan IGN klassisch: © IGN »).
-  const credit = (name: string, attribution: string): HTMLElement => h('li', null, t('sources.basemapItem', { name, attribution }));
+  // « Plan IGN classique : © IGN » ; la ponctuation suit la langue (« Plan IGN klassisch: © IGN »),
+  // la mention reste celle du fournisseur, avec ses liens.
+  const credit = (name: string, attribution: Credit): HTMLElement => h('li', null, tParts<Node_>('sources.basemapItem', { name, attribution: creditNodes(attribution) }));
   parts.push(
     section(
       t('sources.basemaps'),
       h('ul', { class: 'plain' }, BASEMAP_ORDER.map((id) => credit(t(BASEMAPS[id].labelKey), BASEMAPS[id].attribution)), credit(t('basemap.hillshade'), HILLSHADE.attribution)),
     ),
-    section(t('sources.search'), h('ul', { class: 'plain' }, h('li', null, t('sources.searchIgn')), h('li', null, t('sources.searchOsm')))),
+    section(
+      t('sources.search'),
+      h('ul', { class: 'plain' }, h('li', null, t('sources.searchIgn')), h('li', null, linkName(t('sources.searchOsm'), 'OpenStreetMap', OSM_COPYRIGHT_URL))),
+    ),
     h('p', null, h('a', { href: `${REPO_URL}/blob/main/docs/sources.md`, target: '_blank', rel: 'noopener noreferrer' }, t('sources.details'))),
   );
   return parts;
