@@ -165,6 +165,9 @@ export class Ui {
   // -- rendu ----------------------------------------------------------------
 
   private onState(state: AppState, previous: AppState): void {
+    // Un panneau s'ouvre : la recherche se ferme, ses résultats le recouvriraient (rien n'est
+    // empilé). Sauf pendant une saisie, si c'est l'analyse d'un tracé qui ouvre le rapport.
+    if (state.panel && state.panel !== previous.panel && this.searchOpen && !this.searchBox.contains(document.activeElement)) this.closeSearch();
     this.render(state, previous);
     // Panneau fermé (Échap, Fermer) alors que le focus y était : il revient au bouton de ce panneau.
     if (previous.panel && !state.panel && this.focusLost()) this.panelButton(previous.panel)?.focus();

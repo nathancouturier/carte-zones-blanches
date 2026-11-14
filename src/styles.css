@@ -91,6 +91,13 @@ a,
   font-size: inherit;
 }
 
+/* Sur écran tactile, les liens d'action (« Modifier », « Sources ») ont une cible de 44 px de haut. */
+@media (pointer: coarse) {
+  .link {
+    min-height: 44px;
+  }
+}
+
 .muted {
   color: var(--c-muted);
 }
@@ -503,6 +510,12 @@ input[type="range"] {
   width: 100%;
   height: 32px;
   accent-color: var(--c-accent);
+}
+
+@media (pointer: coarse) {
+  input[type="range"] {
+    height: 44px;
+  }
 }
 
 .check,
