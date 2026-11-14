@@ -156,6 +156,13 @@ describe('lecture du manifest', () => {
     expect(archiveForTile(manifest, 13, 0, 0)).toBeNull();
   });
 
+  it('refuse les tuiles WebP, que le site ne sait pas décoder au pixel près', () => {
+    const base = JSON.parse(JSON.stringify(sampleManifest()));
+    expect(parseManifest(base).tiles.format).toBe('png');
+    expect(() => parseManifest({ ...base, tiles: { ...base.tiles, format: 'webp' } })).toThrow(/tiles\.format.*png.*WebP/s);
+    expect(() => parseManifest({ ...base, tiles: { ...base.tiles, format: 'jpg' } })).toThrow(/tiles\.format/);
+  });
+
   it('refuse des blocs sans zoom de bloc', () => {
     const bad = JSON.parse(JSON.stringify(sampleManifest()));
     bad.archives = [{ file: 'a.pmtiles', minzoom: 8, maxzoom: 12, blocks: ['1/2'] }];

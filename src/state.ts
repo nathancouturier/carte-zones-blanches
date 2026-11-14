@@ -63,6 +63,8 @@ export interface AppState {
   selectedZone: number | null;
   /** Codes ISO des pays dont des données sont visibles à l'écran. */
   visibleCountries: string[];
+  /** Tuiles de couverture qui n'ont pas pu être lues depuis le dernier essai (affichées hachurées en gris). */
+  coverageErrors: number;
   offline: OfflineState;
 }
 
@@ -139,6 +141,7 @@ export function initialState(): AppState {
     trackError: null,
     selectedZone: null,
     visibleCountries: [],
+    coverageErrors: 0,
     offline: { status: 'idle', progress: 0, info: offlineInfo() },
   };
 }

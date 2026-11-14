@@ -95,10 +95,10 @@ export class MapView {
     this.map.addControl(new ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
     this.map.on('moveend', () => options.onMoveEnd());
     // Une tuile de fond manquante ne doit pas remplir la console d'erreurs bloquantes.
+    // Les erreurs de la couche réseau, elles, sont signalées (la source le dit, pas le message).
     this.map.on('error', (event) => {
-      const message = String((event as { error?: { message?: string } }).error?.message ?? '');
-      if (!message.includes(COVERAGE_PROTOCOL)) return;
-      console.warn('Couche réseau :', message);
+      const { sourceId, error } = event as { sourceId?: string; error?: unknown };
+      if (sourceId === COVERAGE_SOURCE) console.warn('Couche réseau :', error);
     });
   }
 

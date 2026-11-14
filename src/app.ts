@@ -1,9 +1,11 @@
 // Chef d'orchestre : relie l'état, la carte, les données et l'interface.
 
 import { PMTiles } from 'pmtiles';
-import { DATA_BASE_URL, MAX_GPX_BYTES } from './config';
+import { COVERAGE_DISPLAY_MAX_ZOOM, DATA_BASE_URL, MAX_GPX_BYTES, TILE_READ_TIMEOUT_MS } from './config';
+import { createArchiveReader, type OnlineArchiveReader } from './coverage/archives';
 import { unpackCountry } from './coverage/codec';
 import { createTileDecoder } from './coverage/decode';
+import { NewDataWatcher } from './coverage/freshness';
 import {
   ALL_OPERATORS,
   buildLevelTables,
@@ -40,6 +42,13 @@ import {
   type PanelId,
 } from './state';
 
+/** Lit et vérifie manifest.json. « no-cache » le fait revalider par le serveur, « reload » ne lit pas du tout le cache. */
+async function fetchManifest(cache: RequestCache, signal?: AbortSignal): Promise<Manifest> {
+  const response = await fetch(`${DATA_BASE_URL}manifest.json`, { cache, signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return parseManifest(await response.json());
+}
+
 export interface AppHooks {
   /** Affiche un message bref. */
   toast: (message: string) => void;
@@ -53,7 +62,8 @@ export class App {
   private tables: LevelTables = [];
   private renderState: CoverageRenderState | null = null;
   private importSeq = 0;
-  private readArchive: ArchiveReader | null = null;
+  private readArchive: OnlineArchiveReader | null = null;
+  private dataWatcher: NewDataWatcher | null = null;
   private offlineAbort: AbortController | null = null;
   private moveTimer: ReturnType<typeof setTimeout> | undefined;
   private hooks: AppHooks = { toast: () => undefined, padding: () => ({ top: 40, right: 40, bottom: 40, left: 40 }) };
@@ -62,7 +72,7 @@ export class App {
     readonly store: Store,
     mapContainer: HTMLElement,
   ) {
-    registerCoverageProtocol(() => this.renderState);
+    registerCoverageProtocol(() => this.renderState, (error) => this.onCoverageError(error));
     this.mapView = new MapView({
       container: mapContainer,
       labels: () => ({
@@ -89,37 +99,35 @@ export class App {
 
   async start(): Promise<void> {
     void this.applyStyle();
+    // Le réseau revient : on relit tout seul les tuiles qui n'avaient pas pu l'être.
+    window.addEventListener('online', () => {
+      if (this.state.coverageErrors > 0) this.retryCoverage();
+    });
     await this.loadManifest();
   }
 
   private async loadManifest(): Promise<void> {
     let manifest: Manifest;
     try {
-      const response = await fetch(`${DATA_BASE_URL}manifest.json`, { cache: 'no-cache' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      manifest = parseManifest(await response.json());
+      manifest = await fetchManifest('no-cache');
     } catch (error) {
       console.warn('Données de couverture indisponibles :', error);
       this.store.set({ dataStatus: 'missing' });
       return;
     }
-    const archives = new Map<string, PMTiles>();
-    const online: ArchiveReader = async (file, z, x, y) => {
-      let archive = archives.get(file);
-      if (!archive) {
-        archive = new PMTiles(`${DATA_BASE_URL}${file}`);
-        archives.set(file, archive);
-      }
-      return (await archive.getZxy(z, x, y))?.data;
-    };
+    // Une archive illisible peut venir d'une nouvelle publication des données : on relit alors le manifest.
+    const online = createArchiveReader(
+      (file) => new PMTiles(`${DATA_BASE_URL}${file}`),
+      (error) => void this.dataWatcher?.report(error),
+    );
     // Sans réseau, on sert les tuiles enregistrées par « Préparer le hors ligne ».
-    const read: ArchiveReader = async (file, z, x, y) => {
+    const read: ArchiveReader = async (file, z, x, y, signal) => {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         const stored = await storedCoverageTile(import.meta.env.BASE_URL, z, x, y);
         if (stored !== undefined) return stored ?? undefined;
       }
       try {
-        return await online(file, z, x, y);
+        return await online(file, z, x, y, signal);
       } catch (error) {
         const stored = await storedCoverageTile(import.meta.env.BASE_URL, z, x, y);
         if (stored === undefined) throw error;
@@ -128,14 +136,40 @@ export class App {
     };
     this.readArchive = online;
     const decoder = createTileDecoder((reason) => console.warn(`Décodage des tuiles en JavaScript : ${reason}`));
-    this.tileStore = new TileStore(manifest, read, decoder);
-    const network = this.sanitizeNetwork(this.state.network, manifest);
-    this.store.set({ manifest, dataStatus: 'ready', network });
-    this.rebuildTables();
+    this.dataWatcher = new NewDataWatcher(
+      manifest,
+      () => fetchManifest('reload', AbortSignal.timeout(TILE_READ_TIMEOUT_MS)),
+      (next) => void this.switchData(new TileStore(next, read, decoder)),
+    );
+    this.useTiles(new TileStore(manifest, read, decoder));
     await this.applyStyle();
     this.scheduleViewUpdate();
     // Sans réseau, on recharge tout seul le tracé préparé pour le hors ligne.
     if (typeof navigator !== 'undefined' && navigator.onLine === false && !this.state.track) void this.restoreOfflineTrack();
+  }
+
+  /** Branche l'application sur un magasin de tuiles et sur son manifest. */
+  private useTiles(tileStore: TileStore): void {
+    const { manifest } = tileStore;
+    this.tileStore = tileStore;
+    const network = this.sanitizeNetwork(this.state.network, manifest);
+    this.store.set({ manifest, dataStatus: 'ready', network, coverageErrors: 0 });
+    this.rebuildTables();
+  }
+
+  /**
+   * De nouvelles données ont été publiées pendant que la page était ouverte (les
+   * anciennes archives ont disparu du serveur) : on repart sur le nouveau manifest,
+   * on redessine la couche et on refait l'analyse du tracé chargé.
+   */
+  private async switchData(tileStore: TileStore): Promise<void> {
+    this.readArchive?.reset();
+    this.useTiles(tileStore);
+    await this.applyStyle();
+    this.mapView.refreshCoverage();
+    this.scheduleViewUpdate();
+    this.hooks.toast(t('network.dataUpdated'));
+    if (this.state.track) void this.retryAnalysis();
   }
 
   /** Écarte les réglages mémorisés qui ne correspondent plus aux données. */
@@ -174,7 +208,12 @@ export class App {
       basemap: activeBasemap,
       hillshade: basemap.hillshade,
       coverage: manifest
-        ? { minzoom: manifest.tiles.minzoom, maxzoom: manifest.tiles.maxzoom, bounds: manifest.bounds, opacity: network.opacity }
+        ? {
+            minzoom: manifest.tiles.minzoom,
+            maxzoom: Math.max(manifest.tiles.maxzoom, COVERAGE_DISPLAY_MAX_ZOOM),
+            bounds: manifest.bounds,
+            opacity: network.opacity,
+          }
         : null,
     });
   }
@@ -214,6 +253,19 @@ export class App {
 
   setShowAll(showAll: boolean): void {
     this.updateNetwork({ showAll }, true);
+  }
+
+  /** Une tuile de couverture n'a pas pu être lue : elle est hachurée en gris et un bandeau propose de réessayer. */
+  private onCoverageError(error: unknown): void {
+    if (this.state.coverageErrors === 0) console.warn('Couche réseau : tuile illisible', error);
+    this.store.set({ coverageErrors: this.state.coverageErrors + 1 });
+  }
+
+  /** « Réessayer » : relit les tuiles de couverture qui n'ont pas pu l'être. */
+  retryCoverage(): void {
+    this.restartReads();
+    this.store.set({ coverageErrors: 0 });
+    this.mapView.refreshCoverage();
   }
 
   /** Opacité de la couche réseau. « commit » à false pendant le glissement du curseur. */
@@ -357,6 +409,7 @@ export class App {
     const { track, manifest } = this.state;
     const store = this.tileStore;
     if (!track || !manifest || !store) return;
+    this.restartReads();
     const seq = ++this.importSeq;
     this.store.set({ trackStatus: 'analyzing', trackError: null, progress: 0 });
     try {
@@ -372,6 +425,15 @@ export class App {
       console.warn('Analyse du tracé :', error);
       if (seq === this.importSeq) this.store.set({ trackStatus: 'ready', trackError: { key: 'gpx.error.analysis' } });
     }
+  }
+
+  /**
+   * Après une panne : les lectures suivantes repartent du réseau, avec des
+   * archives neuves, au lieu d'attendre des requêtes restées en suspens.
+   */
+  private restartReads(): void {
+    this.tileStore?.restart();
+    this.readArchive?.reset();
   }
 
   private showTrack(track: LoadedTrack | null): void {
@@ -449,7 +511,8 @@ export class App {
         coverageMaxZoom: manifest.tiles.maxzoom,
         readCoverageTile: async (z, x, y) => {
           const archive = archiveForTile(manifest, z, x, y);
-          return archive ? readArchive(archive.file, z, x, y) : undefined;
+          // Même délai que pour l'affichage : une connexion qui cale ne fige pas l'enregistrement.
+          return archive ? readArchive(archive.file, z, x, y, AbortSignal.timeout(TILE_READ_TIMEOUT_MS)) : undefined;
         },
         basemap: basemapPack(activeBasemap, this.mapView.currentVectorStyle()),
         onProgress: (done, total) => {

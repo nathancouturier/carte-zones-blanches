@@ -32,6 +32,7 @@ export class Ui {
   private readonly panelBody: HTMLElement;
   private readonly panelBack: HTMLButtonElement;
   private readonly attribution: HTMLElement;
+  private readonly coverageAlert: HTMLElement;
   private readonly toastEl: HTMLElement;
   private readonly dropzone: HTMLElement;
   private readonly fileInput: HTMLInputElement;
@@ -95,10 +96,12 @@ export class Ui {
     );
 
     this.attribution = h('div', { class: 'attribution' });
+    this.coverageAlert = h('div', { class: 'coverage-alert', role: 'status', hidden: true });
     this.toastEl = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite', hidden: true });
     this.dropzone = h('div', { class: 'dropzone', hidden: true }, icon(ICONS.upload, 40), h('span'));
 
-    setChildren(root, this.topbar, this.toolbar, this.panel, this.attribution, this.toastEl, this.dropzone, this.fileInput);
+    // Le bandeau vient après le panneau et avant le message bref : la feuille de style les place l'un par rapport à l'autre.
+    setChildren(root, this.topbar, this.toolbar, this.panel, this.attribution, this.coverageAlert, this.toastEl, this.dropzone, this.fileInput);
 
     this.app.setHooks({ toast: (message) => this.toast(message), padding: () => this.padding() });
     this.app.store.subscribe((state, previous) => this.onState(state, previous));
@@ -138,6 +141,9 @@ export class Ui {
       for (const el of this.panelBody.querySelectorAll<HTMLProgressElement>('progress[data-role="offline-progress"]')) el.value = state.offline.progress;
       return;
     }
+    // Le bandeau des tuiles illisibles suit le compteur d'échecs ; si rien d'autre n'a changé, c'est tout.
+    if ((state.coverageErrors > 0) !== (previous.coverageErrors > 0)) this.renderCoverageAlert();
+    if ((Object.keys(state) as (keyof AppState)[]).every((key) => key === 'coverageErrors' || state[key] === previous[key])) return;
     this.renderToolbar();
     const panelChanged =
       state.panel !== previous.panel ||
@@ -163,6 +169,7 @@ export class Ui {
     this.renderToolbar();
     this.renderPanel(false);
     this.renderAttribution();
+    this.renderCoverageAlert();
     this.dropzone.querySelector('span')!.textContent = t('gpx.dropHere');
     this.searchInput.placeholder = t('search.placeholder');
     this.searchInput.setAttribute('aria-label', t('action.search'));
@@ -299,6 +306,22 @@ export class Ui {
   }
 
   // -- messages -------------------------------------------------------------
+
+  /** Bandeau affiché tant que des tuiles de couverture n'ont pas pu être lues : elles sont hachurées en gris. */
+  private renderCoverageAlert(): void {
+    const show = this.app.state.coverageErrors > 0;
+    this.coverageAlert.hidden = !show;
+    setChildren(
+      this.coverageAlert,
+      show
+        ? [
+            h('span', { class: 'swatch swatch--unavailable', 'aria-hidden': 'true' }),
+            h('span', { class: 'coverage-alert__text' }, t('network.tilesUnavailable')),
+            h('button', { type: 'button', class: 'btn', onclick: () => this.app.retryCoverage() }, t('action.retry')),
+          ]
+        : null,
+    );
+  }
 
   toast(message: string): void {
     this.toastEl.textContent = message;

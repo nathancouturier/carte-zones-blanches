@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD, packMeta, packSlots, TILE_SIZE, unpackSlot, writePixel } from '../src/coverage/codec';
 import { LruCache } from '../src/coverage/lru';
 import { buildLevelTables } from '../src/coverage/manifest';
-import { LEVEL_COLORS, renderTile } from '../src/coverage/render';
+import { childTile, LEVEL_COLORS, renderTile, renderUnavailable } from '../src/coverage/render';
 import { TileStore } from '../src/coverage/store';
 import { lonLatToTilePixel, tileToLonLat } from '../src/coverage/tilemath';
 import { fixtureStore, readJsonFixture, sampleManifest } from './helpers';
@@ -100,6 +100,36 @@ describe('recolorisation des tuiles', () => {
     const officialAlphas = new Set<number>();
     for (let i = 0; i < 64; i++) officialAlphas.add(out[i * 4 + 3]);
     expect(officialAlphas.size).toBe(1);
+  });
+
+  it('agrandit une partie de tuile en plus proche voisin pour les zooms au-delà des données', () => {
+    const parent = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    for (let i = 0; i < TILE_SIZE * TILE_SIZE; i++) parent.set([i % TILE_SIZE, (i / TILE_SIZE) | 0, 7, 255], i * 4);
+    const pixel = (data: Uint8ClampedArray, x: number, y: number): number[] => Array.from(data.slice((y * TILE_SIZE + x) * 4, (y * TILE_SIZE + x) * 4 + 4));
+    // Un zoom plus loin, quart nord-est : chaque pixel de la tuile parente devient un carré de 2 x 2.
+    const ne = childTile(parent, 1, 1, 0);
+    expect(pixel(ne, 0, 0)).toEqual([128, 0, 7, 255]);
+    expect(pixel(ne, 1, 1)).toEqual([128, 0, 7, 255]);
+    expect(pixel(ne, 2, 1)).toEqual([129, 0, 7, 255]);
+    expect(pixel(ne, 255, 255)).toEqual([255, 127, 7, 255]);
+    // Quatre zooms plus loin (zoom 16 depuis le zoom 12) : carrés de 16 x 16.
+    const z16 = childTile(parent, 4, 5, 9);
+    expect(pixel(z16, 0, 0)).toEqual([80, 144, 7, 255]);
+    expect(pixel(z16, 15, 15)).toEqual([80, 144, 7, 255]);
+    expect(pixel(z16, 16, 0)).toEqual([81, 144, 7, 255]);
+    expect(pixel(z16, 255, 255)).toEqual([95, 159, 7, 255]);
+  });
+
+  it('raccorde les rayures des tuiles illisibles d\'une tuile à l\'autre', () => {
+    const out = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    renderUnavailable(out);
+    const alpha = (x: number, y: number): number => out[(y * TILE_SIZE + x) * 4 + 3];
+    // Les rayures suivent la diagonale : le premier pixel d'une ligne de la tuile voisine (à droite)
+    // prolonge le dernier pixel de la ligne du dessus, et de même pour la tuile du dessous.
+    for (let i = 1; i < TILE_SIZE; i++) {
+      expect(alpha(0, i), `ligne ${i}`).toBe(alpha(TILE_SIZE - 1, i - 1));
+      expect(alpha(i, 0), `colonne ${i}`).toBe(alpha(i - 1, TILE_SIZE - 1));
+    }
   });
 
   it('ne dessine rien pour un service sans données', () => {

@@ -62,8 +62,9 @@ function gpx(nom) {
   return fichier && couvert ? fichier : TRACE_FRANCE;
 }
 
-async function ouvrir(navigateur, options, chemin) {
+async function ouvrir(navigateur, options, chemin, preparer) {
   const contexte = await navigateur.newContext(options);
+  if (preparer) await preparer(contexte); // par exemple pour simuler une panne avant le chargement
   const page = await contexte.newPage();
   const suivi = { reponses: new Map(), erreurs: [], echecs: new Map(), manifest: 0, archives: 0 };
   page.on('response', (r) => {
@@ -285,8 +286,74 @@ try {
       await page.waitForTimeout(2500);
     }
     await capture(page, '8c-telephone-fr-hors-ligne-carte');
+    // Vue plus large que le couloir enregistré (au plus le zoom 9, quel que soit le tracé) : les tuiles
+    // manquantes sont signalées, puis relues toutes seules au retour du réseau, sans recharger la page.
+    await page.evaluate(() => {
+      const [zoom, lat, lon] = location.hash.slice(1).split('/').map(Number);
+      location.hash = `#${Math.min(zoom - 1.5, 9).toFixed(2)}/${lat}/${lon}`;
+    });
+    await page.waitForTimeout(3000);
+    const signale = await page.locator('.coverage-alert').isVisible();
     await contexte.setOffline(false);
+    const complete = signale && (await page.waitForSelector('.coverage-alert', { state: 'hidden', timeout: 30000 }).then(() => true, () => false));
+    controle('hors ligne : hors du couloir, tuiles signalées puis relues au retour du réseau', complete, signale ? (complete ? '' : 'bandeau toujours affiché') : 'aucun bandeau sans réseau');
     controle('hors ligne : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 2c. Téléphone, français : données de couverture illisibles, puis « Réessayer » --
+  {
+    let coupe = true;
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42', (c) =>
+      c.route(/\.pmtiles(\?|$)/, (route) => (coupe ? route.abort('internetdisconnected') : route.fallback())),
+    );
+    const bandeau = await page.locator('.coverage-alert').isVisible();
+    controle('panne : un bandeau signale les données de couverture illisibles', bandeau, bandeau ? ((await page.locator('.coverage-alert').textContent()) ?? '') : 'pas de bandeau');
+    await capture(page, '8d-telephone-fr-couverture-illisible');
+    coupe = false;
+    const lues = suivi.archives;
+    if (bandeau) await page.click('.coverage-alert button');
+    const repris = await page.waitForSelector('.coverage-alert', { state: 'hidden', timeout: 30000 }).then(() => true, () => false);
+    await page.waitForTimeout(3000);
+    const toujours = await page.locator('.coverage-alert').isVisible();
+    controle('panne : « Réessayer » relit les tuiles une fois le réseau revenu', bandeau && repris && !toujours && suivi.archives > lues, `${suivi.archives - lues} lectures dans les archives après « Réessayer »`);
+    controle('panne : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 2d. Ordinateur, français : nouvelle publication des données pendant la visite --
+  {
+    let lus = 0;
+    let nouvelles = 0;
+    const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '#11/44.9/6.42', async (c) => {
+      // Le premier manifest lu est celui d'une publication précédente, dont l'archive a disparu du serveur.
+      await c.route(/\/data\/manifest\.json(\?|$)/, async (route) => {
+        if (++lus > 1) return route.fallback();
+        const reponse = await route.fetch();
+        const manifest = await reponse.json();
+        manifest.generated = '2000-01-01';
+        for (const archive of manifest.archives) archive.file = `ancienne-${archive.file}`;
+        await route.fulfill({ response: reponse, json: manifest });
+      });
+      c.on('response', (r) => {
+        if (r.url().endsWith('.pmtiles') && !r.url().includes('/ancienne-') && r.status() === 206) nouvelles += 1;
+      });
+      // Messages brefs affichés pendant le chargement (ils disparaissent au bout de quelques secondes).
+      await c.addInitScript(() => {
+        window.messagesVus = [];
+        new MutationObserver(() => {
+          const toast = document.querySelector('.toast');
+          if (toast && !toast.hidden && !window.messagesVus.includes(toast.textContent)) window.messagesVus.push(toast.textContent);
+        }).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+      });
+    });
+    const etat = await page.evaluate(() => ({
+      bandeau: document.querySelector('.coverage-alert')?.hidden === false,
+      message: window.messagesVus.find((m) => /Nouvelles données/.test(m)) ?? window.messagesVus.join(' | '),
+    }));
+    controle('publication : l\'onglet ouvert relit le manifest et passe aux nouvelles archives', lus >= 2 && nouvelles >= 1 && !etat.bandeau, `manifest lu ${lus} fois, ${nouvelles} lectures dans les nouvelles archives${etat.bandeau ? ', bandeau affiché' : ''}`);
+    controle('publication : l\'utilisateur est prévenu', /Nouvelles données de couverture publiées/.test(etat.message), etat.message);
+    controle('publication : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
 

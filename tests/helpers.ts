@@ -49,6 +49,37 @@ class BufferSource implements Source {
   }
 }
 
+/**
+ * Source PMTiles en mémoire qui imite un réseau capricieux : les « failures »
+ * premières lectures échouent comme une coupure, et tant que « stalled » est
+ * vrai les lectures ne reviennent jamais (connexion qui cale).
+ */
+export class FlakySource implements Source {
+  calls = 0;
+  failures = 0;
+  stalled = false;
+
+  constructor(
+    private readonly key: string,
+    private readonly buffer: Buffer,
+  ) {}
+
+  getKey(): string {
+    return this.key;
+  }
+
+  async getBytes(offset: number, length: number): Promise<RangeResponse> {
+    this.calls++;
+    if (this.stalled) return new Promise<RangeResponse>(() => undefined);
+    if (this.failures > 0) {
+      this.failures--;
+      throw new TypeError('Failed to fetch');
+    }
+    const slice = this.buffer.subarray(offset, offset + length);
+    return { data: slice.buffer.slice(slice.byteOffset, slice.byteOffset + slice.byteLength) as ArrayBuffer };
+  }
+}
+
 /** Magasin de tuiles branché sur les archives d'un dossier de fixtures. */
 export function fixtureStore(dir: string): { store: TileStore; manifest: Manifest; reads: string[] } {
   const manifest = parseManifest(readJsonFixture(`${dir}/manifest.json`));

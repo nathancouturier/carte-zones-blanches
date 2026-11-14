@@ -2,14 +2,19 @@
 // et cache LRU des tuiles décodées. Le même cache sert à l'affichage et à
 // l'analyse des GPX : changer un réglage ne retélécharge rien.
 
+import { TILE_READ_TIMEOUT_MS } from '../config';
+import { untilAborted } from './abort';
 import { TILE_SIZE } from './codec';
 import { LruCache } from './lru';
 import { archiveForTile, type Manifest } from './manifest';
 import { lonLatToTilePixel, tileKey } from './tilemath';
 import type { TileDecoder } from './decode';
 
-/** Lit les octets d'une tuile dans une archive. Renvoie undefined si la tuile n'existe pas. */
-export type ArchiveReader = (file: string, z: number, x: number, y: number) => Promise<ArrayBuffer | undefined>;
+/**
+ * Lit les octets d'une tuile dans une archive. Renvoie undefined si la tuile
+ * n'existe pas. « signal » est déclenché quand la lecture n'est plus attendue.
+ */
+export type ArchiveReader = (file: string, z: number, x: number, y: number, signal?: AbortSignal) => Promise<ArrayBuffer | undefined>;
 
 /** Tuile décodée (RGBA, 256 x 256), ou null s'il n'y a pas de données à cet endroit. */
 export type DecodedTile = Uint8ClampedArray | null;
@@ -29,6 +34,8 @@ export class TileStore {
     private readonly read: ArchiveReader,
     private readonly decode: TileDecoder,
     capacity = 160,
+    /** Délai maximal d'une lecture, en millisecondes. */
+    private readonly timeoutMs = TILE_READ_TIMEOUT_MS,
   ) {
     this.cache = new LruCache(capacity);
   }
@@ -51,15 +58,27 @@ export class TileStore {
     if (cached !== undefined) return Promise.resolve(cached === EMPTY ? null : cached);
     let promise = this.pending.get(key);
     if (!promise) {
-      promise = this.load(z, x, y)
+      const loading: Promise<DecodedTile> = this.load(z, x, y)
         .then((tile) => {
           this.cache.set(key, tile ?? EMPTY);
           return tile;
         })
-        .finally(() => this.pending.delete(key));
+        .finally(() => {
+          // Après restart(), une lecture plus récente de la même tuile a pu prendre la place.
+          if (this.pending.get(key) === loading) this.pending.delete(key);
+        });
+      promise = loading;
       this.pending.set(key, promise);
     }
     return promise;
+  }
+
+  /**
+   * Oublie les lectures en cours : les prochaines demandes relisent l'archive au
+   * lieu d'attendre une requête restée en suspens (« Réessayer » après une panne).
+   */
+  restart(): void {
+    this.pending.clear();
   }
 
   private async load(z: number, x: number, y: number): Promise<DecodedTile> {
@@ -68,7 +87,10 @@ export class TileStore {
     if (z < minzoom || z > maxzoom || x < 0 || y < 0 || x >= n || y >= n) return null;
     const archive = archiveForTile(this.manifest, z, x, y);
     if (!archive) return null;
-    const bytes = await this.read(archive.file, z, x, y);
+    // Une lecture qui cale échoue au bout du délai, même si le lecteur ignore le signal :
+    // elle quitte alors « pending », et une nouvelle demande relit vraiment.
+    const signal = AbortSignal.timeout(this.timeoutMs);
+    const bytes = await untilAborted(this.read(archive.file, z, x, y, signal), signal);
     if (!bytes || bytes.byteLength === 0) return null;
     const data = await this.decode(bytes);
     if (data.length !== TILE_SIZE * TILE_SIZE * 4) throw new Error(`Tuile ${key3(z, x, y)} : taille inattendue`);
