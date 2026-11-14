@@ -25,6 +25,7 @@ import {
 } from '../src/coverage/manifest';
 import { hasThresholdSlots, networkCount, slotLabel } from '../src/coverage/slotLabel';
 import { setLanguage } from '../src/i18n';
+import { estimationNote } from '../src/ui/panels';
 import { sampleManifest } from './helpers';
 
 describe('encodage des canaux', () => {
@@ -161,6 +162,26 @@ describe('lecture du manifest', () => {
     expect(relu.countries[2].sources[0].estimation).toBeUndefined();
     autres.countries[2].sources[0].estimation = { sites: 12 };
     expect(parseManifest(autres).countries[2].sources[0].estimation).toEqual({ sites: 12 });
+  });
+
+  it('dit combien de sites d\'antennes une source estimée connaît, quand le manifest le donne (sources-19)', () => {
+    const base = JSON.parse(JSON.stringify(sampleManifest()));
+    // Manifest publié aujourd'hui, sans ce champ : rien n'est dit.
+    expect(estimationNote(parseManifest(base).countries[2].sources[0])).toBeNull();
+    base.countries[2].sources[0].estimation = { sites: 1234, cells: 4100 };
+    base.countries[0].sources[0].estimation = { sites: 3 }; // source officielle : sans objet
+    const avec = parseManifest(base);
+    try {
+      setLanguage('fr');
+      expect(estimationNote(avec.countries[2].sources[0])?.replace(/\s/g, ' ')).toBe('1 234 sites d\'antennes connus dans ce pays. Moins il y a de sites, moins l\'estimation est fiable.');
+      expect(estimationNote(avec.countries[0].sources[0])).toBeNull();
+      setLanguage('de');
+      expect(estimationNote(avec.countries[2].sources[0])).toBe('1.234 bekannte Antennenstandorte in diesem Land. Je weniger Standorte, desto unzuverlässiger die Schätzung.');
+      base.countries[2].sources[0].estimation = { sites: 1 };
+      expect(estimationNote(parseManifest(base).countries[2].sources[0])).toBe('1 bekannter Antennenstandort in diesem Land. Je weniger Standorte, desto unzuverlässiger die Schätzung.');
+    } finally {
+      setLanguage('fr');
+    }
   });
 
   it('nomme les emplacements : opérateur ou seuil', () => {

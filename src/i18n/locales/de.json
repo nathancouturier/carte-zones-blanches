@@ -190,6 +190,7 @@
   "sources.operators": "Anbieter: {operators}",
   "sources.boundary": "Landesgrenzen: {boundary}",
   "sources.generated": "Kacheln erzeugt am {date}.",
+  "sources.modified": "Für diese Website wurden die Originaldaten verändert: auf ein gemeinsames Raster übertragen und auf Abdeckungsstufen oder Schwellenwerte reduziert.",
   "sources.basemaps": "Hintergrundkarten",
   "sources.basemapItem": "{name}: {attribution}",
   "sources.search": "Ortssuche",
@@ -247,5 +248,7 @@
   "sources.missing": "{countries}: noch keine Daten.",
   "sources.binaryNote": "Diese Quelle unterscheidet nur „abgedeckt“ und „nicht abgedeckt“. Auf der Karte und im Bericht bedeutet „gute Abdeckung“ hier also „abgedeckt“, ohne Angabe zur Qualität.",
   "report.binaryNote": "{countries}: Die Daten geben nur an, ob ein Ort abgedeckt ist oder nicht. „Gute Abdeckung“ bedeutet hier „abgedeckt“, ohne Angabe zur Qualität.",
-  "sources.estimatedNote": "Mangels offizieller Karte wird die Abdeckung aus Antennenstandorten berechnet, die Freiwillige erfasst haben (OpenCellID), und aus dem Gelände. Das ist keine Karte eines Anbieters: Fehlt eine Antenne in der Datenbank, entsteht ein falsches Funkloch, und eine falsch verortete Antenne verschiebt die Grenzen um mehrere hundert Meter. Verlass dich bei einem Notruf nicht auf eine geschätzte Abdeckung."
+  "sources.estimatedNote": "Mangels offizieller Karte wird die Abdeckung aus Antennenstandorten berechnet, die Freiwillige erfasst haben (OpenCellID), und aus dem Gelände. Das ist keine Karte eines Anbieters: Fehlt eine Antenne in der Datenbank, entsteht ein falsches Funkloch, und eine falsch verortete Antenne verschiebt die Grenzen um mehrere hundert Meter. Verlass dich bei einem Notruf nicht auf eine geschätzte Abdeckung.",
+  "sources.estimationSites_one": "{count} bekannter Antennenstandort in diesem Land. Je weniger Standorte, desto unzuverlässiger die Schätzung.",
+  "sources.estimationSites_other": "{count} bekannte Antennenstandorte in diesem Land. Je weniger Standorte, desto unzuverlässiger die Schätzung."
 }

@@ -190,6 +190,7 @@
   "sources.operators": "Operatori: {operators}",
   "sources.boundary": "Confini del paese: {boundary}",
   "sources.generated": "Tessere generate il {date}.",
+  "sources.modified": "Per questo sito i dati originali sono stati trasformati: rasterizzati su una griglia comune e ricondotti a livelli o soglie di copertura.",
   "sources.basemaps": "Mappe di sfondo",
   "sources.basemapItem": "{name}: {attribution}",
   "sources.search": "Ricerca di luoghi",
@@ -247,5 +248,7 @@
   "sources.missing": "{countries}: dati non ancora disponibili.",
   "sources.binaryNote": "Questa fonte indica solo «coperto» o «non coperto». Sulla mappa e nel rapporto, «buona copertura» qui significa «coperto», senza indicazione di qualità.",
   "report.binaryNote": "{countries}: i dati indicano solo se un luogo è coperto o no. «Buona copertura» qui significa «coperto», senza indicazione di qualità.",
-  "sources.estimatedNote": "In mancanza di una mappa ufficiale, la copertura è calcolata a partire da posizioni di antenne rilevate da volontari (OpenCellID) e dal rilievo. Non è una mappa di un operatore: un'antenna assente dal database crea una falsa zona senza copertura, e un'antenna mal posizionata sposta i limiti di alcune centinaia di metri. Non contare su una zona stimata per una chiamata di emergenza."
+  "sources.estimatedNote": "In mancanza di una mappa ufficiale, la copertura è calcolata a partire da posizioni di antenne rilevate da volontari (OpenCellID) e dal rilievo. Non è una mappa di un operatore: un'antenna assente dal database crea una falsa zona senza copertura, e un'antenna mal posizionata sposta i limiti di alcune centinaia di metri. Non contare su una zona stimata per una chiamata di emergenza.",
+  "sources.estimationSites_one": "{count} sito di antenne noto in questo paese. Meno siti ci sono, meno affidabile è la stima.",
+  "sources.estimationSites_other": "{count} siti di antenne noti in questo paese. Meno siti ci sono, meno affidabile è la stima."
 }

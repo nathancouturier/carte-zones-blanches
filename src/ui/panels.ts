@@ -712,6 +712,15 @@ function maybeLink(label: string, url?: string): Node_ {
   return url ? externalLink(label, url) : label;
 }
 
+/**
+ * Antennes connues d'une source estimée, et ce que leur nombre dit de sa fiabilité.
+ * null quand le manifest ne les compte pas (données publiées avant ce champ).
+ */
+export function estimationNote(source: ManifestSource): string | null {
+  if (source.type !== SOURCE_ESTIMATED || !source.estimation) return null;
+  return t('sources.estimationSites', { count: source.estimation.sites });
+}
+
 /** Logo que la licence demande d'afficher ; il renvoie vers l'adresse indiquée par le manifest, s'il y en a une. */
 function licenceLogo(source: ManifestSource): Node_ {
   const image = h('img', { class: 'licence-logo', src: `${import.meta.env.BASE_URL}${source.licenceLogo}`, alt: source.attribution, loading: 'lazy' });
@@ -770,6 +779,8 @@ export function sourcesPanel(app: App): Node_[] {
               ),
               source.levels === 'binary' ? h('p', { class: 'hint' }, t('sources.binaryNote')) : null,
               source.type === SOURCE_ESTIMATED ? h('p', { class: 'hint' }, t('sources.estimatedNote')) : null,
+              // Nombre de sites d'antennes connus, quand le manifest le donne : la fiabilité de l'estimation en dépend.
+              estimationNote(source) ? h('p', { class: 'hint' }, estimationNote(source)) : null,
             ),
           ),
           // Contour qui dit quels pixels appartiennent au pays : sa mention, telle que le manifest la donne.
@@ -784,7 +795,9 @@ export function sourcesPanel(app: App): Node_[] {
     if (manifest.missing.length > 0) {
       parts.push(note(t('sources.missing', { countries: manifest.missing.map((iso) => countryName(iso)).join(', ') })));
     }
-    parts.push(h('p', { class: 'hint' }, t('sources.generated', { date: formatDataDate(manifest.generated) })));
+    // Une seule fois pour toutes les sources : les données d'origine ont été transformées pour ce site,
+    // l'indication de modification que demandent les licences CC BY.
+    parts.push(h('p', { class: 'hint' }, t('sources.modified')), h('p', { class: 'hint' }, t('sources.generated', { date: formatDataDate(manifest.generated) })));
   } else if (dataStatus === 'missing') {
     parts.push(note(t('network.noData'), 'warning'));
   }

@@ -190,6 +190,7 @@
   "sources.operators": "Opérateurs : {operators}",
   "sources.boundary": "Contour du pays : {boundary}",
   "sources.generated": "Tuiles générées le {date}.",
+  "sources.modified": "Pour ce site, les données d'origine ont été transformées : rastérisées sur une grille commune, puis ramenées à des niveaux ou à des seuils de couverture.",
   "sources.basemaps": "Fonds de carte",
   "sources.basemapItem": "{name} : {attribution}",
   "sources.search": "Recherche de lieux",
@@ -247,5 +248,7 @@
   "sources.missing": "{countries} : pas encore de données.",
   "sources.binaryNote": "Cette source dit seulement « couvert » ou « non couvert ». Là où elle s'applique, « bonne couverture » signifie donc « couvert » sur la carte et dans le rapport, sans indication de qualité.",
   "report.binaryNote": "{countries} : les données indiquent seulement si un lieu est couvert ou non. « Bonne couverture » y signifie « couvert », sans indication de qualité.",
-  "sources.estimatedNote": "Faute de carte officielle, la couverture est calculée à partir de positions d'antennes relevées par des bénévoles (OpenCellID) et du relief. Ce n'est pas une carte d'opérateur : une antenne absente de la base crée une fausse zone blanche, une antenne mal placée déplace les limites de plusieurs centaines de mètres. Ne comptez pas sur une zone estimée pour un appel d'urgence."
+  "sources.estimatedNote": "Faute de carte officielle, la couverture est calculée à partir de positions d'antennes relevées par des bénévoles (OpenCellID) et du relief. Ce n'est pas une carte d'opérateur : une antenne absente de la base crée une fausse zone blanche, une antenne mal placée déplace les limites de plusieurs centaines de mètres. Ne comptez pas sur une zone estimée pour un appel d'urgence.",
+  "sources.estimationSites_one": "{count} site d'antennes connu dans ce pays. Moins il y a de sites, moins l'estimation est fiable.",
+  "sources.estimationSites_other": "{count} sites d'antennes connus dans ce pays. Moins il y a de sites, moins l'estimation est fiable."
 }

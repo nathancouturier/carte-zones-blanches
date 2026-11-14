@@ -190,6 +190,7 @@
   "sources.operators": "Operadors: {operators}",
   "sources.boundary": "Límits del país: {boundary}",
   "sources.generated": "Tessel·les generades el {date}.",
+  "sources.modified": "Per a aquest lloc web, les dades originals s'han transformat: s'han rasteritzat en una quadrícula comuna i s'han reduït a nivells o llindars de cobertura.",
   "sources.basemaps": "Mapes de fons",
   "sources.basemapItem": "{name}: {attribution}",
   "sources.search": "Cerca de llocs",
@@ -247,5 +248,7 @@
   "sources.missing": "{countries}: encara no hi ha dades.",
   "sources.binaryNote": "Aquesta font només indica «amb cobertura» o «sense cobertura». Al mapa i a l'informe, «bona cobertura» hi significa «amb cobertura», sense indicació de qualitat.",
   "report.binaryNote": "{countries}: les dades només indiquen si un lloc té cobertura o no. «Bona cobertura» hi significa «amb cobertura», sense indicació de qualitat.",
-  "sources.estimatedNote": "A falta de mapa oficial, la cobertura es calcula a partir de posicions d'antenes recollides per voluntaris (OpenCellID) i del relleu. No és un mapa d'operador: una antena que falta a la base de dades crea una falsa zona sense cobertura, i una antena mal situada desplaça els límits uns quants centenars de metres. No comptis amb una zona estimada per a una trucada d'emergència."
+  "sources.estimatedNote": "A falta de mapa oficial, la cobertura es calcula a partir de posicions d'antenes recollides per voluntaris (OpenCellID) i del relleu. No és un mapa d'operador: una antena que falta a la base de dades crea una falsa zona sense cobertura, i una antena mal situada desplaça els límits uns quants centenars de metres. No comptis amb una zona estimada per a una trucada d'emergència.",
+  "sources.estimationSites_one": "{count} emplaçament d'antenes conegut en aquest país. Com menys emplaçaments, menys fiable és l'estimació.",
+  "sources.estimationSites_other": "{count} emplaçaments d'antenes coneguts en aquest país. Com menys emplaçaments, menys fiable és l'estimació."
 }

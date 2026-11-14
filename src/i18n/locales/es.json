@@ -190,6 +190,7 @@
   "sources.operators": "Operadores: {operators}",
   "sources.boundary": "Límites del país: {boundary}",
   "sources.generated": "Teselas generadas el {date}.",
+  "sources.modified": "Para este sitio, los datos originales se han transformado: se han rasterizado en una cuadrícula común y se han reducido a niveles o umbrales de cobertura.",
   "sources.basemaps": "Mapas de fondo",
   "sources.basemapItem": "{name}: {attribution}",
   "sources.search": "Búsqueda de lugares",
@@ -247,5 +248,7 @@
   "sources.missing": "Todavía no hay datos para {countries}.",
   "sources.binaryNote": "Esta fuente solo indica «con cobertura» o «sin cobertura». En el mapa y en el informe, «buena cobertura» significa aquí «con cobertura», sin indicación de calidad.",
   "report.binaryNote": "{countries}: los datos solo indican si un lugar tiene cobertura o no. «Buena cobertura» significa aquí «con cobertura», sin indicación de calidad.",
-  "sources.estimatedNote": "A falta de mapa oficial, la cobertura se calcula a partir de posiciones de antenas recogidas por voluntarios (OpenCellID) y del relieve. No es un mapa de operador: una antena que falta en la base de datos crea una falsa zona sin cobertura, y una antena mal situada desplaza los límites varios cientos de metros. No cuentes con una zona estimada para una llamada de emergencia."
+  "sources.estimatedNote": "A falta de mapa oficial, la cobertura se calcula a partir de posiciones de antenas recogidas por voluntarios (OpenCellID) y del relieve. No es un mapa de operador: una antena que falta en la base de datos crea una falsa zona sin cobertura, y una antena mal situada desplaza los límites varios cientos de metros. No cuentes con una zona estimada para una llamada de emergencia.",
+  "sources.estimationSites_one": "{count} emplazamiento de antenas conocido en este país. Cuantos menos emplazamientos, menos fiable es la estimación.",
+  "sources.estimationSites_other": "{count} emplazamientos de antenas conocidos en este país. Cuantos menos emplazamientos, menos fiable es la estimación."
 }

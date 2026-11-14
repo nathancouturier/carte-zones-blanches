@@ -831,6 +831,8 @@ try {
         for (const pays of donnees.countries) {
           if (pays.boundary) pays.boundary.textI18n = { es: traduit('Límites', pays.iso) };
           for (const source of pays.sources) Object.assign(source, { nameI18n: { es: traduit('Nombre', source.id) }, licenceI18n: { es: traduit('Licencia', source.id) } });
+          // Antennes connues des zones estimées (sources-19).
+          for (const source of pays.sources.filter((s) => s.type === 2)) source.estimation = { sites: 12, cells: 41 };
         }
         await route.fulfill({ response: reponse, json: donnees });
       });
@@ -844,6 +846,13 @@ try {
     const absents = attendus.filter((texte) => !panneau.includes(texte));
     const francais = publies.flatMap((pays) => pays.sources.map((s) => s.name)).filter((nom) => panneau.includes(nom));
     controle('es : noms des sources, licences et contours traduits par le manifest', attendus.length > 0 && absents.length === 0 && francais.length === 0, [...absents, ...francais].join(' | ') || `${attendus.length} textes`);
+    // Nombre de sites d'antennes d'une source estimée, et ce qu'il dit de sa fiabilité (sources-19).
+    const estimes = publies.filter((pays) => pays.sources.some((s) => s.type === 2)).length;
+    const sites = panneau.split('12 emplazamientos de antenas conocidos en este país. Cuantos menos emplazamientos, menos fiable es la estimación.').length - 1;
+    controle('es : sites d\'antennes connus de chaque zone estimée', sites === estimes, `${sites} sur ${estimes}`);
+    // Une seule fois : les données d'origine ont été transformées pour ce site (licences CC BY, regles-02c).
+    const transformees = panneau.split('Para este sitio, los datos originales se han transformado').length - 1;
+    controle('es : transformation des données d\'origine dite une fois', transformees === 1, `${transformees} fois`);
     controle('es : textes traduits, aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
