@@ -62,6 +62,9 @@ async function fetchManifest(cache: RequestCache, signal?: AbortSignal): Promise
   return parseManifest(await response.json());
 }
 
+/** Centre de la carte hors des données (aucun pays couvert). */
+const OUTSIDE_DATA = 'hors';
+
 export interface AppHooks {
   /** Affiche un message bref. */
   toast: (message: string) => void;
@@ -85,6 +88,8 @@ export class App {
   private offlineAbort: AbortController | null = null;
   /** Vrai quand le manifest est la copie enregistrée avec le tracé (réseau absent ou trop lent). */
   private dataFromLocalCopy = false;
+  /** Pays au centre de la carte : code ISO, OUTSIDE_DATA hors des données, null tant qu'on ne sait pas. */
+  private centerCountry: string | null = null;
   private moveTimer: ReturnType<typeof setTimeout> | undefined;
   private hooks: AppHooks = { toast: () => undefined, padding: () => ({ top: 40, right: 40, bottom: 40, left: 40 }) };
 
@@ -341,6 +346,8 @@ export class App {
       return countryByCode(manifest, unpackCountry(pixel[2]))?.iso ?? null;
     };
     const countries = pixels.map(isoAt);
+    // Pays au centre, quel que soit le fond : il décide de l'ordre des résultats de recherche.
+    if (pixels[0] !== undefined) this.centerCountry = countries[0] ?? OUTSIDE_DATA;
     const visible = [...new Set(countries.filter((iso): iso is string => iso !== null))];
     const patch: Partial<AppState> = {};
     const current = this.state;
@@ -710,10 +717,12 @@ export class App {
     else this.mapView.flyTo(place.lon, place.lat, place.zoom, this.hooks.padding());
   }
 
-  /** Vrai si le centre de la carte est hors de France (pour l'ordre des résultats de recherche). */
+  /**
+   * Vrai si le centre de la carte est hors de France (pour l'ordre des résultats de recherche :
+   * l'IGN ne couvre que la France, Photon l'étranger). Lu dans les données, quel que soit le fond.
+   */
   centerIsAbroad(): boolean {
-    const active = this.state.activeBasemap;
-    return this.state.basemap.choice === 'auto' && BASEMAPS[active].id !== 'ign-classique';
+    return this.centerCountry !== null && this.centerCountry !== 'FR';
   }
 
   language(): string {

@@ -243,6 +243,20 @@ describe('fond Auto', () => {
     expect(app.state.activeBasemap).toBe('ign-classique');
   });
 
+  it('l\'ordre des résultats de recherche suit le pays au centre, quel que soit le fond choisi (recherche-4)', async () => {
+    const app = await demarrer();
+    app.setBasemapChoice('swisstopo'); // fond choisi à la main : le mode Auto ne dit plus rien
+    expect(app.centerIsAbroad()).toBe(false);
+    await deplacer(MILAN); // hors des données : l'étranger d'abord
+    expect(app.centerIsAbroad()).toBe(true);
+    await deplacer(EN_FRANCE);
+    expect(app.centerIsAbroad()).toBe(false);
+    await deplacer(MILAN);
+    reseau.tuilesEnPanne = true;
+    await deplacer(grille(6.2, 44.7, 0.05)); // en France, mais rien ne se lit : on garde ce qu'on savait
+    expect(app.centerIsAbroad()).toBe(true);
+  });
+
   it('une lecture de tuile qui échoue ne change pas de fond (ui-10)', async () => {
     const app = await demarrer();
     app.setBasemapChoice('swisstopo');
