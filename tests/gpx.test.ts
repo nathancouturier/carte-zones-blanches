@@ -504,7 +504,7 @@ describe('analyse sur les tuiles du pipeline', () => {
     expect(text).toContain('Pays traversés : France');
     expect(text).toContain('Zone');
     expect(text).toContain('Couverture théorique, des écarts locaux sont possibles.');
-    expect(text).not.toMatch(/[–— ]/);
+    expect(text).not.toMatch(/[\u2013\u2014\u202f]/);
     const line = describeZone(report.zones[0], manifest);
     expect(line).toMatch(/^km \d+,\d à \d+,\d, soit \d+,\d km, altitude /);
     expect(line).toContain('France');

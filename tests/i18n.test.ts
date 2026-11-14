@@ -73,7 +73,7 @@ describe('traductions', () => {
     ];
     for (const file of files) {
       const text = readFileSync(file, 'utf-8');
-      expect(/[–—]/.test(text), file).toBe(false);
+      expect(/[\u2013\u2014]/.test(text), file).toBe(false);
     }
   });
 
