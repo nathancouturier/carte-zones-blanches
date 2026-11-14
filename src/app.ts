@@ -61,7 +61,12 @@ export class App {
   private tileStore: TileStore | null = null;
   private tables: LevelTables = [];
   private renderState: CoverageRenderState | null = null;
+  /** Numéro du tracé affiché et de son analyse : un nouvel import ou une relance l'incrémente. */
   private importSeq = 0;
+  /** Numéro du dernier fichier en cours de lecture (un fichier refusé ne touche pas au tracé affiché). */
+  private readSeq = 0;
+  /** Numéro de l'analyse en cours, null s'il n'y en a pas. */
+  private analysing: number | null = null;
   private readArchive: OnlineArchiveReader | null = null;
   private dataWatcher: NewDataWatcher | null = null;
   private offlineAbort: AbortController | null = null;
@@ -112,7 +117,9 @@ export class App {
       manifest = await fetchManifest('no-cache');
     } catch (error) {
       console.warn('Données de couverture indisponibles :', error);
-      this.store.set({ dataStatus: 'missing' });
+      // Un tracé importé pendant le chargement n'attend plus rien : le rapport dit que les données manquent.
+      const waiting = !!this.state.track && !this.state.track.analysis && this.state.trackStatus === 'analyzing';
+      this.store.set(waiting ? { dataStatus: 'missing', trackStatus: 'ready', panel: 'report' } : { dataStatus: 'missing' });
       return;
     }
     // Une archive illisible peut venir d'une nouvelle publication des données : on relit alors le manifest.
@@ -142,6 +149,8 @@ export class App {
       (next) => void this.switchData(new TileStore(next, read, decoder)),
     );
     this.useTiles(new TileStore(manifest, read, decoder));
+    // Un tracé importé pendant le chargement des données est analysé maintenant.
+    if (this.state.track && !this.state.track.analysis) void this.retryAnalysis();
     await this.applyStyle();
     this.scheduleViewUpdate();
     // Sans réseau, on recharge tout seul le tracé préparé pour le hors ligne.
@@ -332,34 +341,38 @@ export class App {
   // -- GPX ------------------------------------------------------------------
 
   async importGpx(file: File): Promise<void> {
-    const seq = ++this.importSeq;
-    const fail = (key: string, params?: Record<string, string | number>): void => {
-      if (seq !== this.importSeq) return;
-      this.store.set({ trackStatus: this.state.track ? 'ready' : 'error', trackError: { key, params }, panel: 'gpx' });
-    };
+    const read = ++this.readSeq;
     if (file.size > MAX_GPX_BYTES) {
-      fail('gpx.error.tooBig', { size: Math.ceil(file.size / 1e6), max: Math.round(MAX_GPX_BYTES / 1e6) });
+      this.failRead(read, 'gpx.error.tooBig', { size: Math.ceil(file.size / 1e6), max: Math.round(MAX_GPX_BYTES / 1e6) });
       return;
     }
-    this.store.set({ trackStatus: 'reading', trackError: null, progress: 0 });
+    this.store.set({ trackStatus: 'reading', trackError: null });
     let xml: string;
     try {
       // Lu en octets : file.text() décoderait toujours en UTF-8, même un GPX en ISO-8859-1.
       xml = decodeGpx(new Uint8Array(await file.arrayBuffer()));
     } catch {
-      fail('gpx.error.read');
+      this.failRead(read, 'gpx.error.read');
       return;
     }
-    await this.importGpxText(xml, file.name, seq);
+    await this.importGpxText(xml, file.name, read);
+  }
+
+  /**
+   * Un nouveau fichier n'a pas pu être lu : on le dit, sans toucher au tracé déjà
+   * affiché ni à son analyse, qui continue si elle était en cours.
+   */
+  private failRead(read: number, key: string, params?: Record<string, string | number>): void {
+    if (read !== this.readSeq) return;
+    const { track, dataStatus } = this.state;
+    const pending = !!track && !track.analysis && (this.analysing === this.importSeq || dataStatus === 'loading');
+    this.store.set({ trackStatus: !track ? 'error' : pending ? 'analyzing' : 'ready', trackError: { key, params }, panel: 'gpx' });
   }
 
   /** Charge et analyse un GPX déjà lu (import d'un fichier, ou tracé enregistré pour le hors ligne). */
-  private async importGpxText(xml: string, fileName: string, seq: number = ++this.importSeq): Promise<void> {
+  private async importGpxText(xml: string, fileName: string, read: number = ++this.readSeq): Promise<void> {
     const file = { name: fileName };
-    const fail = (key: string, params?: Record<string, string | number>): void => {
-      if (seq !== this.importSeq) return;
-      this.store.set({ trackStatus: this.state.track ? 'ready' : 'error', trackError: { key, params }, panel: 'gpx' });
-    };
+    const fail = (key: string): void => this.failRead(read, key);
     let track: LoadedTrack;
     try {
       const parsed = parseGpx(xml);
@@ -377,41 +390,38 @@ export class App {
       fail(error instanceof GpxError ? `gpx.error.${error.code}` : 'gpx.error.invalid');
       return;
     }
-    if (seq !== this.importSeq) return;
+    if (read !== this.readSeq) return;
+    // Le fichier est valable : il remplace le tracé affiché, dont l'analyse éventuelle est abandonnée.
+    const seq = ++this.importSeq;
+    // Données encore en chargement : l'analyse partira à leur arrivée (loadManifest).
+    const waiting = !!this.tileStore || this.state.dataStatus === 'loading';
 
     // Le tracé s'affiche tout de suite, d'une seule couleur, et la carte zoome dessus.
-    this.store.set({ track, selectedZone: null, trackStatus: this.tileStore ? 'analyzing' : 'ready', panel: this.tileStore ? this.state.panel : 'report' });
+    this.store.set({ track, selectedZone: null, progress: 0, trackStatus: waiting ? 'analyzing' : 'ready', panel: waiting ? this.state.panel : 'report' });
     this.showTrack(track);
-    const bounds = samplesBounds(track.samples);
-    if (bounds) this.mapView.fitBounds(bounds, this.hooks.padding());
-
-    const store = this.tileStore;
-    const manifest = this.state.manifest;
-    if (!store || !manifest) return;
-    try {
-      const raw = await sampleCoverage(track.samples, store, (done, total) => {
-        if (seq === this.importSeq) this.store.set({ progress: total > 0 ? done / total : 1 });
-      });
-      if (seq !== this.importSeq) return;
-      const analysis = analyzeTrack(track.samples, raw);
-      const analysed: LoadedTrack = { ...track, analysis, report: buildReport(analysis, manifest, this.decodeSettings()) };
-      this.store.set({ track: analysed, trackStatus: 'ready', panel: 'report' });
-      this.showTrack(analysed);
-    } catch (error) {
-      console.warn('Analyse du tracé :', error);
-      if (seq !== this.importSeq) return;
-      this.store.set({ trackStatus: 'ready', trackError: { key: 'gpx.error.analysis' }, panel: 'gpx' });
-    }
+    this.fitTrack();
+    await this.analyse(track, seq, 'gpx');
   }
 
-  /** Relance l'analyse du tracé chargé (après un échec réseau par exemple). */
+  /** Relance l'analyse du tracé chargé (après un échec réseau, ou à l'arrivée des données). */
   async retryAnalysis(): Promise<void> {
     const { track, manifest } = this.state;
-    const store = this.tileStore;
-    if (!track || !manifest || !store) return;
+    if (!track || !manifest || !this.tileStore) return;
     this.restartReads();
     const seq = ++this.importSeq;
     this.store.set({ trackStatus: 'analyzing', trackError: null, progress: 0 });
+    await this.analyse(track, seq);
+  }
+
+  /**
+   * Lit la couverture le long du tracé, puis ouvre le rapport. « seq » identifie
+   * l'import ou la relance : une analyse dépassée par un nouvel import est abandonnée.
+   */
+  private async analyse(track: LoadedTrack, seq: number, panelOnError?: PanelId): Promise<void> {
+    const store = this.tileStore;
+    const manifest = this.state.manifest;
+    if (!store || !manifest) return;
+    this.analysing = seq;
     try {
       const raw = await sampleCoverage(track.samples, store, (done, total) => {
         if (seq === this.importSeq) this.store.set({ progress: total > 0 ? done / total : 1 });
@@ -423,7 +433,10 @@ export class App {
       this.showTrack(analysed);
     } catch (error) {
       console.warn('Analyse du tracé :', error);
-      if (seq === this.importSeq) this.store.set({ trackStatus: 'ready', trackError: { key: 'gpx.error.analysis' } });
+      if (seq !== this.importSeq) return;
+      this.store.set({ trackStatus: 'ready', trackError: { key: 'gpx.error.analysis' }, ...(panelOnError ? { panel: panelOnError } : {}) });
+    } finally {
+      if (this.analysing === seq) this.analysing = null;
     }
   }
 
