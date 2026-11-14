@@ -127,7 +127,7 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: data-${{ needs.construire.outputs.date }}
+      DATE: ${{ needs.construire.outputs.date }}
     steps:
       - uses: actions/download-artifact@v6
         with:
@@ -135,9 +135,15 @@ jobs:
           path: out
 
       - name: Créer la release
+        id: release
         shell: bash
         run: |
           ls -la out
+          # Nom de la release : data-AAAA-MM-JJ, puis data-AAAA-MM-JJ-2, -3... s'il y en a déjà une ce jour-là.
+          # On ne supprime jamais une release avant d'avoir publié la suivante.
+          existantes=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName')
+          tag="data-$DATE"; n=1
+          while printf '%s\n' "$existantes" | grep -qx "$tag"; do n=$((n + 1)); tag="data-$DATE-$n"; done
           {
             echo "Tuiles de couverture mobile (PMTiles) et manifest, générés par le workflow Données."
             echo
@@ -145,10 +151,22 @@ jobs:
             echo "- Taille totale : $(du -ch out/*.pmtiles | tail -1 | cut -f1)"
             echo "- Sources, dates et licences : voir manifest.json et docs/sources.md"
           } > notes.md
-          # Une seule release par jour : on remplace celle du jour si elle existe.
-          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Données de couverture du ${{ needs.construire.outputs.date }}" --notes-file notes.md
+          # Pas d'option --target : l'étiquette est posée sur la branche par défaut. Le jeton d'Actions n'a pas
+          # le droit de créer une étiquette sur un commit dont les workflows diffèrent de ceux de cette branche.
+          gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" \
+            --title "Données de couverture du $DATE" --notes-file notes.md
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Release publiée : $tag"
+
+      - name: Ne garder que les trois dernières releases de données
+        shell: bash
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("data-"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' \
+            | while read -r ancien; do
+                echo "Suppression de $ancien"
+                gh release delete "$ancien" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+              done
 
       - name: Relancer le déploiement du site
         shell: bash

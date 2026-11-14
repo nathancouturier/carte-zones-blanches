@@ -112,7 +112,10 @@ def cmd_build(args: argparse.Namespace) -> int:
             print(f"   z{z} : {s['tiles']} tuiles, {s['bytes'] / 1e6:.2f} Mo", flush=True)
 
     with Timer(ctx, "archives PMTiles"):
-        archives = write_archives(ctx, store, generated.replace("-", ""))
+        # L'heure fait partie du nom : deux constructions le même jour ne partagent jamais un nom de fichier,
+        # donc un navigateur ne peut pas mélanger d'anciennes tuiles en cache avec un nouveau manifest.
+        stamp = generated.replace("-", "") + "-" + dt.datetime.now(dt.timezone.utc).strftime("%H%M")
+        archives = write_archives(ctx, store, stamp)
     store.close()
 
     manifest = build_manifest(ctx, archives, generated)

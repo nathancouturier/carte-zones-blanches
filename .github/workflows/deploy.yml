@@ -8,6 +8,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      sans_donnees:
+        description: "Publier même s'il n'existe aucune release de données"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -44,12 +49,21 @@ jobs:
           tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,createdAt \
             --jq '[.[] | select(.isDraft | not) | select(.tagName | startswith("data-"))] | sort_by(.createdAt) | last | .tagName // empty')
           if [ -z "$tag" ]; then
-            echo "::warning::Aucune release de données : le site sera publié sans couche réseau."
-            exit 0
+            if [ "${{ inputs.sans_donnees }}" = "true" ]; then
+              echo "::warning::Aucune release de données : le site est publié sans couche réseau."
+              exit 0
+            fi
+            # On préfère échouer : le site déjà en ligne garde ses données.
+            echo "::error::Aucune release de données (data-AAAA-MM-JJ). Lancer le workflow Données, ou relancer ce déploiement avec l'option sans_donnees."
+            exit 1
           fi
           echo "Release de données : $tag"
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir public/data --pattern '*.pmtiles' --pattern 'manifest.json'
           ls -la public/data
+          # Toutes les archives citées par le manifest doivent être là.
+          for f in $(jq -r '.archives[].file' public/data/manifest.json); do
+            [ -s "public/data/$f" ] || { echo "::error::Archive absente de la release $tag : $f"; exit 1; }
+          done
 
       - name: Construire
         run: npm run build

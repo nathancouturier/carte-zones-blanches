@@ -2,6 +2,7 @@
 # Sert à vérifier une URL, un identifiant de couche, un schéma (ogrinfo) ou une licence
 # avant d'intégrer une source. On lit le résultat dans les logs du job.
 name: Sonde
+run-name: Sonde ${{ inputs.script || '(fichier DEMANDE)' }}
 
 on:
   workflow_dispatch:
