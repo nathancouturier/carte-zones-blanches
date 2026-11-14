@@ -69,8 +69,12 @@ function barriere(): { attendre: Promise<void>; lever: () => void } {
 const reseau = {
   manifestStatus: 200,
   manifest: null as Promise<void> | null,
+  /** Date de génération du manifest servi : une autre date simule une nouvelle publication. */
+  generation: null as string | null,
   tuiles: null as Promise<void> | null,
   tuilesEnPanne: false,
+  /** Nombre de lectures dans l'archive qui échouent encore (404 : archive disparue du serveur). */
+  lecturesPerdues: 0,
 };
 
 function serveRange(init?: RequestInit): Response {
@@ -88,8 +92,10 @@ beforeEach(() => {
   carte.cadrages = [];
   reseau.manifestStatus = 200;
   reseau.manifest = null;
+  reseau.generation = null;
   reseau.tuiles = null;
   reseau.tuilesEnPanne = false;
+  reseau.lecturesPerdues = 0;
   vi.stubGlobal('window', { addEventListener: () => undefined });
   vi.stubGlobal('navigator', { onLine: true });
   vi.stubGlobal('DOMParser', DOMParser);
@@ -98,11 +104,16 @@ beforeEach(() => {
     if (url.endsWith('/data/manifest.json')) {
       if (reseau.manifest) await reseau.manifest;
       if (reseau.manifestStatus !== 200) return new Response('', { status: reseau.manifestStatus });
-      return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+      const servi = reseau.generation ? { ...manifest, generated: reseau.generation } : manifest;
+      return new Response(JSON.stringify(servi), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     if (url.includes('.pmtiles')) {
       if (reseau.tuiles) await reseau.tuiles;
       if (reseau.tuilesEnPanne) throw new TypeError('Failed to fetch');
+      if (reseau.lecturesPerdues > 0) {
+        reseau.lecturesPerdues--;
+        return new Response('', { status: 404 });
+      }
       return serveRange(init);
     }
     return new Response('', { status: 404 });
@@ -215,6 +226,33 @@ describe('import et analyse d\'un GPX', () => {
     expect(app.state.trackStatus).toBe('ready'); // et non « analyse en cours » pour toujours
     expect(app.state.trackError).toBeNull();
     expect(app.state.panel).toBe('report');
+  });
+});
+
+describe('nouvelle publication des données pendant la visite', () => {
+  it('le tracé est analysé de nouveau sans rouvrir le rapport ni déplacer la carte', async () => {
+    const app = await demarrer();
+    await app.importGpx(essai);
+    const premiere = app.state.track?.analysis;
+    expect(premiere).toBeTruthy();
+    app.selectZone(app.state.track?.report?.zones[0]?.index ?? null);
+    app.closePanel();
+    const cadrages = carte.cadrages.length;
+    // L'utilisateur regarde ailleurs, rapport fermé. Les données ont été republiées : l'archive
+    // annoncée par le manifest chargé a disparu du serveur, et le manifest a changé.
+    reseau.generation = '2026-12-01';
+    reseau.lecturesPerdues = 1;
+    carte.vue = grille(6.2, 44.7, 0.05);
+    carte.finDeMouvement();
+    await vi.waitFor(() => {
+      expect(app.state.manifest?.generated).toBe('2026-12-01');
+      expect(app.state.track?.analysis).not.toBe(premiere); // refaite sur les nouvelles données
+      expect(app.state.trackStatus).toBe('ready');
+    });
+    expect(app.state.track?.report).not.toBeNull();
+    expect(app.state.panel).toBeNull(); // le rapport ne se rouvre pas tout seul
+    expect(carte.cadrages.length).toBe(cadrages); // la carte reste où l'utilisateur l'a mise
+    expect(app.state.selectedZone).toBeNull(); // les zones ont pu changer avec les données
   });
 });
 
