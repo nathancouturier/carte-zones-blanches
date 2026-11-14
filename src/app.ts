@@ -22,7 +22,7 @@ import { archiveForTile } from './coverage/manifest';
 import { TileStore, type ArchiveReader } from './coverage/store';
 import { sampleCoverage } from './gpx/analyze';
 import { enrichedFileName, enrichGpx } from './gpx/export';
-import { GpxError, parseGpx } from './gpx/parse';
+import { decodeGpx, GpxError, parseGpx } from './gpx/parse';
 import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/report';
 import { resample } from './gpx/resample';
 import { getLanguage, setLanguage, t } from './i18n';
@@ -292,7 +292,8 @@ export class App {
     this.store.set({ trackStatus: 'reading', trackError: null, progress: 0 });
     let xml: string;
     try {
-      xml = await file.text();
+      // Lu en octets : file.text() décoderait toujours en UTF-8, même un GPX en ISO-8859-1.
+      xml = decodeGpx(new Uint8Array(await file.arrayBuffer()));
     } catch {
       fail('gpx.error.read');
       return;

@@ -1,6 +1,8 @@
 // Lecture d'un fichier GPX : traces, routes et multi-segments.
 
 import { gpx as gpxToGeoJson } from '@tmcw/togeojson';
+import { TRACK_MAX_JUMP_M } from '../config';
+import { distance } from './geodesy';
 
 export interface TrackPoint {
   lon: number;
@@ -19,6 +21,16 @@ export interface ParsedGpx {
   /** Vrai si tous les points ont une altitude. */
   hasElevation: boolean;
   pointCount: number;
+  /** Points aberrants écartés : position (0, 0), ou point isolé loin de ses deux voisins. */
+  discarded: number;
+  /** Endroits où la trace a été coupée, faute de continuité (saut de plus de TRACK_MAX_JUMP_M). */
+  jumps: number;
+}
+
+/** Ce qui a été corrigé en lisant un ensemble de segments. */
+interface Cleanup {
+  discarded: number;
+  jumps: number;
 }
 
 export type GpxErrorCode = 'invalid' | 'empty';
@@ -35,7 +47,99 @@ export interface XmlParser {
   parseFromString(text: string, type: 'text/xml'): Document;
 }
 
-function toSegment(coords: unknown): TrackPoint[] {
+/**
+ * Décode les octets d'un fichier GPX. L'encodage vient de la marque d'ordre des
+ * octets (BOM) s'il y en a une, sinon de la déclaration XML (encoding="ISO-8859-1"
+ * par exemple), sinon c'est l'UTF-8, l'encodage par défaut du XML.
+ */
+export function decodeGpx(bytes: Uint8Array): string {
+  let label = 'utf-8';
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) label = 'utf-16be';
+  else if (bytes[0] === 0xff && bytes[1] === 0xfe) label = 'utf-16le';
+  else if (!(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf)) {
+    // Sans BOM, la déclaration s'écrit en ASCII : on la lit sur les premiers octets.
+    const head = new TextDecoder('windows-1252').decode(bytes.subarray(0, 512));
+    label = /^\s*<\?xml\s[^>]*?encoding\s*=\s*["']([A-Za-z0-9._:-]+)["']/.exec(head)?.[1] ?? label;
+  }
+  try {
+    return new TextDecoder(label).decode(bytes); // le BOM éventuel est retiré au passage
+  } catch {
+    return new TextDecoder('utf-8').decode(bytes); // encodage inconnu du navigateur
+  }
+}
+
+/**
+ * Retire les blancs et la marque d'ordre des octets (BOM) qui précèdent parfois
+ * la déclaration XML (sortie de certains scripts) : le navigateur refuserait le fichier.
+ */
+export function trimXmlStart(text: string): string {
+  return text.replace(/^[\s\uFEFF]+/, '');
+}
+
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+
+/**
+ * Copie du document où les éléments GPX n'ont plus de préfixe (« gpx:trk »
+ * devient « trk », dans le même espace de noms) : togeojson cherche les
+ * éléments par leur nom complet et ne trouverait rien. Les extensions des
+ * autres espaces de noms sont recopiées telles quelles.
+ */
+function withoutPrefix(doc: Document, ns: string): Document {
+  const copy = doc.implementation.createDocument(ns, 'gpx', null);
+  const fill = (from: Element, to: Element): void => {
+    for (const attr of Array.from(from.attributes)) {
+      if (attr.namespaceURI === XMLNS_NS && attr.value === ns) continue; // déclaration du préfixe, devenue inutile
+      if (attr.namespaceURI) to.setAttributeNS(attr.namespaceURI, attr.name, attr.value);
+      else to.setAttribute(attr.name, attr.value);
+    }
+    for (let child = from.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1 && (child as Element).namespaceURI === ns) {
+        const element = copy.createElementNS(ns, (child as Element).localName);
+        fill(child as Element, element);
+        to.appendChild(element);
+      } else if (child.nodeType === 1 || child.nodeType === 3 || child.nodeType === 4) {
+        to.appendChild(copy.importNode(child, true));
+      }
+    }
+  };
+  fill(doc.documentElement, copy.documentElement);
+  return copy;
+}
+
+/**
+ * Coupe une trace là où deux points consécutifs sont à plus de TRACK_MAX_JUMP_M.
+ * Un point loin de ses deux voisins, qui eux se suivent, est une erreur de
+ * position : il est écarté sans couper la trace. Un point resté seul au bout
+ * de la trace après une coupure l'est aussi.
+ */
+function splitAtJumps(points: TrackPoint[], cleanup: Cleanup): TrackPoint[][] {
+  const far = (a: TrackPoint, b: TrackPoint): boolean => distance(a.lon, a.lat, b.lon, b.lat) > TRACK_MAX_JUMP_M;
+  const pieces: TrackPoint[][] = [];
+  let current: TrackPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    const previous = current[current.length - 1];
+    if (previous && far(previous, point)) {
+      const next = points[i + 1];
+      if (next && !far(previous, next)) {
+        cleanup.discarded++;
+        continue;
+      }
+      pieces.push(current);
+      current = [];
+    }
+    current.push(point);
+  }
+  pieces.push(current);
+  if (pieces.length === 1) return pieces;
+  const kept = pieces.filter((piece) => piece.length > 1);
+  cleanup.discarded += pieces.length - kept.length;
+  cleanup.jumps += Math.max(0, kept.length - 1);
+  return kept;
+}
+
+/** Points d'un segment, sans les positions invalides ; une trace est coupée à ses sauts aberrants. */
+function toSegments(coords: unknown, isTrack: boolean, cleanup: Cleanup): TrackPoint[][] {
   if (!Array.isArray(coords)) return [];
   const points: TrackPoint[] = [];
   for (const c of coords) {
@@ -43,10 +147,16 @@ function toSegment(coords: unknown): TrackPoint[] {
     const lon = Number(c[0]);
     const lat = Number(c[1]);
     if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+    // Position (0, 0) : perte du signal sur certains enregistreurs, jamais un point de randonnée.
+    if (lon === 0 && lat === 0) {
+      cleanup.discarded++;
+      continue;
+    }
     const ele = c.length > 2 && c[2] !== null && Number.isFinite(Number(c[2])) ? Number(c[2]) : null;
     points.push({ lon, lat, ele });
   }
-  return points;
+  // Les points d'une route sont souvent très espacés : on ne la coupe pas.
+  return isTrack ? splitAtJumps(points, cleanup) : [points];
 }
 
 /**
@@ -58,14 +168,17 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
   const xmlParser = parser ?? (new DOMParser() as unknown as XmlParser);
   let doc: Document;
   try {
-    doc = xmlParser.parseFromString(text, 'text/xml');
+    doc = xmlParser.parseFromString(trimXmlStart(text), 'text/xml');
   } catch {
     throw new GpxError('invalid');
   }
   if (!doc || !doc.documentElement || doc.getElementsByTagName('parsererror').length > 0) {
     throw new GpxError('invalid');
   }
-  if (doc.documentElement.nodeName.toLowerCase() !== 'gpx') throw new GpxError('invalid');
+  const root = doc.documentElement;
+  // Le nom local ignore le préfixe : « gpx:gpx » (sorties JAXB ou XSLT) est aussi un GPX.
+  if ((root.localName ?? root.nodeName).toLowerCase() !== 'gpx') throw new GpxError('invalid');
+  if (root.prefix && root.namespaceURI) doc = withoutPrefix(doc, root.namespaceURI);
 
   let collection: ReturnType<typeof gpxToGeoJson>;
   try {
@@ -76,6 +189,8 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
 
   const tracks: TrackPoint[][] = [];
   const routes: TrackPoint[][] = [];
+  const trackCleanup: Cleanup = { discarded: 0, jumps: 0 };
+  const routeCleanup: Cleanup = { discarded: 0, jumps: 0 };
   let trackName: string | null = null;
   let routeName: string | null = null;
   for (const feature of collection.features) {
@@ -84,13 +199,14 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
     const props = (feature.properties ?? {}) as Record<string, unknown>;
     const isRoute = props._gpxType === 'rte';
     const target = isRoute ? routes : tracks;
+    const cleanup = isRoute ? routeCleanup : trackCleanup;
     const name = typeof props.name === 'string' && props.name.trim() !== '' ? props.name.trim() : null;
-    if (geometry.type === 'LineString') {
-      target.push(toSegment(geometry.coordinates));
-    } else if (geometry.type === 'MultiLineString') {
-      for (const line of geometry.coordinates) target.push(toSegment(line));
-    } else {
-      continue; // points de passage
+    let lines: unknown[];
+    if (geometry.type === 'LineString') lines = [geometry.coordinates];
+    else if (geometry.type === 'MultiLineString') lines = geometry.coordinates;
+    else continue; // points de passage
+    for (const line of lines) {
+      for (const segment of toSegments(line, !isRoute, cleanup)) target.push(segment);
     }
     if (isRoute) routeName ??= name;
     else trackName ??= name;
@@ -108,5 +224,6 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
     pointCount += segment.length;
     if (hasElevation && segment.some((p) => p.ele === null)) hasElevation = false;
   }
-  return { name: kind === 'track' ? trackName : routeName, segments, kind, hasElevation, pointCount };
+  const { discarded, jumps } = kind === 'track' ? trackCleanup : routeCleanup;
+  return { name: kind === 'track' ? trackName : routeName, segments, kind, hasElevation, pointCount, discarded, jumps };
 }

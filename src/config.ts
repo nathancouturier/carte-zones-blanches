@@ -18,8 +18,30 @@ export const RESAMPLE_STEP_M = 20;
 export const WHITE_ZONE_MIN_LENGTH_M = 100;
 /** Deux zones blanches séparées par moins de cette distance de couverture sont fusionnées, en mètres. */
 export const WHITE_ZONE_MERGE_GAP_M = 50;
+/**
+ * Deux segments du GPX qui se suivent à moins de cette distance (pause du GPS,
+ * trace coupée en deux) forment un parcours continu : une zone blanche peut
+ * passer de l'un à l'autre. Au-delà, le parcours est interrompu. En mètres.
+ */
+export const SEGMENT_JOIN_MAX_M = 50;
 /** Seuil du calcul du dénivelé : les variations plus petites sont ignorées (bruit du GPS), en mètres. */
 export const ELEVATION_THRESHOLD_M = 5;
+/**
+ * Part des points qui doivent avoir une altitude (lue dans le GPX ou interpolée
+ * entre deux points connus) pour annoncer un dénivelé, un profil ou l'altitude
+ * d'une zone blanche. Au-dessous, le chiffre reposerait sur trop peu de points.
+ */
+export const ELEVATION_MIN_SHARE = 0.5;
+/**
+ * Saut maximal entre deux points consécutifs d'une trace (trkpt), en mètres.
+ * Au-delà, c'est une erreur de position ou une portion faite sans enregistrer
+ * (appareil éteint pendant un trajet en voiture) : la trace est coupée là et le
+ * saut ne compte ni dans la distance ni dans l'analyse ; un point isolé loin de
+ * ses deux voisins est écarté. Une trace dessinée à la main peut avoir des
+ * points espacés de 5 km : d'où une valeur large. Les routes (rtept), aux points
+ * souvent très espacés, ne sont pas concernées.
+ */
+export const TRACK_MAX_JUMP_M = 10_000;
 /** Taille maximale d'un fichier GPX accepté, en octets. */
 export const MAX_GPX_BYTES = 40 * 1024 * 1024;
 /** Nombre de tuiles lues en parallèle pendant l'analyse. */

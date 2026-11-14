@@ -15,6 +15,33 @@ export interface Sample {
 }
 
 /**
+ * Altitudes des points d'un segment, les manquantes interpolées (selon la
+ * distance parcourue) entre les deux points connus les plus proches. Avant le
+ * premier point connu et après le dernier, l'altitude reste inconnue : on ne
+ * l'invente pas.
+ */
+function fillElevations(segment: readonly TrackPoint[]): (number | null)[] {
+  const ele = segment.map((p) => p.ele);
+  // Distance de chaque point depuis le début du segment.
+  const along = [0];
+  for (let i = 1; i < segment.length; i++) {
+    along.push(along[i - 1] + distance(segment[i - 1].lon, segment[i - 1].lat, segment[i].lon, segment[i].lat));
+  }
+  let previous = -1; // dernier point dont l'altitude est connue
+  for (let i = 0; i < segment.length; i++) {
+    const to = ele[i];
+    if (to === null) continue;
+    const from = previous >= 0 ? ele[previous] : null;
+    if (from !== null) {
+      const span = along[i] - along[previous];
+      for (let j = previous + 1; j < i; j++) ele[j] = from + (to - from) * (span > 0 ? (along[j] - along[previous]) / span : 0);
+    }
+    previous = i;
+  }
+  return ele;
+}
+
+/**
  * Place un point tous les « step » mètres le long de chaque segment, plus le
  * dernier point du segment. Les distances sont géodésiques.
  */
@@ -24,8 +51,9 @@ export function resample(segments: readonly TrackPoint[][], step: number = RESAM
   let offset = 0;
   segments.forEach((segment, seg) => {
     if (segment.length === 0) return;
+    const elevations = fillElevations(segment);
     const first = segment[0];
-    samples.push({ lon: first.lon, lat: first.lat, ele: first.ele, dist: offset, seg });
+    samples.push({ lon: first.lon, lat: first.lat, ele: elevations[0], dist: offset, seg });
     let travelled = 0; // distance depuis le début du segment
     let next = step; // distance du prochain point à placer
     for (let i = 1; i < segment.length; i++) {
@@ -33,10 +61,12 @@ export function resample(segments: readonly TrackPoint[][], step: number = RESAM
       const b = segment[i];
       const length = distance(a.lon, a.lat, b.lon, b.lat);
       if (length === 0) continue;
+      const eleA = elevations[i - 1];
+      const eleB = elevations[i];
       while (next <= travelled + length) {
         const t = (next - travelled) / length;
         const [lon, lat] = interpolate(a.lon, a.lat, b.lon, b.lat, t);
-        const ele = a.ele !== null && b.ele !== null ? a.ele + (b.ele - a.ele) * t : null;
+        const ele = eleA !== null && eleB !== null ? eleA + (eleB - eleA) * t : null;
         samples.push({ lon, lat, ele, dist: offset + next, seg });
         next += step;
       }
@@ -46,7 +76,7 @@ export function resample(segments: readonly TrackPoint[][], step: number = RESAM
     const lastSample = samples[samples.length - 1];
     // On ajoute l'arrivée du segment, sauf si un point vient d'y être placé.
     if (offset + travelled - lastSample.dist > 0.01) {
-      samples.push({ lon: last.lon, lat: last.lat, ele: last.ele, dist: offset + travelled, seg });
+      samples.push({ lon: last.lon, lat: last.lat, ele: elevations[segment.length - 1], dist: offset + travelled, seg });
     }
     offset += travelled;
   });

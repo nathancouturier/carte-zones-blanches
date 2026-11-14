@@ -16,8 +16,7 @@ import {
 import { LEVEL_SOLID } from '../coverage/render';
 import { hasThresholdSlots, networkCount, slotLabel } from '../coverage/slotLabel';
 import type { CoverageStats } from '../gpx/analyze';
-import { describeOperators, describeZone, LEVEL_KEYS } from '../gpx/report';
-import { WHITE_ZONE_MIN_LENGTH_M } from '../config';
+import { describeOperators, describeZone, importNotes, LEVEL_KEYS, noDataMessage, noZonesMessage } from '../gpx/report';
 import {
   availableLanguages,
   countryName,
@@ -294,6 +293,7 @@ export function gpxPanel(app: App, chooseFile: () => void): Node_[] {
         t('gpx.loaded'),
         h('p', { class: 'track-name' }, name),
         h('p', { class: 'muted' }, t('gpx.summary', { km: formatKm(track.length), points: formatNumber(track.parsed.pointCount) })),
+        importNotes(track.parsed).map((text) => note(text)),
         trackStatus === 'analyzing'
           ? h(
               'div',
@@ -477,6 +477,7 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
   if (report.binaryCountries.length > 0) {
     parts.push(note(t('report.binaryNote', { countries: report.binaryCountries.map((c) => countryName(c.iso)).join(', ') })));
   }
+  for (const text of importNotes(track.parsed)) parts.push(note(text));
 
   if (report.stats.measured > 0 || report.statsAll.measured > 0) {
     parts.push(
@@ -489,7 +490,7 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
       ),
     );
   } else {
-    parts.push(note(t('report.noData'), 'warning'));
+    parts.push(note(noDataMessage(track.analysis, report), 'warning'));
   }
 
   // Profil altimétrique coloré selon la couverture (seulement si le GPX a des altitudes).
@@ -504,7 +505,7 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
     section(
       t('report.zonesHeading', { count: report.zones.length }),
       report.zones.length === 0
-        ? h('p', { class: 'muted' }, t('report.noZones', { min: formatNumber(WHITE_ZONE_MIN_LENGTH_M) }))
+        ? h('p', { class: 'muted' }, noZonesMessage())
         : [
             h('p', { class: 'hint' }, t('report.zonesHint')),
             h(

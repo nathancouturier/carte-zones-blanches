@@ -12,12 +12,15 @@ import {
   sampleCoverage,
   sampleSpans,
   type RawCoverage,
+  type WhiteZone,
 } from '../src/gpx/analyze';
 import { enrichedFileName, enrichGpx, WAYPOINT_TYPE } from '../src/gpx/export';
 import { distance } from '../src/gpx/geodesy';
-import { GpxError, parseGpx } from '../src/gpx/parse';
-import { analyzeTrack, buildReport, describeZone, reportText, zoneWaypoints } from '../src/gpx/report';
+import { decodeGpx, GpxError, parseGpx } from '../src/gpx/parse';
+import { analyzeTrack, buildReport, describeZone, importNotes, reportText, zoneWaypoints } from '../src/gpx/report';
 import { resample, trackLength, type Sample } from '../src/gpx/resample';
+import { availableLanguages, setLanguage } from '../src/i18n';
+import { profileColumns } from '../src/ui/profile';
 import { fixtureStore, sampleManifest, xmlParser, xmlTools } from './helpers';
 
 const GPX_HEAD = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">';
@@ -43,6 +46,16 @@ const routeGpx = `${GPX_HEAD}
 <rte><name>Itinéraire</name>
 <rtept lat="42.50" lon="1.50"/><rtept lat="42.51" lon="1.52"/><rtept lat="42.53" lon="1.52"/>
 </rte></gpx>`;
+
+// Même trace, avec un préfixe sur chaque élément GPX (sorties JAXB ou XSLT).
+const prefixedGpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx:gpx version="1.1" creator="test" xmlns:gpx="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+<gpx:wpt lat="44.60" lon="6.10"><gpx:name>Parking</gpx:name></gpx:wpt>
+<gpx:trk><gpx:name>Tour du lac</gpx:name><gpx:trkseg>
+<gpx:trkpt lat="44.6000" lon="6.1000"><gpx:ele>1000</gpx:ele></gpx:trkpt>
+<gpx:trkpt lat="44.6010" lon="6.1000"><gpx:ele>1020</gpx:ele><gpx:extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>120</gpxtpx:hr></gpxtpx:TrackPointExtension></gpx:extensions></gpx:trkpt>
+<gpx:trkpt lat="44.6020" lon="6.1010"><gpx:ele>1010</gpx:ele></gpx:trkpt>
+</gpx:trkseg></gpx:trk></gpx:gpx>`;
 
 describe('lecture du GPX', () => {
   it('lit une trace simple avec ses altitudes', () => {
@@ -84,6 +97,47 @@ describe('lecture du GPX', () => {
     expect(gpx.segments).toHaveLength(1);
   });
 
+  it('lit un GPX dont les éléments portent un préfixe d\'espace de noms', () => {
+    const gpx = parseGpx(prefixedGpx, xmlParser);
+    expect(gpx.kind).toBe('track');
+    expect(gpx.name).toBe('Tour du lac');
+    expect(gpx.segments).toEqual(parseGpx(trackGpx, xmlParser).segments);
+  });
+
+  it('écarte les points aberrants et coupe la trace aux sauts de plus de 10 km', () => {
+    const trace = (points: [number, number][]): string =>
+      `${GPX_HEAD}<trk><trkseg>${points.map(([lat, lon]) => `<trkpt lat="${lat}" lon="${lon}"><ele>1000</ele></trkpt>`).join('')}</trkseg></trk></gpx>`;
+    const lake: [number, number][] = [[44.6, 6.1], [44.601, 6.1], [44.602, 6.1]];
+    const clean = parseGpx(trace(lake), xmlParser);
+    expect([clean.discarded, clean.jumps]).toEqual([0, 0]);
+    // Perte du signal : un point (0, 0) au milieu de la trace.
+    const zero = parseGpx(trace([lake[0], lake[1], [0, 0], lake[2]]), xmlParser);
+    expect(zero.segments).toEqual(clean.segments);
+    expect([zero.discarded, zero.jumps]).toEqual([1, 0]);
+    expect(trackLength(zero.segments)).toBeLessThan(300);
+    // Point isolé à 55 km de ses deux voisins, au milieu ou au bout de la trace.
+    expect(parseGpx(trace([lake[0], lake[1], [45.1, 6.1], lake[2]]), xmlParser)).toMatchObject({ segments: clean.segments, discarded: 1, jumps: 0 });
+    expect(parseGpx(trace([[45.1, 6.1], ...lake]), xmlParser)).toMatchObject({ segments: clean.segments, discarded: 1, jumps: 0 });
+    expect(parseGpx(trace([...lake, [45.1, 6.1]]), xmlParser)).toMatchObject({ segments: clean.segments, discarded: 1, jumps: 0 });
+    // Reprise de l'enregistrement 40 km plus loin : la trace est coupée, le saut ne compte pas.
+    const resumed = parseGpx(trace([lake[0], lake[1], [44.9, 6.5], [44.901, 6.5]]), xmlParser);
+    expect(resumed.segments.map((s) => s.length)).toEqual([2, 2]);
+    expect([resumed.discarded, resumed.jumps]).toEqual([0, 1]);
+    // Une trace dessinée à la main peut avoir des points espacés de quelques kilomètres : rien n'est coupé.
+    const drawn = parseGpx(trace([[44.6, 6.1], [44.66, 6.1], [44.72, 6.1]]), xmlParser);
+    expect(drawn.segments.map((s) => s.length)).toEqual([3]);
+    // Une route garde ses points espacés, mais pas le point (0, 0).
+    const route = parseGpx(`${GPX_HEAD}<rte><rtept lat="44.6" lon="6.1"/><rtept lat="0" lon="0"/><rtept lat="45.1" lon="6.1"/></rte></gpx>`, xmlParser);
+    expect(route.segments.map((s) => s.length)).toEqual([2]);
+    expect([route.discarded, route.jumps]).toEqual([1, 0]);
+  });
+
+  it('accepte des blancs ou une marque d\'ordre des octets avant la déclaration XML', () => {
+    for (const before of ['\n', '\r\n  ', '\uFEFF', '\uFEFF\n']) {
+      expect(parseGpx(before + trackGpx, xmlParser).name, JSON.stringify(before)).toBe('Tour du lac');
+    }
+  });
+
   it('signale un fichier invalide ou vide', () => {
     const code = (text: string): string => {
       try {
@@ -96,6 +150,29 @@ describe('lecture du GPX', () => {
     expect(code('<html><body>pas un gpx</body></html>')).toBe('invalid');
     expect(code(`${GPX_HEAD}<wpt lat="44" lon="6"><name>Seul</name></wpt></gpx>`)).toBe('empty');
     expect(code(`${GPX_HEAD}<trk><trkseg><trkpt lat="44" lon="6"/></trkseg></trk></gpx>`)).toBe('empty');
+  });
+});
+
+describe('encodage du fichier', () => {
+  const named = trackGpx.replace('Tour du lac', 'Tour du Râteau');
+  const latin1 = named.replace('encoding="UTF-8"', 'encoding="ISO-8859-1"');
+
+  it('décode selon l\'encodage de la déclaration XML', () => {
+    expect(parseGpx(decodeGpx(Buffer.from(latin1, 'latin1')), xmlParser).name).toBe('Tour du Râteau');
+    expect(parseGpx(decodeGpx(Buffer.from(named.replace('UTF-8', 'windows-1252'), 'latin1')), xmlParser).name).toBe('Tour du Râteau');
+  });
+
+  it('donne la priorité à la marque d\'ordre des octets', () => {
+    const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(named, 'utf16le')]);
+    expect(parseGpx(decodeGpx(utf16), xmlParser).name).toBe('Tour du Râteau');
+    const utf8 = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(latin1, 'utf8')]);
+    expect(decodeGpx(utf8).startsWith('<?xml')).toBe(true);
+    expect(parseGpx(decodeGpx(utf8), xmlParser).name).toBe('Tour du Râteau');
+  });
+
+  it('lit en UTF-8 sans déclaration d\'encodage, ou si l\'encodage est inconnu', () => {
+    expect(parseGpx(decodeGpx(Buffer.from(named.replace(' encoding="UTF-8"', ''), 'utf8')), xmlParser).name).toBe('Tour du Râteau');
+    expect(parseGpx(decodeGpx(Buffer.from(named.replace('UTF-8', 'x-inconnu'), 'utf8')), xmlParser).name).toBe('Tour du Râteau');
   });
 });
 
@@ -153,10 +230,52 @@ describe('rééchantillonnage', () => {
   it('refuse un pas nul', () => {
     expect(() => resample(north, 0)).toThrow(RangeError);
   });
+
+  it('interpole les altitudes manquantes entre les points connus', () => {
+    const gaps = [[
+      { lon: 6, lat: 45, ele: 1000 },
+      { lon: 6, lat: 45.0045, ele: null }, // à mi-chemin
+      { lon: 6, lat: 45.009, ele: 1100 },
+    ]];
+    const samples = resample(gaps, 20);
+    expect(samples.every((s) => s.ele !== null)).toBe(true);
+    const total = samples[samples.length - 1].dist;
+    for (const s of samples) expect(s.ele).toBeCloseTo(1000 + (100 * s.dist) / total, 6);
+  });
+
+  it('n\'invente pas d\'altitude avant le premier point connu ni après le dernier', () => {
+    const ends = [[
+      { lon: 6, lat: 45, ele: null },
+      { lon: 6, lat: 45.0045, ele: 1000 },
+      { lon: 6, lat: 45.009, ele: 1100 },
+      { lon: 6, lat: 45.0135, ele: null },
+    ]];
+    const firstKnown = trackLength([ends[0].slice(0, 2)]);
+    const lastKnown = trackLength([ends[0].slice(0, 3)]);
+    for (const s of resample(ends, 20)) {
+      expect(s.ele === null, `${s.dist} m`).toBe(s.dist < firstKnown || s.dist > lastKnown);
+    }
+  });
+
+  it('garde le dénivelé et le profil quand une seule altitude manque', () => {
+    // Trace de 40 points, dont un seul sans <ele>.
+    const trkpts = Array.from({ length: 40 }, (_, i) => {
+      const ele = i === 17 ? '' : `<ele>${1000 + i * 10}</ele>`;
+      return `<trkpt lat="${(44.6 + i * 0.001).toFixed(4)}" lon="6.1000">${ele}</trkpt>`;
+    }).join('');
+    const parsed = parseGpx(`${GPX_HEAD}<trk><trkseg>${trkpts}</trkseg></trk></gpx>`, xmlParser);
+    expect(parsed.hasElevation).toBe(false);
+    const samples = resample(parsed.segments);
+    expect(samples.every((s) => s.ele !== null)).toBe(true);
+    const gain = elevationGain(samples);
+    expect(gain).toMatchObject({ descent: 0, min: 1000, max: 1390 });
+    expect(gain?.ascent).toBeGreaterThan(385); // le seuil de 5 m peut laisser les derniers mètres de côté
+    expect(profileColumns(samples, null).length).toBeGreaterThan(0);
+  });
 });
 
 /** Fabrique un tracé rectiligne et sa couverture à partir d'une liste de classes par point (pas de 20 m). */
-function synthetic(levels: (number | 'out')[], options: { country?: number; sourceType?: number; ele?: (i: number) => number } = {}): { samples: Sample[]; raw: RawCoverage } {
+function synthetic(levels: (number | 'out')[], options: { country?: number; sourceType?: number; ele?: (i: number) => number | null } = {}): { samples: Sample[]; raw: RawCoverage } {
   const n = levels.length;
   const samples: Sample[] = levels.map((_, i) => ({ lon: 6 + i * 0.00025, lat: 45, ele: options.ele ? options.ele(i) : null, dist: i * 20, seg: 0 }));
   const raw: RawCoverage = { data: new Uint8Array(n), voice: new Uint8Array(n), meta: new Uint8Array(n), inside: new Uint8Array(n) };
@@ -252,6 +371,36 @@ describe('regroupement en zones blanches', () => {
     expect(zones.map((z) => [z.first, z.last])).toEqual([[0, 7], [8, 15]]);
   });
 
+  it('prolonge une zone d\'un segment au suivant quand ils se touchent, quel que soit le seuil de fusion', () => {
+    // Deux segments de 80 m sans réseau, à 11 m l'un de l'autre (pause du GPS) : une seule zone de 160 m.
+    const a = synthetic(repeat(0, 5));
+    const b = synthetic(repeat(0, 5));
+    const join = a.samples[4].lon + 0.00014; // environ 11 m plus à l'est
+    const samples = [...a.samples, ...b.samples.map((s, i) => ({ ...s, seg: 1, dist: 80 + i * 20, lon: join + i * 0.00025 }))];
+    expect(distance(a.samples[4].lon, 45, join, 45)).toBeCloseTo(11, 0);
+    const raw: RawCoverage = {
+      data: new Uint8Array([...a.raw.data, ...b.raw.data]),
+      voice: new Uint8Array(10),
+      meta: new Uint8Array([...a.raw.meta, ...b.raw.meta]),
+      inside: new Uint8Array([...a.raw.inside, ...b.raw.inside]),
+    };
+    for (const mergeGap of [50, 10, 0]) {
+      const zones = findWhiteZones(samples, classify(raw, tables, 'data'), raw, { mergeGap });
+      expect(zones.map((z) => z.length), `fusion à ${mergeGap} m`).toEqual([160]);
+    }
+  });
+
+  it('n\'annonce l\'altitude d\'une zone que si la plupart de ses points en ont une', () => {
+    // Seul le départ a une altitude : la zone n'a pas d'altitude.
+    const lone = synthetic([...repeat(0, 11), ...repeat(3, 5)], { ele: (i) => (i === 0 ? 1000 : null) });
+    const zone = findWhiteZones(lone.samples, classify(lone.raw, tables, 'data'), lone.raw)[0];
+    expect([zone.eleMin, zone.eleMax]).toEqual([null, null]);
+    // 8 points sur 11 ont une altitude : elle est annoncée, calculée sur ces points.
+    const most = synthetic([...repeat(0, 11), ...repeat(3, 5)], { ele: (i) => (i < 8 ? 1000 + i : null) });
+    const known = findWhiteZones(most.samples, classify(most.raw, tables, 'data'), most.raw)[0];
+    expect([known.eleMin, known.eleMax]).toEqual([1000, 1007]);
+  });
+
   it('marque les zones estimées et liste les pays', () => {
     const { samples, raw } = synthetic(repeat(0, 10), { country: 5, sourceType: 2 });
     const zones = findWhiteZones(samples, classify(raw, tables, 'data'), raw);
@@ -301,6 +450,14 @@ describe('statistiques du parcours', () => {
     const gain = elevationGain(samples, 5);
     expect(gain).toEqual({ ascent: 100, descent: 60, min: 1000, max: 1100 });
     expect(elevationGain(synthetic(repeat(3, 4)).samples)).toBeNull();
+  });
+
+  it('calcule le dénivelé sur les points qui ont une altitude, jamais sur trop peu', () => {
+    const start = [null, null, 1000, 1010, 1020, 1030, 1040, 1050, 1060, 1070];
+    expect(elevationGain(synthetic(repeat(3, 10), { ele: (i) => start[i] }).samples)).toEqual({ ascent: 70, descent: 0, min: 1000, max: 1070 });
+    // Seul le départ a une altitude, ou le tracé se réduit à un point : rien n'est annoncé.
+    expect(elevationGain(synthetic(repeat(3, 10), { ele: (i) => (i === 0 ? 1000 : null) }).samples)).toBeNull();
+    expect(elevationGain(synthetic([3], { ele: () => 1000 }).samples)).toBeNull();
   });
 
   it('liste les pays dans l\'ordre du parcours', () => {
@@ -359,6 +516,80 @@ describe('analyse sur les tuiles du pipeline', () => {
   });
 });
 
+describe('rapport en texte', () => {
+  const manifest = sampleManifest();
+  const settings = { service: 'data' as const, operators: {} };
+
+  it('remplace toutes les variables, même sans zone blanche, dans toutes les langues', () => {
+    const { samples, raw } = synthetic(repeat(3, 20));
+    const analysis = analyzeTrack(samples, raw);
+    const report = buildReport(analysis, manifest, settings);
+    expect(report.zones).toHaveLength(0);
+    expect(reportText(analysis, report, manifest, settings, 'Sans zone')).toContain('Aucune zone blanche de plus de 100 m sur ce parcours.');
+    try {
+      for (const { code } of availableLanguages()) {
+        setLanguage(code);
+        expect(reportText(analysis, report, manifest, settings, 'Sans zone'), code).not.toMatch(/[{}]/);
+      }
+    } finally {
+      setLanguage('fr');
+    }
+  });
+
+  it('signale les points écartés et les sauts ignorés à la lecture du GPX', () => {
+    expect(importNotes({ discarded: 0, jumps: 0 })).toEqual([]);
+    expect(importNotes({ discarded: 1, jumps: 1 })).toEqual([
+      'Un point aberrant a été écarté\u00a0: position (0, 0) ou point isolé à plus de 10 km du tracé.',
+      'Le tracé fait un saut de plus de 10 km entre deux points\u00a0: ce saut n\'est compté ni dans la distance ni dans l\'analyse.',
+    ]);
+    expect(importNotes({ discarded: 3, jumps: 2 })).toEqual([
+      '3 points aberrants ont été écartés\u00a0: position (0, 0) ou points isolés à plus de 10 km du tracé.',
+      'Le tracé fait 2 sauts de plus de 10 km entre deux points\u00a0: ces sauts ne sont comptés ni dans la distance ni dans l\'analyse.',
+    ]);
+  });
+
+  it('explique pourquoi aucune part du parcours n\'est mesurée', () => {
+    const textOf = (track: { samples: Sample[]; raw: RawCoverage }, service: 'data' | 'voice'): string => {
+      const analysis = analyzeTrack(track.samples, track.raw);
+      return reportText(analysis, buildReport(analysis, manifest, { service, operators: {} }), manifest, { service, operators: {} }, null);
+    };
+    // Andorre (source estimée, internet seulement), avec le service Appels et SMS.
+    const andorra = textOf(synthetic(repeat(2, 30), { country: 5, sourceType: 2 }), 'voice');
+    expect(andorra).toContain('Aucune donnée pour ce service sur ce parcours.');
+    expect(andorra).toContain('Sans donnée pour ce service : 0,6 km');
+    expect(andorra).not.toContain('hors de la zone couverte');
+    // Tout le tracé hors de la zone couverte par les données.
+    const outside = textOf(synthetic(repeat('out' as const, 30)), 'data');
+    expect(outside).toContain('Le tracé est entièrement hors de la zone couverte par les données.');
+    expect(outside).not.toContain('Aucune donnée pour ce service');
+    // Points tous confondus : le tracé ne mesure rien.
+    const same = textOf(synthetic([3]), 'data');
+    expect(same).toContain('Le tracé a une longueur nulle : tous ses points sont au même endroit.');
+    expect(same).not.toContain('hors de la zone couverte');
+  });
+
+  it('donne une longueur cohérente avec les bornes affichées', () => {
+    const zone = (start: number, end: number): WhiteZone => ({
+      index: 1,
+      first: 0,
+      last: 1,
+      start,
+      end,
+      length: end - start,
+      eleMin: null,
+      eleMax: null,
+      countries: [],
+      estimated: false,
+      startPoint: [6, 45],
+      endPoint: [6.1, 45],
+      bbox: [6, 45, 6.1, 45],
+    });
+    expect(describeZone(zone(12430, 14070), manifest)).toBe('km 12,4 à 14,1, soit 1,7 km');
+    expect(describeZone(zone(2030, 2170), manifest)).toBe('km 2,0 à 2,2, soit 0,2 km');
+    expect(describeZone(zone(190, 410), manifest)).toBe('km 0,2 à 0,4, soit 0,2 km');
+  });
+});
+
 describe('export du GPX enrichi', () => {
   const waypoints = [
     { lon: 6.1, lat: 44.6, ele: 1850.26, name: 'Zone blanche 1, début', desc: 'km 0,1 à 0,4 & plus', sym: 'Flag, Red' },
@@ -390,6 +621,34 @@ describe('export du GPX enrichi', () => {
     const twice = enrichGpx(once, [waypoints[0]], xmlTools);
     const doc = xmlTools.parse(twice);
     expect(doc.getElementsByTagName('wpt')).toHaveLength(2); // Parking + 1 point
+  });
+
+  it('déclare toujours l\'UTF-8, l\'encodage du fichier produit', () => {
+    const latin1 = trackGpx.replace('encoding="UTF-8"', 'encoding="ISO-8859-1"').replace('Tour du lac', 'Tour du Râteau');
+    const out = enrichGpx(latin1, waypoints, xmlTools);
+    expect(out.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+    expect(out).not.toContain('ISO-8859-1');
+    expect(out.match(/<\?xml\s/g)).toHaveLength(1);
+    expect(parseGpx(out, xmlParser).name).toBe('Tour du Râteau');
+    // Sans déclaration dans le fichier d'origine, on en ajoute une.
+    expect(enrichGpx(trackGpx.replace(/^<\?xml[^>]*>\n/, ''), waypoints, xmlTools).startsWith('<?xml version="1.0" encoding="UTF-8"?>\n<gpx')).toBe(true);
+  });
+
+  it('garde le préfixe d\'espace de noms du fichier d\'origine', () => {
+    const out = enrichGpx(prefixedGpx, waypoints, xmlTools);
+    expect(out).toContain('<gpx:wpt lat="44.600000"');
+    expect(out).not.toMatch(/<wpt[\s>]/);
+    const doc = xmlTools.parse(out);
+    const ns = 'http://www.topografix.com/GPX/1/1';
+    const names = Array.from(doc.getElementsByTagNameNS(ns, 'wpt')).map((w) => w.getElementsByTagNameNS(ns, 'name')[0].textContent);
+    expect(names).toEqual(['Parking', 'Zone blanche 1, début', 'Zone blanche 1, fin']);
+    expect(parseGpx(out, xmlParser).segments).toEqual(parseGpx(trackGpx, xmlParser).segments);
+  });
+
+  it('exporte un GPX précédé d\'un saut de ligne', () => {
+    const out = enrichGpx(`\n${trackGpx}`, waypoints, xmlTools);
+    expect(out.startsWith('<?xml')).toBe(true);
+    expect(parseGpx(out, xmlParser).segments).toEqual(parseGpx(trackGpx, xmlParser).segments);
   });
 
   it('fonctionne sur une route et sans point existant', () => {

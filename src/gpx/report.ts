@@ -1,5 +1,6 @@
 // Rapport de couverture d'un tracé : chiffres, zones blanches et version texte.
 
+import { TRACK_MAX_JUMP_M, WHITE_ZONE_MIN_LENGTH_M } from '../config';
 import {
   countryName,
   formatDataDate,
@@ -34,6 +35,7 @@ import {
   type WhiteZone,
 } from './analyze';
 import type { ExtraWaypoint } from './export';
+import type { ParsedGpx } from './parse';
 import type { Sample } from './resample';
 
 /** Résultat de la lecture des tuiles pour un tracé. Indépendant des réglages. */
@@ -113,11 +115,15 @@ function plain(text: string): string {
 
 /** « km 12,4 à 14,1, soit 1,7 km, altitude 1 850 à 2 100 m, Italie, estimée ». */
 export function describeZone(zone: WhiteZone, manifest: Manifest): string {
+  // Bornes arrondies à 100 m (la décimale affichée), puis longueur tirée de ces bornes :
+  // arrondie à part, elle pourrait contredire la soustraction que fait le lecteur.
+  const start = Math.round(zone.start / 100) * 100;
+  const end = Math.round(zone.end / 100) * 100;
   const parts = [
     t('report.zoneRange', {
-      start: formatKm(zone.start),
-      end: formatKm(zone.end),
-      length: formatKm(zone.length),
+      start: formatKm(start),
+      end: formatKm(end),
+      length: formatKm(end - start),
     }),
   ];
   if (zone.eleMin !== null && zone.eleMax !== null) {
@@ -135,6 +141,27 @@ export function describeZone(zone: WhiteZone, manifest: Manifest): string {
   if (names.length > 0) parts.push(names.join(', '));
   if (zone.estimated) parts.push(t('report.zoneEstimated'));
   return parts.join(', ');
+}
+
+/** Corrections faites à la lecture du GPX, à signaler : points aberrants écartés, sauts ignorés. */
+export function importNotes(parsed: Pick<ParsedGpx, 'discarded' | 'jumps'>): string[] {
+  const km = formatNumber(TRACK_MAX_JUMP_M / 1000);
+  const notes: string[] = [];
+  if (parsed.discarded > 0) notes.push(t('gpx.discarded', { count: parsed.discarded, km }));
+  if (parsed.jumps > 0) notes.push(t('gpx.jumps', { count: parsed.jumps, km }));
+  return notes;
+}
+
+/** Message à afficher quand aucune part du parcours n'est mesurée, selon la cause. */
+export function noDataMessage(analysis: TrackAnalysis, report: Report): string {
+  if (!(analysis.length > 0)) return t('report.zeroLength'); // points tous confondus
+  if (report.stats.unknown > 0) return t('report.noServiceData'); // pays sans donnée pour ce service
+  return t('report.noData'); // hors de la zone couverte par les données
+}
+
+/** « Aucune zone blanche de plus de 100 m sur ce parcours. », dans le panneau comme dans le texte. */
+export function noZonesMessage(): string {
+  return t('report.noZones', { min: formatNumber(WHITE_ZONE_MIN_LENGTH_M) });
 }
 
 /** Opérateur appliqué dans chaque pays traversé : « Orange (France), tous opérateurs (Italie) ». */
@@ -195,13 +222,13 @@ export function reportText(
       lines.push(...statsLines(report.statsAll));
     }
   } else {
-    lines.push(t('report.noData'));
+    lines.push(noDataMessage(analysis, report));
   }
   if (report.stats.outside > 0) lines.push(t('report.outsideLine', { km: formatKm(report.stats.outside) }));
   if (report.stats.unknown > 0) lines.push(t('report.unknownLine', { km: formatKm(report.stats.unknown) }));
   lines.push('');
   if (report.zones.length === 0) {
-    lines.push(t('report.noZones'));
+    lines.push(noZonesMessage());
   } else {
     lines.push(t('report.zonesTitle', { count: report.zones.length }));
     for (const zone of report.zones) lines.push(`  ${zone.index}. ${describeZone(zone, manifest)}`);
