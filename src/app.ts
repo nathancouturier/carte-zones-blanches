@@ -348,7 +348,8 @@ export class App {
   async importGpx(file: File): Promise<void> {
     const read = ++this.readSeq;
     if (file.size > MAX_GPX_BYTES) {
-      this.failRead(read, 'gpx.error.tooBig', { size: Math.ceil(file.size / 1e6), max: Math.round(MAX_GPX_BYTES / 1e6) });
+      // Taille arrondie au-dessus, maximum au-dessous : le fichier refusé est toujours annoncé plus gros.
+      this.failRead(read, 'gpx.error.tooBig', { size: Math.ceil(file.size / 1e6), max: Math.floor(MAX_GPX_BYTES / 1e6) });
       return;
     }
     this.store.set({ trackStatus: 'reading', trackError: null });

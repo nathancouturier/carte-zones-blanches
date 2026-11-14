@@ -173,6 +173,15 @@ describe('import et analyse d\'un GPX', () => {
     expect(app.state.panel).toBe('report');
   });
 
+  it('un fichier trop gros est annoncé plus gros que le maximum', async () => {
+    const app = await demarrer();
+    // 41 943 041 octets : un octet de plus que le maximum (40 Mio, soit 41,9 Mo).
+    await app.importGpx(fichier('enorme.gpx', '<gpx/>', 40 * 1024 * 1024 + 1));
+    const { size, max } = app.state.trackError?.params ?? {};
+    expect(app.state.trackError?.key).toBe('gpx.error.tooBig');
+    expect(Number(size)).toBeGreaterThan(Number(max));
+  });
+
   it('un tracé importé avant l\'arrivée du manifest est analysé dès son arrivée, sans faux message d\'échec (ui-5)', async () => {
     const manifeste = barriere();
     reseau.manifest = manifeste.attendre; // réseau lent en montagne
