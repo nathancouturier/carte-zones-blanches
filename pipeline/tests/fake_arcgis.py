@@ -66,7 +66,7 @@ class Layer:
 
 
 class FakeArcgis:
-    """Serveur local. routes : chemin -> Layer (répond sur <chemin>/query) ou dict (réponse JSON fixe)."""
+    """Serveur local. routes : chemin -> Layer (répond sur <chemin>/query), dict (réponse JSON fixe) ou str (page HTML)."""
 
     def __init__(self, routes: dict[str, Any]):
         self.routes = routes
@@ -91,9 +91,10 @@ class FakeArcgis:
                     self.send_response(404)
                     self.end_headers()
                     return
-                raw = json.dumps(body).encode("utf-8")
+                html = isinstance(body, str)
+                raw = body.encode("utf-8") if html else json.dumps(body).encode("utf-8")
                 self.send_response(200)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", "text/html; charset=utf-8" if html else "application/json")
                 if "gzip" in (self.headers.get("Accept-Encoding") or ""):
                     raw = gzip.compress(raw)
                     self.send_header("Content-Encoding", "gzip")
