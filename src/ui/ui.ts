@@ -31,6 +31,7 @@ export class Ui {
   private readonly panelTitle: HTMLElement;
   private readonly panelBody: HTMLElement;
   private readonly panelBack: HTMLButtonElement;
+  private readonly panelCollapse: HTMLButtonElement;
   private readonly attribution: HTMLElement;
   private readonly coverageAlert: HTMLElement;
   private readonly toastEl: HTMLElement;
@@ -45,6 +46,8 @@ export class Ui {
   private searchSeq = 0;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private attributionOpen = false;
+  /** Panneau Rapport réduit à son titre (téléphone), pour voir la carte. */
+  private panelCollapsed = false;
   private dragDepth = 0;
 
   constructor(
@@ -80,8 +83,9 @@ export class Ui {
     this.toolbar = h('nav', { class: 'toolbar' });
 
     this.panelTitle = h('h2', { class: 'panel__title', id: 'panel-title' });
-    this.panelBody = h('div', { class: 'panel__body' });
+    this.panelBody = h('div', { class: 'panel__body', id: 'panel-body' });
     this.panelBack = h('button', { type: 'button', class: 'icon-btn', onclick: () => this.app.openPanel('settings') }, icon(ICONS.back));
+    this.panelCollapse = h('button', { type: 'button', class: 'icon-btn panel__collapse', 'aria-controls': 'panel-body', onclick: () => this.toggleCollapsed() });
     this.panel = h(
       'section',
       { class: 'panel', hidden: true, 'aria-labelledby': 'panel-title' },
@@ -90,6 +94,7 @@ export class Ui {
         { class: 'panel__head' },
         this.panelBack,
         this.panelTitle,
+        this.panelCollapse,
         h('button', { type: 'button', class: 'icon-btn', dataset: { role: 'close' }, onclick: () => this.app.closePanel() }, icon(ICONS.close)),
       ),
       this.panelBody,
@@ -232,6 +237,8 @@ export class Ui {
     this.panelTitle.textContent = t(PANEL_TITLES[panel]);
     this.panelBack.hidden = panel !== 'sources';
     this.panelBack.setAttribute('aria-label', t('action.back'));
+    if (opened) this.panelCollapsed = false;
+    this.renderCollapse(panel);
     this.panel.querySelector<HTMLElement>('[data-role="close"]')?.setAttribute('aria-label', t('action.close'));
     this.panel.dataset.panel = panel;
     let content;
@@ -261,6 +268,27 @@ export class Ui {
     if (active) this.panelBody.querySelector<HTMLElement>(`[data-focus="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
     else if (opened) this.panelTitle.focus?.();
     this.renderTopbar();
+  }
+
+  /** Sur téléphone, le panneau Rapport se réduit à son titre pour laisser voir la carte et le tracé. */
+  private renderCollapse(panel: PanelId): void {
+    const collapsed = panel === 'report' && this.panelCollapsed;
+    this.panel.classList.toggle('panel--collapsed', collapsed);
+    this.panelCollapse.hidden = panel !== 'report';
+    this.panelCollapse.setAttribute('aria-expanded', String(!collapsed));
+    const label = t(collapsed ? 'action.expand' : 'action.collapse');
+    this.panelCollapse.setAttribute('aria-label', label);
+    this.panelCollapse.title = label;
+    setChildren(this.panelCollapse, icon(collapsed ? ICONS.chevronUp : ICONS.chevronDown));
+  }
+
+  private toggleCollapsed(): void {
+    const { panel } = this.app.state;
+    if (!panel) return;
+    this.panelCollapsed = !this.panelCollapsed;
+    this.renderCollapse(panel);
+    // La carte visible a changé de taille : le tracé (ou la zone choisie) y est recadré.
+    this.app.refitTrack();
   }
 
   private renderAttribution(): void {

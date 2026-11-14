@@ -362,6 +362,22 @@ a,
     width: 400px;
     max-height: calc(100dvh - 70px - var(--bar-height) - 36px);
   }
+
+  /* Sur le côté, le panneau laisse la carte visible : pas besoin de le réduire. */
+  .panel__collapse {
+    display: none;
+  }
+}
+
+/* Sur téléphone, le panneau Rapport réduit à son titre laisse voir la carte au-dessus. */
+@media not all and (min-width: 900px) {
+  .panel--collapsed .panel__head {
+    border-bottom: 0;
+  }
+
+  .panel--collapsed .panel__body {
+    display: none;
+  }
 }
 
 /* --- Contenu des panneaux -------------------------------------------------- */

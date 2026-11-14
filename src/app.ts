@@ -417,7 +417,8 @@ export class App {
   }
 
   /**
-   * Lit la couverture le long du tracé, puis ouvre le rapport. « seq » identifie
+   * Lit la couverture le long du tracé, puis ouvre le rapport et recadre le tracé
+   * dans la partie de la carte que le panneau laisse visible. « seq » identifie
    * l'import ou la relance : une analyse dépassée par un nouvel import est abandonnée.
    */
   private async analyse(track: LoadedTrack, seq: number, panelOnError?: PanelId): Promise<void> {
@@ -434,6 +435,8 @@ export class App {
       const analysed: LoadedTrack = { ...track, analysis, report: buildReport(analysis, manifest, this.decodeSettings()) };
       this.store.set({ track: analysed, trackStatus: 'ready', panel: 'report' });
       this.showTrack(analysed);
+      // Le panneau Rapport est rendu : le cadrage tient compte de la place qu'il prend.
+      this.fitTrack();
     } catch (error) {
       console.warn('Analyse du tracé :', error);
       if (seq !== this.importSeq) return;
@@ -495,6 +498,13 @@ export class App {
   fitTrack(): void {
     const bounds = this.state.track ? samplesBounds(this.state.track.samples) : null;
     if (bounds) this.mapView.fitBounds(bounds, this.hooks.padding());
+  }
+
+  /** Recadre la zone blanche choisie, sinon tout le tracé : le panneau vient de changer de taille. */
+  refitTrack(): void {
+    const zone = this.state.track?.report?.zones.find((z) => z.index === this.state.selectedZone);
+    if (zone) this.mapView.fitBounds(zone.bbox, this.hooks.padding(), 16);
+    else this.fitTrack();
   }
 
   /** Met une zone blanche en surbrillance et zoome dessus. */

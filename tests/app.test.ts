@@ -141,6 +141,14 @@ async function demarrer() {
 }
 
 describe('import et analyse d\'un GPX', () => {
+  it('cadre le tracé une fois le rapport ouvert, pour qu\'il ne soit pas caché dessous (ui-1)', async () => {
+    const app = await demarrer();
+    await app.importGpx(essai);
+    expect(app.state.panel).toBe('report');
+    expect(carte.cadrages.length).toBeGreaterThan(0);
+    expect(carte.cadrages.at(-1)).toEqual({ bottom: 500 });
+  });
+
   it('un fichier refusé pendant l\'analyse du tracé précédent ne l\'interrompt pas (ui-2)', async () => {
     const app = await demarrer();
     const tuiles = barriere();
