@@ -43,6 +43,36 @@ export function trimXmlStart(text: string): string {
   return text.replace(/^[\s﻿]+/, '');
 }
 
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+
+/**
+ * Copie du document où les éléments GPX n'ont plus de préfixe (« gpx:trk »
+ * devient « trk », dans le même espace de noms) : togeojson cherche les
+ * éléments par leur nom complet et ne trouverait rien. Les extensions des
+ * autres espaces de noms sont recopiées telles quelles.
+ */
+function withoutPrefix(doc: Document, ns: string): Document {
+  const copy = doc.implementation.createDocument(ns, 'gpx', null);
+  const fill = (from: Element, to: Element): void => {
+    for (const attr of Array.from(from.attributes)) {
+      if (attr.namespaceURI === XMLNS_NS && attr.value === ns) continue; // déclaration du préfixe, devenue inutile
+      if (attr.namespaceURI) to.setAttributeNS(attr.namespaceURI, attr.name, attr.value);
+      else to.setAttribute(attr.name, attr.value);
+    }
+    for (let child = from.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1 && (child as Element).namespaceURI === ns) {
+        const element = copy.createElementNS(ns, (child as Element).localName);
+        fill(child as Element, element);
+        to.appendChild(element);
+      } else if (child.nodeType === 1 || child.nodeType === 3 || child.nodeType === 4) {
+        to.appendChild(copy.importNode(child, true));
+      }
+    }
+  };
+  fill(doc.documentElement, copy.documentElement);
+  return copy;
+}
+
 function toSegment(coords: unknown): TrackPoint[] {
   if (!Array.isArray(coords)) return [];
   const points: TrackPoint[] = [];
@@ -73,7 +103,10 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
   if (!doc || !doc.documentElement || doc.getElementsByTagName('parsererror').length > 0) {
     throw new GpxError('invalid');
   }
-  if (doc.documentElement.nodeName.toLowerCase() !== 'gpx') throw new GpxError('invalid');
+  const root = doc.documentElement;
+  // Le nom local ignore le préfixe : « gpx:gpx » (sorties JAXB ou XSLT) est aussi un GPX.
+  if ((root.localName ?? root.nodeName).toLowerCase() !== 'gpx') throw new GpxError('invalid');
+  if (root.prefix && root.namespaceURI) doc = withoutPrefix(doc, root.namespaceURI);
 
   let collection: ReturnType<typeof gpxToGeoJson>;
   try {

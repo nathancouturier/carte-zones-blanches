@@ -46,6 +46,16 @@ const routeGpx = `${GPX_HEAD}
 <rtept lat="42.50" lon="1.50"/><rtept lat="42.51" lon="1.52"/><rtept lat="42.53" lon="1.52"/>
 </rte></gpx>`;
 
+// Même trace, avec un préfixe sur chaque élément GPX (sorties JAXB ou XSLT).
+const prefixedGpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx:gpx version="1.1" creator="test" xmlns:gpx="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+<gpx:wpt lat="44.60" lon="6.10"><gpx:name>Parking</gpx:name></gpx:wpt>
+<gpx:trk><gpx:name>Tour du lac</gpx:name><gpx:trkseg>
+<gpx:trkpt lat="44.6000" lon="6.1000"><gpx:ele>1000</gpx:ele></gpx:trkpt>
+<gpx:trkpt lat="44.6010" lon="6.1000"><gpx:ele>1020</gpx:ele><gpx:extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>120</gpxtpx:hr></gpxtpx:TrackPointExtension></gpx:extensions></gpx:trkpt>
+<gpx:trkpt lat="44.6020" lon="6.1010"><gpx:ele>1010</gpx:ele></gpx:trkpt>
+</gpx:trkseg></gpx:trk></gpx:gpx>`;
+
 describe('lecture du GPX', () => {
   it('lit une trace simple avec ses altitudes', () => {
     const gpx = parseGpx(trackGpx, xmlParser);
@@ -84,6 +94,13 @@ describe('lecture du GPX', () => {
     const gpx = parseGpx(both, xmlParser);
     expect(gpx.kind).toBe('track');
     expect(gpx.segments).toHaveLength(1);
+  });
+
+  it('lit un GPX dont les éléments portent un préfixe d\'espace de noms', () => {
+    const gpx = parseGpx(prefixedGpx, xmlParser);
+    expect(gpx.kind).toBe('track');
+    expect(gpx.name).toBe('Tour du lac');
+    expect(gpx.segments).toEqual(parseGpx(trackGpx, xmlParser).segments);
   });
 
   it('accepte des blancs ou une marque d\'ordre des octets avant la déclaration XML', () => {
@@ -459,6 +476,17 @@ describe('export du GPX enrichi', () => {
     const twice = enrichGpx(once, [waypoints[0]], xmlTools);
     const doc = xmlTools.parse(twice);
     expect(doc.getElementsByTagName('wpt')).toHaveLength(2); // Parking + 1 point
+  });
+
+  it('garde le préfixe d\'espace de noms du fichier d\'origine', () => {
+    const out = enrichGpx(prefixedGpx, waypoints, xmlTools);
+    expect(out).toContain('<gpx:wpt lat="44.600000"');
+    expect(out).not.toMatch(/<wpt[\s>]/);
+    const doc = xmlTools.parse(out);
+    const ns = 'http://www.topografix.com/GPX/1/1';
+    const names = Array.from(doc.getElementsByTagNameNS(ns, 'wpt')).map((w) => w.getElementsByTagNameNS(ns, 'name')[0].textContent);
+    expect(names).toEqual(['Parking', 'Zone blanche 1, début', 'Zone blanche 1, fin']);
+    expect(parseGpx(out, xmlParser).segments).toEqual(parseGpx(trackGpx, xmlParser).segments);
   });
 
   it('exporte un GPX précédé d\'un saut de ligne', () => {
