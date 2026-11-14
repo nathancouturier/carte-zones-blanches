@@ -270,7 +270,17 @@ try {
       await page.waitForTimeout(2500);
     }
     await capture(page, '8c-telephone-fr-hors-ligne-carte');
+    // Vue plus large que le couloir enregistré (au plus le zoom 9, quel que soit le tracé) : les tuiles
+    // manquantes sont signalées, puis relues toutes seules au retour du réseau, sans recharger la page.
+    await page.evaluate(() => {
+      const [zoom, lat, lon] = location.hash.slice(1).split('/').map(Number);
+      location.hash = `#${Math.min(zoom - 1.5, 9).toFixed(2)}/${lat}/${lon}`;
+    });
+    await page.waitForTimeout(3000);
+    const signale = await page.locator('.coverage-alert').isVisible();
     await contexte.setOffline(false);
+    const complete = signale && (await page.waitForSelector('.coverage-alert', { state: 'hidden', timeout: 30000 }).then(() => true, () => false));
+    controle('hors ligne : hors du couloir, tuiles signalées puis relues au retour du réseau', complete, signale ? (complete ? '' : 'bandeau toujours affiché') : 'aucun bandeau sans réseau');
     controle('hors ligne : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
