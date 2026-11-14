@@ -1,6 +1,6 @@
 # Fonctions communes aux sondes. À charger avec : . "$(dirname "$0")/_lib.sh"
 T=/tmp/sonde; mkdir -p "$T"
-UA="carte-zones-blanches-sonde/1.0 (+https://github.com/nathancouturier/carte-zones-blanches)"
+UA="sonde-donnees-ouvertes/1.0 (curl)"
 if ! command -v curl >/dev/null 2>&1; then
   apt-get update -qq >/dev/null 2>&1 && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl >/dev/null 2>&1
 fi

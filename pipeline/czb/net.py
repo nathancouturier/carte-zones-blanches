@@ -11,7 +11,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-USER_AGENT = "carte-zones-blanches/1.0 (+https://github.com/nathancouturier/carte-zones-blanches)"
+# Nom générique, sans le nom du dépôt ni de son propriétaire : rien de personnel n'est envoyé aux serveurs des sources.
+# Pour être identifiable par un fournisseur (certains le demandent), mettre ici un nom et une adresse de contact.
+USER_AGENT = "pipeline-couverture-mobile/1.0 (Python urllib)"
 
 
 #: Erreurs qui méritent un nouvel essai : coupure, délai dépassé, réponse incomplète.
