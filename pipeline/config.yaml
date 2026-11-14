@@ -294,6 +294,10 @@ scopes:
     countries: [ES]
   andorre-monaco:
     countries: [AD, MC]
+  # Alpes : cinq départements, la Suisse et l'Italie. Essai d'ensemble rapide (frontières, interstices, plusieurs pays).
+  alpes:
+    countries: [FR, CH, IT]
+    departements: ["04", "05", "06", "73", "74"]
   # Les départements frontaliers et tous les pays voisins : essai d'ensemble plus rapide que « complet ».
   frontieres:
     countries: [FR, CH, IT, ES, AD, MC]

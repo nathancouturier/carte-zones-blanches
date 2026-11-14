@@ -15,7 +15,7 @@ on:
       scope:
         description: "Périmètre : production (celui du site) ou un périmètre d'essai, jamais publié"
         type: choice
-        options: [production, complet, frontieres, france, suisse, italie, espagne, andorre-monaco, hautes-alpes]
+        options: [production, complet, frontieres, alpes, france, suisse, italie, espagne, andorre-monaco, hautes-alpes]
         default: production
       services:
         description: "Services d'un essai : data ou data,voice (ignoré pour la production)"
