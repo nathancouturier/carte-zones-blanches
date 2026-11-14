@@ -54,11 +54,11 @@ function echantillon(nom) {
   return existsSync(chemin) ? { name: nom, mimeType: 'application/gpx+xml', buffer: readFileSync(chemin) } : null;
 }
 
-// Le GPX de test des Alpes si les données publiées couvrent son départ (Les Chapieux), sinon un court tracé
+// Le GPX de test des Alpes si les données publiées couvrent son départ (Préfumet, en Savoie), sinon un court tracé
 // des Hautes-Alpes : des données d'essai réduites à ce département suffisent alors.
 function gpx(nom) {
   const fichier = echantillon(nom);
-  const couvert = ouest <= 6.73 && 6.73 <= est && sud <= 45.7 && 45.7 <= nord;
+  const couvert = ouest <= 6.79 && 6.79 <= est && sud <= 45.657 && 45.657 <= nord;
   return fichier && couvert ? fichier : TRACE_FRANCE;
 }
 
