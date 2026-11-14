@@ -157,7 +157,7 @@ export function sampleManifest(): Manifest {
         code: 5,
         iso: 'AD',
         euRoaming: false,
-        slots: [{ id: 'andorra-telecom', name: 'Andorra Telecom' }],
+        slots: [{ id: 'ad_reseau', name: "Réseau d'Andorre" }],
         sources: [
           {
             type: 2,
