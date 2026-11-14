@@ -10,13 +10,13 @@ Ce document dit d'où viennent les données du site, sous quelles conditions ell
 - Chaque pixel porte la nature de sa source :
   - **officielle, par opérateur** : on sait quel opérateur couvre (France, Espagne) ;
   - **officielle, agrégée** : on sait combien de réseaux couvrent, pas lesquels (Suisse, Italie) ;
-  - **estimée** : calculée par le projet à partir de positions d'antennes et du relief (Andorre, Monaco). Ces zones sont hachurées sur la carte et dans le profil altimétrique, et marquées « estimée » dans le rapport et dans le GPX enrichi.
-- Sur la carte, quand seuls les problèmes sont affichés, une zone estimée de niveau « bonne » n'est pas coloriée. Elle reçoit alors un motif gris léger, distinct des hachures des niveaux et de celles des données indisponibles : Monaco et le centre de l'Andorre restent marqués comme estimés. La légende le dit. <!-- À VÉRIFIER : lot en cours -->
+  - **estimée** : calculée par le projet à partir de positions d'antennes et du relief (Andorre, Monaco). Ces zones sont hachurées sur la carte et dans le profil altimétrique, dessinées en pointillé sur le tracé, et marquées « estimée » dans le rapport et dans le GPX enrichi.
+- Sur la carte, quand seuls les problèmes sont affichés, une zone estimée de niveau « bonne » n'est pas coloriée. Elle reçoit alors de fins traits gris peu opaques, dans le sens des hachures des zones estimées, sur fond transparent. Une tuile « données indisponibles » se distingue : elle est voilée de gris et rayée dans l'autre sens. Monaco et le centre de l'Andorre restent ainsi marqués comme estimés. La légende le dit : « Zone estimée avec une bonne ou très bonne couverture (fins traits gris) ».
 - Niveaux : 0 pas de couverture, 1 couverture limitée, 2 bonne couverture, 3 très bonne couverture. Seule la France a les quatre niveaux. Les sources suisse, italienne et espagnole disent seulement « couvert » ou « non couvert » : pour ces pays, « bonne couverture » veut dire « couvert » sur la carte et dans le rapport, sans indication de qualité. Les zones estimées ont trois niveaux et jamais « très bonne ».
 - « Tous opérateurs » est le meilleur niveau parmi les opérateurs du pays, calculé par le site. À l'étranger, la couverture réelle d'un visiteur dépend des accords d'itinérance de son opérateur.
-- Toutes les sources sont ramenées sur une même grille : les tuiles (images carrées de 256 pixels qui forment la carte) du zoom 12, dont le pixel mesure 38,2 m en projection Web Mercator (celle des cartes en ligne), soit 26 à 28 m au sol à ces latitudes.
+- Toutes les sources sont ramenées sur une même grille : les tuiles (images carrées de 256 pixels qui forment la carte) du zoom 12, dont le pixel mesure 38,2 m en projection Web Mercator (celle des cartes en ligne), soit 24 à 29 m au sol selon la latitude (26 à 28 m dans les Alpes et les Pyrénées).
 - Appels et SMS : seulement en France.
-- Un point d'un tracé situé en dehors des données de couverture est dit « hors zone » dans le rapport et dans le profil, et il est exclu des pourcentages. <!-- À VÉRIFIER : lot en cours -->
+- Un point d'un tracé situé en dehors des données de couverture est dit « hors zone » dans le rapport et dans le profil, et il est exclu des pourcentages.
 
 ## Synthèse par pays
 
@@ -26,33 +26,36 @@ Ce document dit d'où viennent les données du site, sous quelles conditions ell
 | Suisse | OFCOM, atlas de la large bande | officielle, agrégée | 4G | couvert ou non | 30 avril 2026 | 100 m | utilisation libre, source à citer |
 | Italie (Piemonte, Valle d'Aosta, Liguria) | AGCOM, Broadband Map | officielle, agrégée | 4G | couvert ou non | 27 janvier 2026 | 100 m | CC BY 4.0, avec logo obligatoire |
 | Espagne (Aragón, Cataluña, Navarra, País Vasco) | Ministerio para la Transformación Digital y de la Función Pública, « Mapa de Servicios de Banda Ancha Móvil 2024 » | officielle, par opérateur | 4G | couvert ou non | 30 juin 2024 | environ 28 m x 38,5 m | aucune licence attachée au jeu ; conditions générales de réutilisation du site du ministère |
-| Andorre | estimation : OpenCellID et Copernicus DEM | estimée | 4G et 5G ; en pratique 4G seulement (aucune cellule 5G dans le fichier) <!-- À VÉRIFIER : lot en cours --> | 3 | novembre 2026 (mois du calcul) | calcul au pixel de la grille, relief à 30 m | CC BY-SA 4.0, mention Copernicus |
-| Monaco | estimation : OpenCellID et Copernicus DEM | estimée | 4G et 5G ; en pratique 4G seulement (aucune cellule 5G dans le fichier) <!-- À VÉRIFIER : lot en cours --> | 3 | novembre 2026 (mois du calcul) | calcul au pixel de la grille, relief à 30 m | CC BY-SA 4.0, mention Copernicus |
+| Andorre | estimation : OpenCellID et Copernicus DEM | estimée | 4G, 5G ; en pratique 4G seulement (aucune cellule 5G dans le fichier) | 3 | novembre 2026 (mois du calcul) | calcul au pixel de la grille, relief à 30 m | CC BY-SA 4.0, mention Copernicus |
+| Monaco | estimation : OpenCellID et Copernicus DEM | estimée | 4G, 5G ; en pratique 4G seulement (aucune cellule 5G dans le fichier) | 3 | novembre 2026 (mois du calcul) | calcul au pixel de la grille, relief à 30 m | CC BY-SA 4.0, mention Copernicus |
 
 Officielles : France, Suisse, Italie, Espagne. Estimées : Andorre et Monaco, faute de source officielle exploitable. Les six pays sont dans les données publiées (voir « Données publiées »).
 
 ## Données publiées
 
-Le pipeline publie ses résultats dans une release GitHub, c'est-à-dire une page du dépôt qui porte des fichiers à télécharger. Elle s'appelle `data-AAAA-MM-JJ`, ou `data-AAAA-MM-JJ-2`, `-3`, etc. s'il y en a déjà une ce jour-là. Le site en ligne utilise la release `data-2026-11-14-4`, construite le 14 novembre 2026 avec les six pays. <!-- À VÉRIFIER : lot en cours -->
+Le pipeline publie ses résultats dans une release GitHub, c'est-à-dire une page du dépôt qui porte des fichiers à télécharger. Elle s'appelle `data-AAAA-MM-JJ`. S'il existe déjà une release de données ce jour-là, elle prend le numéro qui suit le plus grand déjà pris (`data-AAAA-MM-JJ-2`, `-3`, etc.) : un nom libéré par le ménage des anciennes releases n'est pas repris. Le déploiement du site prend la release de données la plus récente par date de publication.
+
+**Release en ligne : `data-2026-11-14`**, publiée le 14 novembre 2026 vers 19 h 03 UTC, avec les six pays. Elle porte le nom sans numéro parce qu'elle a été construite avant la règle de numérotation actuelle, alors que ce nom venait d'être libéré par le ménage. C'est bien la plus récente : le dernier déploiement du site (14 novembre 2026, 19 h 09 UTC) l'a téléchargée. Les deux autres releases gardées, `data-2026-11-14-3` et `data-2026-11-14-4`, sont plus anciennes.
 
 Une release contient :
 
 - les archives PMTiles : des fichiers qui rangent chacun une partie des tuiles, et que le site lit morceau par morceau ;
-- `manifest.json`, le fichier qui décrit les tuiles pour le site : pays, opérateurs, sources, dates, licences, mentions. Chaque pixel a quatre places réservées aux opérateurs du pays ; le manifest précise que les places qu'un pays n'utilise pas valent toujours 0 ; <!-- À VÉRIFIER : lot en cours -->
-- `SOURCES.md`, qui redit en clair, pour chaque pays, la source, sa date, sa licence, sa mention, la phrase imposée par la licence et la mention du contour du pays. Il est écrit par `pipeline/czb/notices.py` à partir du manifest, et repris dans le texte de la release ;
-- le logo de l'AGCOM, que sa licence exige dans toute œuvre dérivée, cité dans `SOURCES.md` avec son lien. `SOURCES.md` dit aussi, pour chaque source, que les données ont été transformées (rastérisées sur une grille commune, ramenées à des niveaux ou à des seuils) : c'est l'indication de modification que demandent les licences CC BY. <!-- À VÉRIFIER : lot en cours -->
+- `manifest.json`, le fichier qui décrit les tuiles pour le site : pays, opérateurs, sources, dates, licences, mentions. Chaque pixel a quatre places réservées aux opérateurs du pays ; le manifest précise que les places qu'un pays n'utilise pas valent toujours 0 ;
+- `SOURCES.md`, qui redit en clair, pour chaque pays, la source, sa date, sa licence, sa mention, la phrase imposée par la licence quand il y en a une et la mention du contour du pays. Il est écrit par `pipeline/czb/notices.py` à partir du manifest, et repris dans le texte de la release ;
+- le logo de l'AGCOM (`agcom-bbmap.jpg`), que sa licence exige dans toute œuvre dérivée, cité dans `SOURCES.md` avec son lien. `SOURCES.md` dit aussi, pour chaque source, sur une ligne « Modifications », que les données ont été transformées (rastérisées sur une grille commune, ramenées à des niveaux ou à des seuils) : c'est l'indication de modification que demandent les licences CC BY ;
 - les copies de travail `cache-*.tif`, que le site n'utilise pas : la construction suivante les reprend (voir « Espagne » et « Estimation »). Celles de l'estimation (`cache-ad_estimation.tif`, `cache-mc_estimation.tif`) dérivent d'OpenCellID : elles sont sous CC BY-SA 4.0. Celle de l'Espagne (`cache-es_mtd.tif`) donne la présence 4G de chaque opérateur à la maille de la source : elle suit le sort de la couche espagnole (voir « Espagne », « Licence ») ;
 - le rapport de construction (`rapport-construction.json`), l'état des sources que la construction suivante compare pour savoir si une source a changé (`etat-sources.json`), et les fichiers du test de cohérence (`temoins.json`, `temoins-attendus.json`, `temoins-contours.json`).
 
 Seul le choix « production » du workflow « Données » (`.github/workflows/build-data.yml`), ou son passage mensuel, publie une release. Un lancement à la main d'un autre périmètre, même « complet » avec les mêmes services, est un essai : il est construit et vérifié, jamais publié. Après une publication, seules les trois releases de données les plus récentes sont gardées.
 
-Construction du 14 novembre 2026 (release `data-2026-11-14-4`), d'après son rapport : <!-- À VÉRIFIER : lot en cours -->
+Construction de la release en ligne (`data-2026-11-14`, 14 novembre 2026, de 18 h 02 à 19 h 03 UTC), d'après son rapport et son journal :
 
 - 353,13 Mo en 7 archives, la plus grosse de 69,67 Mo (chaque fichier doit rester sous 95 Mo) ;
 - grille : tuiles du zoom 12 de x 1989 à 2167 et de y 1369 à 1552, soit 45 824 x 47 104 pixels ; 22 231 tuiles en tout, dont 16 388 au zoom 12 (185,60 Mo), 4 253 au zoom 11 et 1 128 au zoom 10 ;
 - pixels par pays : France 797 184 391, Suisse 60 303 271, Italie 46 666 326, Espagne 120 410 608, Andorre 586 881, Monaco 2 716 ;
-- durée du calcul : 3 203,9 s (le job entier a duré 54 minutes), dont contours des pays 63,1 s, Arcep 1 623,8 s, OFCOM 83,2 s, AGCOM 80,7 s, ministère espagnol 116,1 s (copie de travail reprise), Andorre 4,4 s, Monaco 3,5 s et tuiles 1 225,9 s ;
-- test de cohérence : 1 200 points tirés dans les sources et 420 points des contours, comparés aux pixels relus dans les archives publiées : aucun écart.
+- durée du calcul : 3 620,5 s (le job entier a duré 61 minutes), dont contours des pays 66,1 s, Arcep 1 612,4 s, OFCOM 123,0 s, AGCOM 79,7 s, ministère espagnol 165,5 s, Andorre 1,1 s, Monaco 1,0 s et tuiles 1 567,5 s. Les copies de travail de l'Espagne, de l'Andorre et de Monaco ont été reprises : rien n'a été relu chez le ministère espagnol ni téléchargé chez OpenCellID ;
+- test de cohérence : 1 200 points tirés dans les sources et 420 points des contours, comparés aux pixels relus dans les archives publiées : aucun écart ;
+- la release contient aussi `SOURCES.md` (5 856 octets), le logo `agcom-bbmap.jpg` (11 900 octets) et `cache-es_mtd.tif` (7,3 Mo).
 
 Le chemin « aucune source n'a changé » a aussi tourné pour de vrai : le 14 novembre 2026 à 16 h 59 UTC, la détection a répondu « changed=false (sources inchangées depuis data-2026-11-14-4) ». Rien n'a été reconstruit ni publié, et le job a duré 41 s.
 
@@ -91,20 +94,20 @@ Module `pipeline/czb/sources/fr_arcep.py`.
 4. Il traduit les niveaux (CL = 1, BC = 2, TBC = 3), reprojette les polygones vers la grille du zoom 12 et allume un pixel quand son centre est dans un polygone. Si deux niveaux se chevauchent, le plus élevé gagne. Chaque opérateur a son emplacement, c'est-à-dire une place réservée dans chaque pixel des tuiles : Orange, SFR, Bouygues Telecom, Free.
 5. Points témoins (points de contrôle) : 60 points par fichier, tirés au hasard puis répartis entre les niveaux. Leur niveau est calculé dans le fichier source par un test géométrique exact (les points à moins de 50 cm d'un bord sont écartés), puis comparé aux pixels relus dans les archives publiées. Le moindre écart fait échouer la construction.
 
-Construction du 14 novembre 2026 (release `data-2026-11-14-4`) : 8 fichiers Arcep (2 174,7 Mo téléchargés, un à la fois), 1 623,8 s de traitement, 797 184 391 pixels pour la France, 480 points témoins sans écart. <!-- À VÉRIFIER : lot en cours -->
+Construction de la release en ligne (`data-2026-11-14`) : 8 fichiers Arcep (2 174,7 Mo téléchargés, un à la fois), 1 612,4 s de traitement, 797 184 391 pixels pour la France, 480 points témoins sans écart.
 
 ### Limites
 
 - Couverture théorique simulée par les opérateurs, pas une mesure de terrain.
 - Une édition par trimestre, publiée après la date des données : au 14 novembre 2026, la carte montre la situation au 30 juin 2026.
-- Résolution : les fichiers sont des polygones, sans résolution annoncée. Le manifest n'en donne pas pour la France. <!-- À VÉRIFIER : lot en cours -->
+- Résolution : les fichiers sont des polygones, sans résolution annoncée. Le manifest n'en donne pas pour la France.
 - La partie française du Léman est hors zone (voir « Contours des pays »).
 
 ## Suisse
 
 ### Source
 
-- Éditeur : OFCOM (Office fédéral de la communication). Atlas de la large bande : https://www.bakom.admin.ch/en/broadband-atlas
+- Éditeur : OFCOM (Office fédéral de la communication ; BAKOM en allemand, UFCOM en italien). Atlas de la large bande : https://www.bakom.admin.ch/en/broadband-atlas
 - Jeu : disponibilité des réseaux mobiles 4G, collection `ch.bakom.mobilnetz-4g` du catalogue STAC (catalogue de données géographiques) de la Confédération : https://data.geo.admin.ch/api/stac/v0.9/collections/ch.bakom.mobilnetz-4g/items
 - Contenu : un GeoTIFF (image géoréférencée) `mobilnetz-4g_2056.tif`, en CH1903+ / LV95 (EPSG:2056), carrés de 100 m. Valeurs : 0 = pas de couverture ; 2 = couvert par moins de 3 opérateurs ; 3 = couvert par les 3 opérateurs (Swisscom, Sunrise, Salt). La description de la collection dit qu'il s'agit de la couverture extérieure : « For each cell, you can see the number of operators theoretically providing an outdoor 4G connection (on the street, in a public square, etc.). »
 
@@ -127,7 +130,7 @@ Les conditions propres au jeu ont été lues sur opendata.swiss : toutes les res
 ### Mention affichée dans le site
 
 - Pied de carte : « Couverture : OFCOM ».
-- Panneau « Sources » : « OFCOM, atlas de la large bande : disponibilité des réseaux mobiles 4G », avec un lien vers l'atlas ; licence avec un lien vers les conditions FSDI ; note « couvert ou non couvert » ; mention du contour du pays ; opérateurs du pays (Swisscom, Sunrise, Salt) ; avertissement : la Suisse ne fait pas partie de l'itinérance de l'Union européenne.
+- Panneau « Sources » : « OFCOM, atlas de la large bande : disponibilité des réseaux mobiles 4G » (en allemand, le nom commence par « BAKOM », en italien par « UFCOM »), avec un lien vers l'atlas ; licence avec un lien vers les conditions FSDI ; note « couvert ou non couvert » ; mention du contour du pays ; opérateurs du pays (Swisscom, Sunrise, Salt) ; avertissement : la Suisse ne fait pas partie de l'itinérance de l'Union européenne.
 
 ### Méthode
 
@@ -140,7 +143,7 @@ Module `pipeline/czb/sources/ch_bakom.py`.
 5. Deux emplacements : « au moins un opérateur » et « les trois opérateurs ». Un carré couvert reçoit le niveau 2 (« couvert »), sinon 0. L'image est ramenée sur la grille en plus proche voisin : chaque pixel prend la valeur du carré qui contient son centre. Les pixels suisses sans donnée comptent comme non couverts.
 6. Points témoins : niveau lu directement dans la grille de la source (points à moins de 1 m d'un bord de carré écartés), 60 par emplacement.
 
-Construction du 14 novembre 2026 : 4 118 100 carrés de 100 m lus, 60 303 271 pixels pour la Suisse, dont 9 908 sans donnée dans la source (comptés comme non couverts), 83,2 s, 120 points témoins sans écart. <!-- À VÉRIFIER : lot en cours -->
+Construction de la release en ligne (`data-2026-11-14`) : 4 118 100 carrés de 100 m lus, 60 303 271 pixels pour la Suisse, dont 9 908 sans donnée dans la source (comptés comme non couverts), 123,0 s, 120 points témoins sans écart.
 
 ### Limites
 
@@ -188,7 +191,7 @@ Usages interdits :
 
 - Pied de carte : « Couverture : BroadbandMap di Agcom (CC BY 4.0) ».
 - Panneau « Sources » : nom de la source avec un lien vers https://www.agcom.it/broadband-map ; licence avec un lien vers les conditions ; la phrase placée sous le logo ; **le logo de l'AGCOM** exigé par la licence (image JPEG de 221 x 110 pixels fournie par l'AGCOM, fichier `public/licences/agcom-bbmap.jpg`), en lien vers https://maps.agcom.it/ ; note « couvert ou non couvert » ; mention du contour du pays.
-- La licence CC BY 4.0 demande aussi d'indiquer que les données ont été modifiées. Le panneau « Sources » le dit pour toutes les sources, dans les cinq langues, et `SOURCES.md` le dit dans la release, où le logo est joint (voir « Données publiées »). <!-- À VÉRIFIER : lot en cours -->
+- La licence CC BY 4.0 demande aussi d'indiquer que les données ont été modifiées. Le panneau « Sources » le dit pour toutes les sources, dans les cinq langues, et `SOURCES.md` le dit dans la release, où le logo est joint (voir « Données publiées »).
 
 ### Méthode
 
@@ -200,7 +203,7 @@ Modules `pipeline/czb/sources/it_agcom.py` et `pipeline/czb/arcgis.py`.
 4. Les polygones sont déjà en EPSG:3857 : ils sont rastérisés directement sur la grille (centre du pixel). Une entité de valeur n écrit « couvert » (niveau 2) dans les emplacements « au moins 1 réseau » à « au moins n réseaux ». Sans polygone, le niveau reste 0.
 5. Points témoins : niveau attendu calculé sur les polygones par un test géométrique exact, 60 par emplacement.
 
-Construction du 14 novembre 2026 : 4 697 polygones (982 de valeur 1, 1 433 de valeur 2, 1 460 de valeur 3, 822 de valeur 4), 44 126 447 pixels allumés dont 42 777 hors du pays, 46 666 326 pixels pour l'Italie, 80,7 s, 240 points témoins sans écart. <!-- À VÉRIFIER : lot en cours -->
+Construction de la release en ligne (`data-2026-11-14`) : 4 697 polygones (982 de valeur 1, 1 433 de valeur 2, 1 460 de valeur 3, 822 de valeur 4), 44 126 447 pixels allumés dont 43 169 hors du pays, 46 666 326 pixels pour l'Italie, 79,7 s, 240 points témoins sans écart.
 
 ### Limites
 
@@ -241,7 +244,7 @@ Construction du 14 novembre 2026 : 4 697 polygones (982 de valeur 1, 1 433 de va
 
 « cobertura referida a 30 de junio de 2024 » (texte de la carte). Édition 2024 : carte d'origine publiée le 4 juin 2025, copie européenne de mai 2026, avec les mêmes données. Le rapport de couverture 2025 a été présenté le 6 mai 2026, mais la carte détaillée liée depuis le site du ministère est toujours l'édition 2024 au 14 novembre 2026. Le ministère publie un rapport de couverture par an (« publica anualmente el informe sobre la cobertura de la banda ancha en España ») ; aucun calendrier de mise à jour de la carte elle-même n'a été lu.
 
-Une nouvelle édition pourrait être publiée dans de nouveaux éléments ArcGIS, que la surveillance de la couche actuelle ne verrait pas. Le pipeline lit donc aussi la page du ministère et y relève les identifiants des éléments ArcGIS qu'elle cite. Si la page répond, en cite et ne cite plus celui de la carte lue, la détection échoue avec un message clair (nouvelle édition probable : adresses, nom et date de la source à mettre à jour dans `config.yaml`), ce qui prévient le propriétaire. Si la page ne répond pas ou ne cite aucun identifiant, c'est un simple avertissement. <!-- À VÉRIFIER : lot en cours -->
+Une nouvelle édition pourrait être publiée dans de nouveaux éléments ArcGIS, que la surveillance de la couche actuelle ne verrait pas. Le pipeline lit donc aussi la page du ministère et y relève les identifiants des éléments ArcGIS qu'elle cite. Si la page répond, en cite et ne cite plus celui de la carte lue, la détection échoue avec un message clair (nouvelle édition probable : adresses, nom et date de la source à mettre à jour dans `config.yaml`), ce qui prévient le propriétaire. Si la page ne répond pas ou ne cite aucun identifiant, c'est un simple avertissement. Pendant la construction de la release en ligne, la page a été lue sans avertissement : elle cite bien l'élément de la carte lue.
 
 ### Licence
 
@@ -294,13 +297,13 @@ Module `pipeline/czb/sources/es_mtd.py`.
 3. **Copie de travail.** Les quatre régions comptent environ 2,1 millions de polygones, soit un bon millier de requêtes. Le résultat est donc gardé sous forme d'image à la maille d'origine, avec un bit par opérateur : le fichier `cache-es_mtd.tif`, publié avec les données dans la release (mécanisme commun : `pipeline/czb/cache.py`). Tant que l'édition en ligne, l'emprise et la liste des opérateurs ne changent pas, la construction suivante repart de cette image sans relire le service.
 4. Sinon, lecture région par région (CCOM 02, 09, 15, 16), polygones dont `COBERTURA` n'est pas vide, 2 000 par page, par `OBJECTID` croissant, l'une après l'autre avec une pause d'une demi-seconde. Le nombre lu doit égaler le nombre annoncé. Un identifiant d'opérateur inconnu arrête la construction. Les polygones sans commune (CCOM vide : mer, versants français et andorran) ne sont pas lus.
 5. Les polygones sont rastérisés sur la grille d'origine de la source, un passage par opérateur. Cette grille a le pas de l'image tuilée du ministère (0,000346111018645788°), dont le coin nord-ouest sert de point de référence, mais elle est décalée d'une fraction de maille. Le module mesure ce décalage sur les sommets des polygones à chaque lecture. Il s'arrête si les sommets ne dessinent plus une grille au pas annoncé, ou si deux régions n'ont pas le même calage. La copie de travail garde son calage exact.
-6. Contrôle : pour chaque région, 1 200 points tirés au hasard sont comparés aux polygones, avec 3 % d'écart toléré. Les mailles coupées par une limite de commune ne sont pas des carrés entiers : sur les données réelles, 0,7 % des points tombent dans un tel éclat (mesure notée dans le module) ; une erreur de calage en donnerait bien plus. Au-delà de la tolérance, la construction s'arrête.
+6. Contrôle : pour chaque région, 1 200 points sont tirés au hasard, la moitié dans des mailles couvertes. Là où la copie de travail ou les polygones trouvent un réseau, les deux sont comparés, avec 3 % d'écart toléré. Les mailles coupées par une limite de commune ne sont pas des carrés entiers : sur les données réelles, 0,7 % des points tombent dans un tel éclat (mesure notée dans le module) ; une erreur de calage en donnerait bien plus. Au-delà de la tolérance, la construction s'arrête.
 7. Pour chaque opérateur, l'image est ramenée sur la grille du projet en plus proche voisin. « Présent » donne le niveau 2 (« couvert »), sinon 0.
 8. Points témoins : niveau lu dans la grille d'origine, 60 par opérateur.
 
-Lecture complète du service, faite le 14 novembre 2026 pour la release `data-2026-11-14-3` : 2 107 325 polygones (Aragón 1 106 848, Cataluña 711 116, Navarra 167 793, País Vasco 121 568), 1 496,8 s ; décalage mesuré de 0,3509 maille en longitude et 0,4893 en latitude, le même dans les quatre régions ; contrôle contre les polygones : 13 écarts sur 887 points couverts comparés (Aragón), 7 sur 856 (Cataluña), 8 sur 828 (Navarra), 7 sur 868 (País Vasco). <!-- À VÉRIFIER : lot en cours -->
+Dernière lecture complète du service, faite le 14 novembre 2026 pour la release `data-2026-11-14-3` : 2 107 325 polygones (Aragón 1 106 848, Cataluña 711 116, Navarra 167 793, País Vasco 121 568), 1 496,8 s ; décalage mesuré de 0,3509 maille en longitude et 0,4893 en latitude, le même dans les quatre régions ; contrôle contre les polygones : 13 écarts sur 887 points couverts comparés (Aragón), 7 sur 856 (Cataluña), 8 sur 828 (Navarra), 7 sur 868 (País Vasco). Les releases suivantes, dont celle en ligne, repartent de la copie de travail issue de cette lecture.
 
-Construction du 14 novembre 2026 (release `data-2026-11-14-4`) : « édition inchangée : copie de travail reprise (cache-es_mtd.tif, 19712 x 10752 mailles) », 116,1 s au lieu de 1 496,8 s ; présence sur les mailles du rectangle de calcul, qui englobe les quatre régions (d'où des parts plus basses que les parts de surface citées plus bas) : Movistar 33,5 %, Orange 30,8 %, Vodafone 29,2 %, Xfera Móviles 4,0 % ; 120 410 608 pixels pour l'Espagne ; 240 points témoins sans écart. La copie de travail publiée pèse 7,3 Mo. <!-- À VÉRIFIER : lot en cours -->
+Construction de la release en ligne (`data-2026-11-14`) : « édition inchangée : copie de travail reprise (cache-es_mtd.tif, 19712 x 10752 mailles) », 165,5 s au lieu de 1 496,8 s ; présence sur les mailles du rectangle de calcul, qui englobe les quatre régions (d'où des parts plus basses que les parts de surface citées plus bas) : Movistar 33,5 %, Orange 30,8 %, Vodafone 29,2 %, Xfera Móviles 4,0 % ; 120 410 608 pixels pour l'Espagne ; 240 points témoins sans écart. La copie de travail publiée pèse 7,3 Mo.
 
 ### Limites
 
@@ -331,7 +334,7 @@ Construction du 14 novembre 2026 (release `data-2026-11-14-4`) : « édition inc
 
 - **Aucune source officielle exploitable : la couverture est estimée** (voir « Estimation »).
 - Codes réseau : le MCC (indicatif de pays mobile) de l'Andorre est 213, vérifié dans la liste des indicatifs de l'UIT (annexe au Bulletin d'exploitation n° 1117, position au 1er février 2017). Un seul MNC (code de réseau) existe sous ce MCC : « 213 03 Mobiland » (liste de l'UIT, position au 15 novembre 2023). Aucune source lue ne relie « Mobiland » à un opérateur nommé : le site et le manifest ne nomment donc aucun opérateur pour l'Andorre. Le pipeline range toutes les cellules du MCC 213 dans un seul emplacement, tous réseaux du pays confondus.
-- Cellules d'OpenCellID : la page de statistiques (toute la base, lue le 14 novembre 2026) annonce 1 249 cellules, dont 344 en 4G (LTE) et 11 en 5G (NR). Le fichier téléchargé, qui ne garde que les cellules vues dans les 18 derniers mois, en contient 111 : 65 GSM, 41 LTE, 5 UMTS, aucune 5G. <!-- À VÉRIFIER : lot en cours -->
+- Cellules d'OpenCellID : la page de statistiques (toute la base, lue le 14 novembre 2026) annonce 1 249 cellules, dont 344 en 4G (LTE) et 11 en 5G (NR). Le fichier téléchargé, qui ne garde que les cellules vues dans les 18 derniers mois, en contient 111 : 65 GSM, 41 LTE, 5 UMTS, aucune 5G.
 
 ### Date des données
 
@@ -348,7 +351,8 @@ Valable aussi pour Monaco :
 - Pied de carte : quand une zone estimée est à l'écran, le crédit qu'OpenCellID demande à côté de la carte, avec ses liens : « Cell tower data from OpenCellID, licensed under CC BY-SA 4.0 ». La mention complète, relief Copernicus compris, est dans le panneau « Sources ».
 - Panneau « Sources » : « Estimation : antennes OpenCellID et relief Copernicus DEM », avec un lien vers https://opencellid.org ; date des données ; méthode « Estimée » ; licence « CC BY-SA 4.0 (zones estimées, dérivées d'OpenCellID) » avec un lien vers https://creativecommons.org/licenses/by-sa/4.0/ ; la mention en anglais d'OpenCellID et de Copernicus, en entier (voir « Estimation ») ; le texte sur les zones estimées cité ci-dessous ; la mention du contour du pays ; l'avertissement d'itinérance (l'Andorre et Monaco ne font pas partie de l'itinérance de l'Union européenne).
 - Rapport en texte : la ligne « Sources » reprend la mention du manifest, avec le pays et la date.
-- Le panneau « Sources » donne aussi le nombre de sites d'antennes connus (12 en Andorre, 18 à Monaco), avec une phrase qui dit que moins il y a de sites, moins l'estimation est fiable. Dans le pied de carte et dans la ligne « Sources » du rapport, le site fait précéder la mention d'une source estimée du mot « estimation », dans la langue choisie, et la mention du manifest ne commence plus par « Estimation : ». <!-- À VÉRIFIER : lot en cours -->
+- Quand le manifest donne le nombre de sites d'antennes connus (champ `estimation`), le panneau « Sources » l'affiche, avec une phrase qui dit que moins il y a de sites, moins l'estimation est fiable. **Le manifest en ligne ne le donne pas encore** : le panneau ne montre donc pas aujourd'hui ces nombres (12 sites en Andorre, 18 à Monaco). Voir « Estimation ».
+- Dans le pied de carte et dans la ligne « Sources » du rapport, le site fait précéder la mention d'une source estimée du mot « estimation », dans la langue choisie. La mention du manifest (« OpenCellID (CC BY-SA 4.0), Copernicus DEM ») ne contient plus de mot français.
 - Si un pays manque dans les données publiées (par exemple faute de clé OpenCellID), le panneau le signale.
 
 Texte affiché dans le panneau « Sources » pour les zones estimées :
@@ -362,7 +366,7 @@ Celle de « Estimation », avec le fichier OpenCellID du MCC 213.
 ### Limites
 
 - Estimation, pas une carte d'opérateur (voir « Estimation »).
-- **Estimation très pessimiste.** Les 12 sites 4G connus d'OpenCellID sont tous autour d'Andorre-la-Vieille. 85,2 % du pays ressort « pas de couverture ». Tout le nord et l'est du pays sont sans couverture sur la carte : vallées d'Encamp et de Canillo, Soldeu, le Pas de la Case, Ordino, mais aussi La Massana et Arinsal. C'est très probablement faux : la base d'antennes est trop pauvre. L'erreur va du côté prudent, mais elle crée de fausses zones blanches sur des villages habités. Le propriétaire a trois choix : garder, masquer l'Andorre, ou enrichir l'estimation avec les cellules 2G et 3G d'OpenCellID (non essayé). <!-- À VÉRIFIER : lot en cours -->
+- **Estimation très pessimiste.** Les 12 sites 4G connus d'OpenCellID sont tous autour d'Andorre-la-Vieille. 85,2 % du pays ressort « pas de couverture ». Tout le nord et l'est du pays sont sans couverture sur la carte : vallées d'Encamp et de Canillo, Soldeu, le Pas de la Case, Ordino, mais aussi La Massana et Arinsal (niveaux relus dans les tuiles publiées). C'est très probablement faux : la base d'antennes est trop pauvre. L'erreur va du côté prudent, mais elle crée de fausses zones blanches sur des villages habités. Le propriétaire a trois choix : garder, masquer l'Andorre, ou enrichir l'estimation avec les cellules 2G et 3G d'OpenCellID (non essayé).
 - Hors itinérance de l'Union européenne : le rapport avertit quand le tracé passe en Andorre.
 
 ### Autres sources examinées et pourquoi elles ne sont pas retenues
@@ -383,7 +387,7 @@ Avis légal de l'IDE Andorra (https://www.cartografia.ad/avis-legal), mot pour m
 - **Aucune source officielle de couverture : la couverture est estimée** (voir « Estimation »).
 - Codes réseau : le MCC de Monaco est 212 (même liste de l'UIT que pour l'Andorre). « 212 10 Monaco Telecom » est le seul code sous ce MCC (liste de l'UIT, position au 15 novembre 2023). La rubrique « Monaco » de l'UIT cite aussi trois codes français utilisés à Monaco : 208 01 (Orange/Monaco Télécom), 208 10 (SFR), 208 20 (Bouygues Telecom).
 - Le pipeline ne lit que le MCC 212 : l'estimation ne repose donc que sur les cellules de Monaco Telecom. Les réseaux français présents ou captés à Monaco ne sont pas pris en compte, et la vue « Tous opérateurs du pays » n'est, à Monaco, que celle de Monaco Telecom.
-- Cellules d'OpenCellID : la page de statistiques (toute la base) annonce 381 cellules, dont 55 en 4G et aucune en 5G. Le fichier du MCC 212 téléchargé le 14 novembre 2026 en contient pourtant 1 813 : 16 GSM, 1 436 LTE, 361 UMTS, aucune 5G. La page de statistiques ne compte donc pas comme le fichier ; pourquoi, non vérifié. <!-- À VÉRIFIER : lot en cours -->
+- Cellules d'OpenCellID : la page de statistiques (toute la base) annonce 381 cellules, dont 55 en 4G et aucune en 5G. Le fichier du MCC 212 téléchargé le 14 novembre 2026 en contient pourtant 1 813 : 16 GSM, 1 436 LTE, 361 UMTS, aucune 5G. La page de statistiques ne compte donc pas comme le fichier ; pourquoi, non vérifié.
 
 ### Date des données, licence, mention, méthode
 
@@ -391,7 +395,7 @@ Comme pour l'Andorre, avec le fichier OpenCellID du MCC 212.
 
 ### Limites
 
-- Estimation tirée de 18 sites, qui donne 100 % du pays en « bonne couverture ». <!-- À VÉRIFIER : lot en cours -->
+- Estimation tirée de 18 sites, qui donne 100 % du pays en « bonne couverture ».
 - Monaco Telecom seulement (voir plus haut). Le code 10 existe sous les deux MCC (212 10 Monaco Telecom, 208 10 SFR) : distinguer un jour les opérateurs demanderait de regrouper par paire (MCC, MNC).
 - Hors itinérance de l'Union européenne.
 - Contour : terre ferme seulement (voir « Contours des pays »).
@@ -408,11 +412,11 @@ Conditions générales du portail du Gouvernement Princier, mot pour mot :
 
 ## Estimation (Andorre, Monaco)
 
-Là où aucune source officielle n'est exploitable, la couverture est estimée à partir des positions de cellules d'OpenCellID et du relief Copernicus DEM GLO-30. Module `pipeline/czb/sources/estimation_opencellid.py`, réglages dans le bloc `estimation` de `config.yaml`. La clé gratuite d'OpenCellID est le secret `OPENCELLID_TOKEN` du dépôt ; sans elle, le pipeline laisse l'Andorre et Monaco de côté et le manifest les signale comme manquants. Ces zones sont marquées « estimées » partout : hachures sur la carte et dans le profil altimétrique, mention dans le rapport et dans le GPX enrichi, type de source 2 dans les tuiles.
+Là où aucune source officielle n'est exploitable, la couverture est estimée à partir des positions de cellules d'OpenCellID et du relief Copernicus DEM GLO-30. Module `pipeline/czb/sources/estimation_opencellid.py`, réglages dans le bloc `estimation` de `config.yaml`. La clé gratuite d'OpenCellID est le secret `OPENCELLID_TOKEN` du dépôt ; sans elle, le pipeline laisse l'Andorre et Monaco de côté et le manifest les signale comme manquants. Ces zones sont marquées « estimées » partout : hachures sur la carte et dans le profil altimétrique, pointillé sur le tracé, mention dans le rapport et dans le GPX enrichi, type de source 2 dans les tuiles.
 
-### Résultats de la construction du 14 novembre 2026
+### Résultats de l'estimation en ligne
 
-Release `data-2026-11-14-4`, d'après le rapport et le journal de construction : <!-- À VÉRIFIER : lot en cours -->
+L'estimation en ligne a été calculée le 14 novembre 2026, pendant la construction de la release `data-2026-11-14-4`. La construction de la release en ligne, `data-2026-11-14`, a repris telle quelle la copie de travail du mois, sans rien télécharger chez OpenCellID : mêmes parts par niveau, mêmes pixels, et 60 points témoins sans écart pour chaque pays. Chiffres du rapport et du journal de la construction de `data-2026-11-14-4` :
 
 | | Andorre (MCC 213) | Monaco (MCC 212) |
 |---|---|---|
@@ -429,12 +433,12 @@ Release `data-2026-11-14-4`, d'après le rapport et le journal de construction :
 | Calcul | 4,4 s | 3,5 s |
 | Points témoins | 60, sans écart | 60, sans écart |
 
-- Le téléchargement réel d'OpenCellID fonctionne depuis la création du secret, le 14 novembre 2026 (un essai limité à l'Andorre et à Monaco à 13 h 44 UTC, puis cette construction) : le lien de chaque fichier est bien trouvé dans la page des téléchargements après l'envoi de la clé, et les fichiers `213.csv.gz` et `212.csv.gz` ont une ligne d'en-tête conforme aux colonnes documentées.
+- Le téléchargement réel d'OpenCellID fonctionne depuis la création du secret, le 14 novembre 2026 (un essai limité à l'Andorre et à Monaco à 13 h 44 UTC, puis la construction de `data-2026-11-14-4`) : le lien de chaque fichier est bien trouvé dans la page des téléchargements après l'envoi de la clé, et les fichiers `213.csv.gz` et `212.csv.gz` ont une ligne d'en-tête conforme aux colonnes documentées.
 - Aucune cellule 5G (« NR ») dans les deux fichiers : l'estimation repose en pratique sur la 4G.
 - Les cellules d'une même station sont loin de leur position médiane (plusieurs centaines de mètres pour une station sur deux) : soit les positions estimées sont imprécises, soit la règle de regroupement ne convient pas. Ce n'est pas tranché.
-- Andorre : 12 sites, c'est très peu. L'estimation y sous-estime sans doute beaucoup la couverture (voir « Andorre », « Limites »). <!-- À VÉRIFIER : lot en cours -->
+- Andorre : 12 sites, c'est très peu. L'estimation y sous-estime sans doute beaucoup la couverture (voir « Andorre », « Limites »).
 - OpenCellID n'autorise que deux téléchargements par jour et par fichier. La copie de travail du mois, publiée avec la release, évite de retélécharger lors des constructions suivantes du même mois.
-- Le manifest porte, pour chaque source estimée, le nombre de sites et de cellules utilisés, sous la forme `"estimation": {"sites": 12, "cells": 41}` pour l'Andorre ; ces nombres sont gardés aussi quand la copie de travail du mois est reprise. <!-- À VÉRIFIER : lot en cours -->
+- Le pipeline écrit dans le manifest, pour chaque source estimée, le nombre de sites et de cellules utilisés, sous la forme `"estimation": {"sites": 12, "cells": 41}` pour l'Andorre. Il garde aussi ces nombres dans la copie de travail, pour les constructions suivantes du même mois. **Le manifest en ligne n'a pas encore ce champ** : la copie de travail reprise pour `data-2026-11-14` a été faite avant cet ajout. Il apparaîtra au prochain recalcul de l'estimation : à la première construction d'un mois suivant, si le téléchargement chez OpenCellID réussit.
 
 ### OpenCellID
 
@@ -533,15 +537,15 @@ Ce que le calage ne dit pas : il porte sur la France, deux départements et deux
 
 - Ce n'est pas une carte d'opérateur. Une antenne absente de la base crée une fausse zone blanche ; une antenne mal placée déplace les limites de plusieurs centaines de mètres.
 - Ni la puissance, ni l'orientation des antennes, ni la végétation fine, ni l'intérieur des bâtiments ne sont pris en compte. Le relief est un modèle de surface : forêts et bâtiments masquent un peu plus que le sol nu (effet non mesuré).
-- Très peu de sites : 12 en Andorre, 18 à Monaco, et aucune cellule 5G dans les fichiers. En Andorre, l'estimation est très pessimiste (voir « Andorre », « Limites »). <!-- À VÉRIFIER : lot en cours -->
-- Aucun contrôle de vraisemblance ne signale une estimation trop pauvre. Seul le nombre de sites, affiché dans le panneau « Sources », en donne une idée. <!-- À VÉRIFIER : lot en cours -->
+- Très peu de sites : 12 en Andorre, 18 à Monaco, et aucune cellule 5G dans les fichiers. En Andorre, l'estimation est très pessimiste (voir « Andorre », « Limites »).
+- Aucun contrôle de vraisemblance ne signale une estimation trop pauvre. Seul le nombre de sites en donne une idée : ce document le donne ; le panneau « Sources » l'affichera quand le manifest le portera.
 - Trois niveaux seulement. Internet mobile seulement : les appels et SMS ne sont pas estimés.
 - La date affichée est le mois de la construction ; les cellules sont celles vues dans les 18 derniers mois.
 - Ne pas compter sur une zone estimée pour un appel d'urgence.
 
 ## Contours des pays
 
-Chaque pays a un contour, qui dit quels pixels lui appartiennent. Module `pipeline/czb/masks.py`, adresses dans `config.yaml`. Chaque fichier de contour téléchargé est supprimé dès que ses géométries sont lues. <!-- À VÉRIFIER : lot en cours -->
+Chaque pays a un contour, qui dit quels pixels lui appartiennent. Module `pipeline/czb/masks.py`, adresses dans `config.yaml`. Chaque fichier de contour téléchargé est supprimé dès que ses géométries sont lues (sauf réglage `delete_after: false`, prévu pour la mise au point).
 
 ### Une source par pays
 
@@ -553,23 +557,23 @@ Chaque pays a un contour, qui dit quels pixels lui appartiennent. Module `pipeli
 - **Monaco** : OpenStreetMap, relation 36990 (terre ferme, sans les eaux territoriales), extrait quotidien de Geofabrik : https://download.geofabrik.de/europe/monaco-latest.osm.pbf. Le pipeline assemble les chemins de cette relation en polygones (2,08 km²).
 - Licence d'OpenStreetMap (https://www.openstreetmap.org/copyright) : « OpenStreetMap is open data, licensed under the Open Data Commons Open Database License (ODbL) by the OpenStreetMap Foundation (OSMF). » et « You are free to copy, distribute, transmit and adapt our data, as long as you credit OpenStreetMap and its contributors. » Mention pour l'Andorre et Monaco : « © OpenStreetMap contributors (ODbL 1.0) », avec un lien vers https://www.openstreetmap.org/copyright.
 - **Partage à l'identique (ODbL).** Le code pays des tuiles dérive de contours sous ODbL en France, en Andorre et à Monaco. La question du partage à l'identique d'une base dérivée n'a pas été tranchée. Une ligne directrice de la fondation OpenStreetMap, relue pendant la recherche, distingue une base de données d'un « Produced Work » (œuvre produite à partir des données) ; des tuiles faites pour l'affichage relèveraient plutôt du second cas. C'est une lecture, pas un fait établi : le texte de l'ODbL lui-même n'a pas été relu. Elle vaut aussi pour le contour français.
-- **Garde-fous** : pour chaque contour, le nombre d'entités attendu (1 pour la Suisse et l'Andorre, 3 pour l'Italie, 4 pour l'Espagne) ; pour les deux contours tirés d'OpenStreetMap, base modifiable par tous, la surface attendue (Andorre entre 455 et 480 km², Monaco entre 1,9 et 2,4 km²). Hors de ces bornes, la construction s'arrête. Pendant la recherche, le serveur de Geofabrik a parfois refusé la connexion depuis les machines de GitHub : le pipeline fait jusqu'à sept essais pour ces fichiers.
+- **Garde-fous** : pour chaque contour, le nombre d'entités attendu (1 pour la Suisse et l'Andorre, 3 pour l'Italie, 4 pour l'Espagne) ; pour les deux contours tirés d'OpenStreetMap, base modifiable par tous, la surface attendue (Andorre entre 455 et 480 km², Monaco entre 1,9 et 2,4 km²). Hors de ces bornes, la construction s'arrête. Pendant la recherche, le serveur de Geofabrik a parfois refusé la connexion depuis les machines de GitHub : le pipeline fait jusqu'à sept essais pour les fichiers de contour, ceux de Geofabrik compris (quatre pour le fichier des départements français, comme pour les autres téléchargements).
 
 Où sont ces mentions : le panneau « Sources » du site affiche, pour chaque pays, « Contour du pays : » suivi de la mention, avec son lien ; `SOURCES.md` les redit dans la release. Elles ne sont pas dans le pied de carte. Pour swisstopo, la page d'aide (https://www.swisstopo.admin.ch/en/source-reference-ogd-swisstopo) admet ce cas : « Acceptable: The source is mentioned in a central location on a web page listing all sources used in the map application or service. » La licence de l'IGN España demande en principe une mention « visible junto con los datos, de forma legible y a pie de mapa » et n'admet une liste de crédits qu'« En caso de imposibilidad manifiesta y justificable » : point à trancher par le propriétaire.
 
 ### Traitement des frontières
 
-Les contours viennent de producteurs différents et ne coïncident pas. Largeur moyenne des recouvrements, mesurée pendant la recherche : 0,1 m entre la Suisse et la France, 16,7 m entre l'Italie et la France, 38,3 m entre l'Andorre et l'Espagne. Le contour de l'ISTAT est le moins fin face à la France : par endroits, jusqu'à 200 ou 300 m de trou et 400 à 600 m de recouvrement.
+Les contours viennent de producteurs différents et ne coïncident pas. Largeur moyenne des recouvrements, mesurée pendant la recherche : 0,1 m entre la Suisse et la France, 16,7 m entre l'Italie et la France, 38,3 m entre l'Andorre et l'Espagne. Le contour de l'ISTAT est le moins fin face à la France : par endroits, jusqu'à 200 à 300 m de trou et 400 à 600 m de recouvrement.
 
 - **Priorité.** Les pays sont rangés dans `config.yaml` dans cet ordre : France, Suisse, Italie, Espagne, Andorre, Monaco. Là où deux contours se recouvrent, le premier pays garde le pixel. La frontière affichée est donc celle du pays prioritaire : le contour français face à tous les voisins de la France, swisstopo face à l'Italie, IGN España face à l'Andorre. Au mont Blanc, 77,7 ha revendiqués par les deux contours vont à la France ; 3 144 pixels revendiqués par l'Espagne et l'Andorre vont à l'Espagne.
-- **Petits interstices comblés.** Les trous fermés de moins de 100 ha bordés par au moins deux contours différents (deux pays, ou deux régions d'un même pays, comme entre les quatre communautés espagnoles) sont donnés au pays le moins prioritaire qui les touche : le contour du pays prioritaire fait foi, c'est l'autre qui s'étend jusqu'à lui. <!-- À VÉRIFIER : lot en cours --> Pourquoi : sinon un tracé qui passe la frontière traverserait quelques mètres « hors zone ». Le seuil de 100 ha sépare sans ambiguïté les interstices (le plus grand mesuré fait 28,5 ha) des vraies enclaves (la plus petite fait 263,8 ha). Essai pendant la recherche, sur la grille réelle avec les départements frontaliers et une version d'essai de la même règle : 8 502 pixels sans pays coincés entre deux pays avant comblement, 14 292 pixels gagnés (dont 13 309 pour l'Italie, face à la France et à la Suisse), 22 pixels coincés après.
-- **Enclaves lombardes.** Deux trous de 18,0 et 19,3 ha ne sont pas des interstices entre pays : ce sont des morceaux de Lombardie entourés par le Piémont dans le contour de l'ISTAT. Bordés par un seul contour, ils ne sont pas comblés et restent hors zone, comme le reste de la Lombardie. <!-- À VÉRIFIER : lot en cours -->
+- **Petits interstices comblés.** Les trous fermés de moins de 100 ha bordés par au moins deux entités des contours (deux pays, ou deux départements ou régions d'un même pays, comme entre les quatre communautés espagnoles) sont donnés au pays le moins prioritaire qui les touche : le contour du pays prioritaire fait foi, c'est l'autre qui s'étend jusqu'à lui. Pourquoi : sinon un tracé qui passe la frontière traverserait quelques mètres « hors zone ». Le seuil de 100 ha sépare les interstices (le plus grand fait environ 28,5 ha) des vraies enclaves (la plus petite, Campione d'Italia, fait 264 ha) ; les deux seuls trous plus petits qui ne sont pas des interstices sont les enclaves lombardes ci-dessous, écartées par la règle des deux entités. Mesures de la contre-vérification, sur la grille réelle avec les départements frontaliers : 8 499 pixels sans pays coincés entre deux pays avant comblement, 22 après.
+- **Enclaves lombardes.** Deux trous de 18,0 et 19,3 ha ne sont pas des interstices entre pays : ce sont des morceaux de Lombardie entourés par le Piémont dans le contour de l'ISTAT. Bordés par une seule entité, ils ne sont pas comblés et restent hors zone, comme le reste de la Lombardie. Vérifié dans les tuiles de la release en ligne : leurs points (8,7053 E 45,0180 N et 8,8138 E 45,0193 N) sont hors zone.
 - **Niveau des pixels comblés.** Aucune source ne les décrit. Ils prennent le plus petit niveau de leurs voisins du même pays (dans le doute, on annonce le moins de couverture), de proche en proche jusqu'à 16 pixels ; au-delà, ils restent à 0. Ils gardent le type de source de leur pays : un pixel comblé est affiché comme une donnée officielle, alors que son niveau est extrapolé.
-- Construction du 14 novembre 2026 : interstices comblés, Suisse 57 pixels, Italie 13 323, Espagne 221, Andorre 684, Monaco 2 ; 14 287 pixels marqués, dont 14 284 extrapolés et 3 sans voisin. <!-- À VÉRIFIER : lot en cours -->
+- Construction de la release en ligne (`data-2026-11-14`) : interstices comblés, Suisse 3 704 trous et 57 pixels, Italie 1 666 trous et 12 816 pixels, Espagne 13 275 trous et 221 pixels, Andorre 993 trous et 684 pixels, Monaco 36 trous et 2 pixels ; 13 780 pixels marqués, dont 13 777 extrapolés et 3 sans voisin.
 - **Seuls les trous fermés sont comblés.** Un comblement plus large aurait rempli des morceaux de mer, par exemple 5,53 ha au sud de Monaco.
 - **Hors zone** (trous de 100 ha ou plus, laissés vides) : la partie française du Léman (le contour du département 74, Haute-Savoie, s'arrête à la rive, alors que la partie suisse du lac est dans la zone) ; les enclaves de Treviño (province de Burgos, dans le Pays basque) et de Valle de Villaverde (Cantabrie), noms déduits des coordonnées ; Büsingen (enclave allemande en Suisse) et Campione d'Italia (enclave italienne en Suisse). Le Liechtenstein est hors zone. L'enclave espagnole de Llívia, en France, est bien dans le contour espagnol.
 - **Bords propres à chaque source** : en Suisse, les carrés sans donnée collés à la frontière sont comblés (voir « Suisse ») ; en Italie et en Espagne, une frange reste plus souvent « sans couverture » (voir ci-dessous) ; en Espagne, les polygones sans commune ne sont pas lus.
-- **Contrôle.** Des pixels tirés au hasard (60 sur toute la grille et 60 autour de chaque pays) reçoivent leur pays attendu par un test géométrique exact sur les contours, en suivant l'ordre de priorité ; un pixel hors de tous les contours n'a pas de pays. Les pixels des interstices comblés ne servent pas à ce contrôle. Ces points sont ensuite relus dans les tuiles publiées : le moindre écart fait échouer la construction. Construction du 14 novembre 2026 : 420 points, aucun écart. <!-- À VÉRIFIER : lot en cours -->
+- **Contrôle.** Des pixels tirés au hasard (60 sur toute la grille et 60 autour de chaque pays) reçoivent leur pays attendu par un test géométrique exact sur les contours, en suivant l'ordre de priorité ; un pixel hors de tous les contours n'a pas de pays. Les pixels des interstices comblés ne servent pas à ce contrôle. Ces points sont ensuite relus dans les tuiles publiées : le moindre écart fait échouer la construction. Construction de la release en ligne : 420 points, aucun écart.
 
 ### Ce que l'on voit le long des frontières
 
@@ -620,7 +624,7 @@ Adresses et identifiants des couches de fond, mentions et règles de préchargem
 
 ### Fond OpenStreetMap (OpenTopoMap)
 
-- Tuiles `https://{a|b|c}.tile.opentopomap.org/{z}/{x}/{y}.png` (forme donnée par OpenTopoMap) : carte topographique faite à partir des données OpenStreetMap. En mode Auto, c'est le fond des pays sans fond national dans le site (Italie, Andorre, Monaco) et des zones hors des données.
+- Tuiles `https://{a|b|c}.tile.opentopomap.org/{z}/{x}/{y}.png` (forme donnée par OpenTopoMap) : carte topographique faite à partir des données OpenStreetMap. En mode Auto, le site prend le fond national du pays au centre de la carte (Plan IGN classique, swisstopo, IGN España) ; OpenTopoMap est celui des pays sans fond national dans le site (Italie, Andorre, Monaco). Si le centre est hors des données, c'est le fond du pays le plus présent dans la vue, et OpenTopoMap si la vue ne montre aucun pays couvert.
 - Licence (https://opentopomap.org/about) : « OpenTopoMap steht unter der Lizenz CC-BY-SA. Das bedeutet, dass die Karte kostenlos und frei verwendet werden darf, solange stets Namensnennung erfolgt und die Weitergabe unter gleichen Bedingungen möglich ist. » Dans la mention demandée, le lien de licence vise la version 3.0 (https://creativecommons.org/licenses/by-sa/3.0/).
 - Mention demandée : « Als Lizenztext sollte Folgendes deutlich sichtbar sein: Kartendaten: © OpenStreetMap-Mitwirkende, SRTM | Kartendarstellung: © OpenTopoMap (CC-BY-SA) ». Mention affichée sur ordinateur : celle-ci, mot pour mot, avec ses trois liens (https://openstreetmap.org/copyright, http://opentopomap.org et la licence). Sur téléphone, une forme courte, avec les mêmes liens : « © OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA) ». OpenTopoMap ne publie pas de forme courte : celle-ci est un choix du projet, qu'aucun texte lu n'approuve.
 - Limites : aucun chiffre, mais pas de téléchargements en masse et aucune garantie de disponibilité : « Dies ist jederzeit gerne möglich, sofern unser Server z.B. durch Massendownloads nicht zu stark beansprucht wird. Außerdem kann keinerlei Ausfallsicherheit garantiert werden. » Le serveur a été réduit le 5 janvier 2026 (« We updated our render server to a smaller vServer on 05.01.2026. ») et un passage aux tuiles vectorielles est annoncé : ce fond pourra devoir être remplacé.
@@ -628,8 +632,8 @@ Adresses et identifiants des couches de fond, mentions et règles de préchargem
 
 ### Recherche de lieux
 
-- France : autocomplétion du géocodage de la Géoplateforme (IGN), https://data.geopf.fr/geocodage/completion, sous les CGU de la Géoplateforme. Le site demande `terr=METROPOLE` : la Corse en fait partie (vérifié le 14 novembre 2026 : Ajaccio, Corte, Bonifacio et Calvi sont proposés). Limite : 10 requêtes par seconde et par adresse IP. Le site n'interroge qu'à partir de 3 caractères et 350 ms après la dernière frappe, soit au plus environ 3 requêtes par seconde. Il envoie aussi le centre de la carte (paramètre `lonlat`) pour que les lieux proches passent en premier ; si le service refusait ce paramètre, la recherche repart sans lui.
-- Étranger : Photon (komoot), https://photon.komoot.io/api/, données OpenStreetMap (ODbL). Conditions : « You can use the API for your project, but please be fair - extensive usage will be throttled. We do not guarantee for the availability and usage might be subject of change in the future. » Langues acceptées : allemand, anglais, français ; sinon, noms locaux. Le site envoie le texte tapé, la langue, le centre de la carte et une emprise de recherche fixe, la même pour tous (de 12° ouest à 18° est et de 36° à 54,5° nord). Les résultats situés en France sont écartés, car l'IGN les fournit.
+- France : autocomplétion du géocodage de la Géoplateforme (IGN), https://data.geopf.fr/geocodage/completion, sous les CGU de la Géoplateforme. Le site demande `terr=METROPOLE` : la Corse en fait partie (vérifié le 14 novembre 2026 : Ajaccio, Corte, Bonifacio et Calvi sont proposés). Limite : 10 requêtes par seconde et par adresse IP. Le site n'interroge qu'à partir de 3 caractères et 350 ms après la dernière frappe, soit au plus environ 3 requêtes par seconde. Il envoie aussi le centre de la carte, arrondi au dixième de degré (paramètre `lonlat`), pour que les lieux proches passent en premier ; si le service refusait ce paramètre, la recherche repart sans lui.
+- Étranger : Photon (komoot), https://photon.komoot.io/api/, données OpenStreetMap (ODbL). Conditions : « You can use the API for your project, but please be fair - extensive usage will be throttled. We do not guarantee for the availability and usage might be subject of change in the future. » Langues acceptées : allemand, anglais, français ; sinon, noms locaux. Le site envoie le texte tapé, la langue, le centre de la carte arrondi au dixième de degré et une emprise de recherche fixe, la même pour tous (de 12° ouest à 18° est et de 36° à 54,5° nord). Les résultats situés en France sont écartés, car l'IGN les fournit.
 - Chaque service a 5 secondes pour répondre (`SEARCH_TIMEOUT_MS`). Les lieux du premier qui répond s'affichent sans attendre l'autre ; un service en panne ou trop lent est signalé dans la liste.
 - Mention affichée : sous les résultats, « Résultats : IGN et © les contributeurs d'OpenStreetMap », avec « OpenStreetMap » en lien vers https://www.openstreetmap.org/copyright ; dans le panneau « Sources », « France : géocodage de la Géoplateforme (IGN) » et « Étranger : Photon (komoot), données © les contributeurs d'OpenStreetMap », avec le même lien. Ce crédit vient des règles d'attribution d'OpenStreetMap (« Geocoders that use OpenStreetMap data must credit OpenStreetMap »), pas des conditions de Photon, qui n'en parlent pas. Ces règles citent les formes « © OpenStreetMap contributors » et « © OpenStreetMap » ; la forme traduite du site est un choix à valider.
 - Nominatim n'est pas utilisé : sa politique interdit l'autocomplétion côté client (« Auto-complete search This is not yet supported by Nominatim and you must not implement such a service on the client side using the API. »).
@@ -642,26 +646,26 @@ Adresses et identifiants des couches de fond, mentions et règles de préchargem
 - **Panneau « Sources ».** Une section repliable par pays, ouverte d'emblée pour les pays à l'écran : nom de la source avec son lien, date des données, méthode, niveaux, technologies, licence avec son lien, phrase imposée par la licence (dans la langue de la source) et logo quand il en faut un, mention du contour du pays avec son lien, opérateurs, avertissement d'itinérance. Puis tous les fonds avec leur mention et leurs liens, les deux services de recherche, et un lien vers ce document. Seules les adresses https du manifest deviennent des liens ; ils s'ouvrent dans un nouvel onglet.
 - **Rapport en texte** : une ligne « Sources » reprend la mention de chaque source traversée, avec son pays et sa date.
 - **Release de données** : `SOURCES.md` (voir « Données publiées »).
-- Les noms des sources, les licences et les mentions de contour sont écrits en français dans le manifest. Le manifest porte aussi leurs traductions en espagnol, catalan, italien et allemand ; le site affiche celle de la langue choisie, sinon le français. Les formules imposées (« Obra derivada de BDLJE CC-BY 4.0 ign.es », « © OpenStreetMap contributors », « ©swisstopo ») et les noms propres ne sont pas traduits. <!-- À VÉRIFIER : lot en cours -->
-- Le panneau « Sources » dit une fois, dans les cinq langues, que les données d'origine ont été transformées pour ce site (rastérisées sur une grille commune, ramenées à des niveaux ou à des seuils) : c'est l'indication de modification que demandent les licences CC BY. <!-- À VÉRIFIER : lot en cours -->
-- Les mentions imposées dans une autre langue que celle de l'interface (OpenCellID en anglais, OpenTopoMap en allemand, AGCOM en italien, ministère espagnol en espagnol) portent un attribut de langue, utile aux lecteurs d'écran. <!-- À VÉRIFIER : lot en cours -->
+- Les noms des sources, les licences et les mentions de contour sont écrits en français dans le manifest. Quand ils contiennent du français, le manifest porte aussi leurs traductions en espagnol, catalan, italien et allemand (champs `nameI18n`, `licenceI18n`, `textI18n`) ; le site affiche celle de la langue choisie, sinon le texte d'origine. Les formules imposées (« Obra derivada de BDLJE CC-BY 4.0 ign.es », « © OpenStreetMap contributors », « ©swisstopo ») et les noms propres ne sont pas traduits : le nom de la source espagnole, par exemple, reste en espagnol.
+- Le panneau « Sources » dit une fois, dans les cinq langues, que les données d'origine ont été transformées pour ce site (rastérisées sur une grille commune, ramenées à des niveaux ou à des seuils) : c'est l'indication de modification que demandent les licences CC BY.
+- Attribut de langue, utile aux lecteurs d'écran. Le crédit d'OpenCellID (en anglais) et la mention d'OpenTopoMap (en allemand) le portent toujours, car le site connaît leur langue. Pour les mentions venues du manifest (AGCOM en italien, ministère espagnol en espagnol, phrases imposées, mentions de contour espagnole et OpenStreetMap), le site le pose quand le manifest donne leur langue (champs `mentionLang` et `boundary.lang`). **Le manifest en ligne ne la donne pas encore** : le pipeline l'écrira à la prochaine construction. D'ici là, ces mentions n'ont pas d'attribut de langue, et la phrase imposée du panneau « Sources » porte `lang="mul"` (langue non précisée).
 
 ## Tracés GPX de test
 
-Les deux tracés de `samples/` servent à essayer l'import d'un GPX et le rapport. Ils viennent de deux sources ouvertes. Détail de leur fabrication et de leurs chiffres : `samples/README.md`.
+Les deux tracés de `samples/` servent à essayer l'import d'un GPX et le rapport. Ils viennent de deux sources ouvertes. Détail de leur fabrication et de leurs chiffres : [samples/README.md](../samples/README.md).
 
 ### OpenStreetMap, par l'API Overpass
 
 - Source : la base OpenStreetMap, lue par l'API Overpass (https://overpass-api.de/api/interpreter), un service qui renvoie les objets d'une emprise selon une requête : chemins, pistes et itinéraires de randonnée, refuges, cols, lieux et frontière.
-- Date : une requête le 14 novembre 2026, sur la base OpenStreetMap du 2026-11-14T12:26:07Z. <!-- À VÉRIFIER : lot en cours -->
+- Date : deux requêtes le 14 novembre 2026. La première, sur la base OpenStreetMap du 2026-11-14T12:26:07Z, a servi aux deux tracés ; la seconde, sur la base du 2026-11-14T17:08:49Z, au départ du tracé des Alpes, de Préfumet aux Chapieux.
 - Licence : ODbL 1.0 (https://opendatacommons.org/licenses/odbl/1-0/). La licence fixe les conditions de toute base dérivée utilisée publiquement (« Any Derivative Database that You Publicly Use must be only under the terms of » cette licence) : les deux fichiers GPX sont donc mis à disposition sous ODbL 1.0, quelle que soit la licence du code du dépôt. Chaque fichier porte la mention « © les contributeurs d'OpenStreetMap », l'adresse https://www.openstreetmap.org/copyright et l'adresse de la licence.
-- Politique d'usage d'Overpass (https://dev.overpass-api.de/overpass-doc/en/preface/commons.html) : « As a broad guideline to stay within safety margins, users are expected to send a maximum of about 10000 requests per day and keep their download volume below about 1 GB per day. » Une seule requête de données a servi aux deux fichiers. <!-- À VÉRIFIER : lot en cours -->
+- Politique d'usage d'Overpass (https://dev.overpass-api.de/overpass-doc/en/preface/commons.html) : « As a broad guideline to stay within safety margins, users are expected to send a maximum of about 10000 requests per day and keep their download volume below about 1 GB per day. » Deux requêtes de données en tout (4,4 Mo puis 0,44 Mo reçus).
 - Méthode : plus court chemin sur les chemins d'OpenStreetMap entre les étapes, puis simplification légère.
 - Limites : itinéraires calculés, pas parcourus ; OpenStreetMap peut être faux ou daté.
 
 ### Copernicus DEM GLO-30, pour les altitudes
 
-- Source : les dalles N45 E006, N42 W001 et N42 E000 du dépôt public `copernicus-dem-30m`, lues directement. <!-- À VÉRIFIER : lot en cours -->
+- Source : les dalles N45 E006 (Alpes, départ de Préfumet compris), N42 W001 et N42 E000 (Pyrénées) du dépôt public `copernicus-dem-30m`, lues directement.
 - Licence : celle décrite dans « Estimation » (« Copernicus DEM GLO-30 »). Les GPX contiennent des altitudes tirées du relief : chaque fichier porte la mention de l'article 6 (b) et la phrase de l'article 6 (c), en anglais, et un lien vers la licence livrée avec la dalle.
 - Méthode : interpolation bilinéaire entre les quatre pixels voisins, arrondie à 0,1 m ; altitudes au-dessus du géoïde EGM2008 (la référence du « niveau de la mer »).
 - Limites : modèle de surface (forêts et bâtiments compris) au pas de 30 m : les reliefs fins sont lissés, et l'altitude peut être un peu trop haute en forêt.
@@ -695,12 +699,12 @@ Sur une réponse 429 (trop de requêtes) ou 503 (service indisponible), tout le 
 
 Le Service Worker sert ensuite :
 
-- la page (quels que soient `?lang` et les autres paramètres) et ses fichiers depuis la coque enregistrée, quand elle est complète, sinon depuis le réseau : une seule version à la fois, jamais de mélange. Une nouvelle version du site s'installe en arrière-plan et sert à la visite suivante ; <!-- À VÉRIFIER : lot en cours -->
-- le manifest des données : le réseau d'abord ; s'il ne répond pas dans les 3 s (`NETWORK_TIMEOUT_MS`), ou en cas d'échec, la copie enregistrée avec le tracé. Une réponse du réseau en erreur (5xx) ne remplace pas cette copie. Sans réseau, le site travaille donc avec les données de la préparation ; avec du réseau, il signale si les données ont changé depuis l'enregistrement ; <!-- À VÉRIFIER : lot en cours -->
+- la page (quels que soient `?lang` et les autres paramètres) et ses fichiers depuis la coque enregistrée, dès qu'elle est complète, sans attendre le réseau ; sinon (première visite), le réseau d'abord, puis la copie s'il ne répond pas dans les 3 s. Une seule version à la fois, jamais de mélange. Une nouvelle version du site s'installe en arrière-plan, dans sa propre coque, et ne sert qu'à la visite suivante, une fois fermés tous les onglets de la version en cours ;
+- le manifest des données : le réseau d'abord ; s'il ne répond pas dans les 3 s (`NETWORK_TIMEOUT_MS`), ou en cas d'échec, la copie enregistrée avec le tracé. Une réponse du réseau en erreur (5xx) ne remplace pas cette copie. Sans réseau, le site travaille donc avec les données de la préparation ; avec du réseau, il signale si les données ont changé depuis l'enregistrement ;
 - les tuiles de fond, les styles et les polices des autres sites : la copie enregistrée si elle existe, sinon le réseau. Rien n'est enregistré automatiquement : seul le bouton remplit ce cache, tracé par tracé ;
 - les tuiles de couverture : la page lit elle-même les tuiles enregistrées avant de lire les archives en ligne.
 
-Vérifié sur le site en ligne le 14 novembre 2026 (contrôle dans un navigateur) : 106 tuiles du vrai Plan IGN enregistrées pour le tracé d'essai, puis servies sans réseau. Le préchargement de swisstopo et d'IGN España n'a pas été essayé avec leurs vrais serveurs (non vérifié).
+Vérifié sur le site en ligne le 14 novembre 2026, au dernier contrôle dans un navigateur (116 contrôles sur 116, site et données en ligne) : pour le tracé d'essai, entièrement en France, 106 tuiles du vrai Plan IGN, 503 de photos aériennes et 167 d'estompage enregistrées ; le Plan IGN et les photos aériennes ont ensuite été servis sans réseau. Le préchargement de swisstopo et d'IGN España n'a pas été essayé avec leurs vrais serveurs (non vérifié).
 
 Limites :
 
@@ -714,14 +718,14 @@ Dans le site :
 
 - Pas de serveur propre au projet : le site et les tuiles de couverture sont servis par GitHub Pages. Pas de compte, aucun cookie déposé par le site, aucun outil de mesure d'audience ni de traçage.
 - Le GPX est lu et analysé dans le navigateur. Il n'est jamais envoyé nulle part. En mode hors ligne, il est seulement rangé dans le cache du navigateur.
-- La recherche de lieux n'interroge l'IGN et Photon que lorsqu'on tape dans le champ de recherche. Ils reçoivent le texte tapé et le centre de la carte, arrondi ; Photon reçoit aussi la langue et l'emprise fixe décrite plus haut. Rien d'autre qui vienne de l'utilisateur ne leur est envoyé ; comme tout site appelé par le navigateur, ils voient son adresse IP. Après « Ma position », le centre de la carte est proche de la position de l'utilisateur : d'où l'arrondi. L'IGN reçoit ce centre au centième de degré (environ 1 km), Photon au dixième de degré (environ 10 km). <!-- À VÉRIFIER : lot en cours -->
+- La recherche de lieux n'interroge l'IGN et Photon que lorsqu'on tape dans le champ de recherche. Ils reçoivent le texte tapé et le centre de la carte, arrondi ; Photon reçoit aussi la langue et l'emprise fixe décrite plus haut. Rien d'autre qui vienne de l'utilisateur ne leur est envoyé ; comme tout site appelé par le navigateur, ils voient son adresse IP. Après « Ma position », le centre de la carte est proche de la position de l'utilisateur : d'où l'arrondi. Les deux services reçoivent ce centre arrondi au dixième de degré (environ 10 km).
 - « Ma position » : la position est lue par le navigateur, avec l'accord de l'utilisateur, et sert seulement à placer le point sur la carte. Elle n'est envoyée nulle part. Le suivi s'arrête quand la page est cachée, et reprend à son retour.
 - Les tuiles de fond sont demandées directement aux fournisseurs par le navigateur : comme pour toute carte en ligne, ils voient l'adresse IP du visiteur et la zone affichée. Comme référent, la page ne leur transmet que l'origine du site, sans le chemin de la page (règle `strict-origin-when-cross-origin`).
 - La langue, les réglages et la description de l'enregistrement hors ligne sont mémorisés dans le navigateur (`localStorage`).
 
 Dans le pipeline :
 
-- Il tourne dans GitHub Actions (workflow « Données », `.github/workflows/build-data.yml`), une fois par mois (le 5, à 3 h 23 UTC) ou à la main. Il commence par détecter les nouvelles versions et ne reconstruit que si une source a changé (essayé pour de vrai : voir « Données publiées »).
+- Il tourne dans GitHub Actions (workflow « Données », `.github/workflows/build-data.yml`), une fois par mois (le 5, à 3 h 23 UTC) ou à la main. Il commence par détecter les nouvelles versions et ne reconstruit que si une source a changé, ou la version du pipeline (`pipeline/czb/__init__.py`), sauf lancement forcé (essayé pour de vrai : voir « Données publiées »).
 - Les requêtes sont faites l'une après l'autre, avec une pause entre deux pages (1 s pour l'AGCOM, 0,5 s pour le ministère espagnol) ; ces pages sont demandées compressées. Un seul fichier est téléchargé à la fois et les fichiers intermédiaires sont supprimés au fur et à mesure. Les copies de travail évitent de relire les services les plus coûteux.
 - Nom de logiciel annoncé aux serveurs (User-Agent) générique : « pipeline-couverture-mobile/1.0 (Python urllib) », sans le nom du dépôt ni celui de son propriétaire. Les sondes s'annoncent aussi sous un nom générique.
 - La clé OpenCellID est un secret du dépôt. Elle est envoyée à la page des téléchargements dans le corps de la requête et masquée dans les journaux.
@@ -737,13 +741,13 @@ Décisions qui reviennent au propriétaire du projet :
 
 - **Espagne, licence de la couche** : garder la source officielle en s'appuyant sur les conditions générales de réutilisation du ministère, faute de licence attachée à la carte ; écrire au ministère (S.G. de Operadores de Telecomunicaciones e Infraestructuras Digitales) ; ou passer l'Espagne en « estimée ». Même décision pour la copie de travail `cache-es_mtd.tif`, publiée dans la release. Les conditions d'ArcGIS Online n'ont pas été lues.
 - **Italie, voie d'accès** : lire le service REST public de l'AGCOM plutôt que passer par la demande de téléchargement par courriel ; écrire ou non à opendata.bbmap@agcom.it pour l'informer.
-- **Andorre, estimation très pessimiste** (12 sites connus) : la garder, masquer l'Andorre, ou enrichir l'estimation avec les cellules 2G et 3G (non essayé). <!-- À VÉRIFIER : lot en cours -->
+- **Andorre, estimation très pessimiste** (12 sites connus) : la garder, masquer l'Andorre, ou enrichir l'estimation avec les cellules 2G et 3G (non essayé).
 - **Zones estimées** : les publier sous CC BY-SA 4.0, comme le demande le partage à l'identique d'OpenCellID.
 - **Monaco** : demander une autorisation écrite pour la couche « Sites Radioélectriques » de cartoradio.mc ; garder les seules cellules de Monaco Telecom (MCC 212) ou ajouter celles des réseaux français ; examiner data.gouv.mc quand il répondra (verdict provisoire).
 - **Contours sous ODbL** (France, Andorre, Monaco) : régler la question du partage à l'identique pour le code pays des tuiles.
 - **IGN España, forme des mentions** : garder « CC BY 4.0 ign.es » ou suivre la formule des données couplées (par exemple « CC-BY 4.0 ign.es 2025 ») ; accepter que la mention du contour espagnol ne soit que dans le panneau « Sources », alors que la licence demande une mention au pied de la carte sauf impossibilité justifiée.
 - **Licence du code** : le dépôt n'a pas de fichier LICENSE et `package.json` ne déclare aucune licence. Le code n'a donc pas de licence déclarée. Les données gardent la licence de leurs sources, et les GPX de test sont sous ODbL 1.0.
-- **Navigation hors ligne** : le préchargement est fait par la page, pas par le Service Worker comme le décrit le cahier des charges (il s'arrête si l'onglet est fermé, et se reprend) ; la page est servie « coque d'abord », si bien qu'une nouvelle version du site ne sert qu'à la visite suivante <!-- À VÉRIFIER : lot en cours --> ; les tuiles de fond enregistrées n'ont pas de durée de conservation.
+- **Navigation hors ligne** : le préchargement est fait par la page, pas par le Service Worker comme le décrit le cahier des charges (il s'arrête si l'onglet est fermé, et se reprend) ; la page est servie « coque d'abord », si bien qu'une nouvelle version du site ne sert qu'à la visite suivante, une fois fermés tous les onglets de l'ancienne ; les tuiles de fond enregistrées n'ont pas de durée de conservation.
 - **Format des tuiles** : le PNG est gardé, alors que le WebP sans perte serait environ 29 % plus léger (mesure sur 800 tuiles : 12,77 Mo contre 9,02 Mo). Raison : le décodeur de secours du site, en JavaScript, ne lit que le PNG, et le manifest refuse le WebP.
 - **Crédit OpenStreetMap de la recherche** : garder la forme traduite (« © les contributeurs d'OpenStreetMap ») ou la forme « © OpenStreetMap contributors » citée par les règles d'OpenStreetMap.
 
@@ -755,4 +759,5 @@ Décisions qui reviennent au propriétaire du projet :
 - le Service Worker est écrit en JavaScript (`public/sw.js`), hors du contrôle de TypeScript : deux constantes du code y sont recopiées à la main ;
 - la partie française du Léman est hors zone ;
 - les pixels des interstices de frontière ont un niveau extrapolé, mais ils sont affichés comme des données officielles ;
-- aucun contrôle de vraisemblance ne signale une estimation trop pauvre.
+- aucun contrôle de vraisemblance ne signale une estimation trop pauvre ;
+- le manifest en ligne n'a pas encore le nombre de sites des estimations (prochain recalcul de l'estimation) ni la langue des mentions imposées (prochaine construction) : le panneau « Sources » ne montre donc pas encore ce nombre, et ces mentions n'ont pas encore d'attribut de langue.
