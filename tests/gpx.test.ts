@@ -105,7 +105,7 @@ describe('lecture du GPX', () => {
   });
 
   it('accepte des blancs ou une marque d\'ordre des octets avant la déclaration XML', () => {
-    for (const before of ['\n', '\r\n  ', '﻿', '﻿\n']) {
+    for (const before of ['\n', '\r\n  ', '\uFEFF', '\uFEFF\n']) {
       expect(parseGpx(before + trackGpx, xmlParser).name, JSON.stringify(before)).toBe('Tour du lac');
     }
   });

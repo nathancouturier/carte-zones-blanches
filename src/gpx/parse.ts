@@ -61,7 +61,7 @@ export function decodeGpx(bytes: Uint8Array): string {
  * la déclaration XML (sortie de certains scripts) : le navigateur refuserait le fichier.
  */
 export function trimXmlStart(text: string): string {
-  return text.replace(/^[\s﻿]+/, '');
+  return text.replace(/^[\s\uFEFF]+/, '');
 }
 
 const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
