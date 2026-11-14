@@ -1,6 +1,8 @@
 // Accès aux tuiles de couverture : lecture dans les archives PMTiles, décodage
-// et cache LRU des tuiles décodées. Le même cache sert à l'affichage et à
-// l'analyse des GPX : changer un réglage ne retélécharge rien.
+// et cache LRU des tuiles décodées. Le cache garde les tuiles affichées :
+// changer un réglage ne retélécharge rien. L'analyse d'un GPX y prend ce qui s'y
+// trouve déjà, mais n'y range pas ce qu'elle lit : un long tracé n'évince pas
+// les tuiles de la carte.
 
 import { TILE_READ_TIMEOUT_MS } from '../config';
 import { untilAborted } from './abort';
@@ -27,7 +29,10 @@ type Cached = Uint8ClampedArray | typeof EMPTY;
 
 export class TileStore {
   private readonly cache: LruCache<string, Cached>;
+  /** Lectures en cours qui rempliront le cache. */
   private readonly pending = new Map<string, Promise<DecodedTile>>();
+  /** Lectures en cours pour l'analyse d'un tracé, hors cache. */
+  private readonly transient = new Map<string, Promise<DecodedTile>>();
 
   constructor(
     readonly manifest: Manifest,
@@ -58,7 +63,8 @@ export class TileStore {
     if (cached !== undefined) return Promise.resolve(cached === EMPTY ? null : cached);
     let promise = this.pending.get(key);
     if (!promise) {
-      const loading: Promise<DecodedTile> = this.load(z, x, y)
+      // Une lecture de la même tuile pour l'analyse est déjà en route : on l'attend plutôt que de relire.
+      const loading: Promise<DecodedTile> = (this.transient.get(key) ?? this.load(z, x, y))
         .then((tile) => {
           this.cache.set(key, tile ?? EMPTY);
           return tile;
@@ -74,11 +80,30 @@ export class TileStore {
   }
 
   /**
+   * Tuile décodée pour l'analyse d'un tracé : celle du cache si elle y est, sinon lue dans
+   * l'archive sans entrer dans le cache. Les valeurs utiles sont gardées avec le tracé :
+   * l'analyse n'a pas à les garder en cache, et les tuiles affichées y restent.
+   */
+  getTransient(z: number, x: number, y: number): Promise<DecodedTile> {
+    const key = tileKey(z, x, y);
+    const cached = this.cache.get(key);
+    if (cached !== undefined) return Promise.resolve(cached === EMPTY ? null : cached);
+    const reading = this.pending.get(key) ?? this.transient.get(key);
+    if (reading) return reading;
+    const loading = this.load(z, x, y).finally(() => {
+      if (this.transient.get(key) === loading) this.transient.delete(key);
+    });
+    this.transient.set(key, loading);
+    return loading;
+  }
+
+  /**
    * Oublie les lectures en cours : les prochaines demandes relisent l'archive au
    * lieu d'attendre une requête restée en suspens (« Réessayer » après une panne).
    */
   restart(): void {
     this.pending.clear();
+    this.transient.clear();
   }
 
   private async load(z: number, x: number, y: number): Promise<DecodedTile> {

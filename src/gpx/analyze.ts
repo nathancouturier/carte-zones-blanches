@@ -70,7 +70,8 @@ export async function sampleCoverage(
     for (;;) {
       const group = queue.pop();
       if (!group) return;
-      const tile = await store.get(group.z, group.x, group.y);
+      // Sans entrer dans le cache des tuiles affichées : un long tracé ne les évince pas.
+      const tile = await store.getTransient(group.z, group.x, group.y);
       if (tile) {
         for (const i of group.items) {
           const o = offsets[i];

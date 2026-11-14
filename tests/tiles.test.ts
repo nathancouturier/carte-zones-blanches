@@ -5,6 +5,9 @@ import { buildLevelTables } from '../src/coverage/manifest';
 import { childTile, ESTIMATED_MASKED_STRIPE, LEVEL_COLORS, renderTile, renderUnavailable, UNAVAILABLE_STRIPE } from '../src/coverage/render';
 import { TileStore } from '../src/coverage/store';
 import { lonLatToTilePixel, tileToLonLat } from '../src/coverage/tilemath';
+import { sampleCoverage } from '../src/gpx/analyze';
+import { distance } from '../src/gpx/geodesy';
+import type { Sample } from '../src/gpx/resample';
 import { fixtureStore, readJsonFixture, sampleManifest } from './helpers';
 
 describe('géométrie des tuiles', () => {
@@ -216,6 +219,63 @@ describe('lecture des archives PMTiles produites par le pipeline', () => {
     expect(reads.filter((r) => r.endsWith('12/2116/1479'))).toHaveLength(1);
     expect(store.peek(12, 2116, 1479)).toBe(first);
     expect(store.peek(12, 1, 1)).toBeUndefined();
+  });
+
+  it('l\'analyse d\'un tracé de 900 km n\'évince pas les tuiles affichées : un changement de réglage ne relit rien (archi-21)', async () => {
+    // Archive simulée : chaque lecture est comptée, le décodage rend une tuile de données uniforme.
+    const lues: string[] = [];
+    const store = new TileStore(
+      sampleManifest(),
+      async (_file, z, x, y) => {
+        lues.push(`${z}/${x}/${y}`);
+        return new ArrayBuffer(8);
+      },
+      async () => new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4).fill(255),
+    );
+    // Une vue au zoom 8 : 9 x 6 tuiles affichées.
+    const vue: [number, number, number][] = [];
+    for (let x = 128; x < 137; x++) for (let y = 88; y < 94; y++) vue.push([8, x, y]);
+    const afficher = (): Promise<unknown> => Promise.all(vue.map(([z, x, y]) => store.get(z, x, y)));
+    await afficher();
+    expect(lues).toHaveLength(54);
+    // Un tracé de 900 km en diagonale, des Pyrénées au Jura : bien plus de tuiles du zoom 12 que le cache n'en garde.
+    const debut = { lon: 0, lat: 42 };
+    const pas = 4500;
+    const samples: Sample[] = Array.from({ length: pas + 1 }, (_, i) => ({ lon: debut.lon + (8 * i) / pas, lat: debut.lat + (6 * i) / pas, ele: null, dist: 0, seg: 0 }));
+    for (let i = 1; i < samples.length; i++) samples[i].dist = samples[i - 1].dist + distance(samples[i - 1].lon, samples[i - 1].lat, samples[i].lon, samples[i].lat);
+    expect(samples[pas].dist).toBeGreaterThan(900_000);
+    const avant = lues.length;
+    const raw = await sampleCoverage(samples, store);
+    expect(raw.inside.every((v) => v === 1)).toBe(true);
+    expect(lues.length - avant).toBeGreaterThan(160);
+    // Changement de réglage : la couche réseau redemande les tuiles affichées, toujours en cache.
+    const apres = lues.length;
+    await afficher();
+    expect(lues.length - apres).toBe(0);
+  });
+
+  it('une tuile lue pour l\'analyse et demandée en même temps par la carte n\'est lue qu\'une fois (archi-21)', async () => {
+    let lectures = 0;
+    let liberer = (): void => undefined;
+    const attente = new Promise<void>((resolve) => (liberer = resolve));
+    const store = new TileStore(
+      sampleManifest(),
+      async () => {
+        lectures++;
+        await attente;
+        return new ArrayBuffer(8);
+      },
+      async () => new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4).fill(255),
+    );
+    const analyse = store.getTransient(12, 2116, 1479);
+    const carte = store.get(12, 2116, 1479);
+    liberer();
+    expect(await carte).toBe(await analyse);
+    expect(lectures).toBe(1);
+    // La carte l'a demandée : elle reste en cache. Lue pour l'analyse seule, une tuile n'y entre pas.
+    expect(store.peek(12, 2116, 1479)).not.toBeUndefined();
+    await store.getTransient(12, 2117, 1479);
+    expect(store.peek(12, 2117, 1479)).toBeUndefined();
   });
 
   it('renvoie null hors des données, sans erreur', async () => {
