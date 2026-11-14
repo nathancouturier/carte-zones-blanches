@@ -492,7 +492,6 @@ try {
     controle('interface : « Ma position » appuyé deux fois garde la position affichée', (await page.locator('.maplibregl-user-location-dot').count()) === 1);
 
     // Rapport : le tracé reste visible au-dessus du panneau, qui se réduit à son titre pour montrer la carte.
-    // Avant toute recherche : le recentrage sur un lieu laisse pour l'instant une marge à la carte (défaut à part).
     await importer(page, gpx('test-alpes.gpx'));
     const reperes = () =>
       page.evaluate(() => {
@@ -520,6 +519,21 @@ try {
     await page.waitForTimeout(2500);
     const [, latitude] = (await page.evaluate(() => location.hash)).slice(1).split('/').map(Number);
     controle('interface : Entrée dans la recherche choisit le lieu de la saisie complète', Math.abs(latitude - 45.45) < 0.05, `latitude ${latitude}`);
+
+    // Après un lieu choisi dans la recherche, les cadrages suivants restent justes (carte-1) : le tracé
+    // importé est au-dessus du rapport, et un appui sur une zone blanche zoome dessus.
+    await importer(page, gpx('test-alpes.gpx'));
+    const apresRecherche = await reperes();
+    controle('interface : après une recherche, le tracé importé est cadré au-dessus du rapport', apresRecherche.length === 2 && apresRecherche.every(Boolean), JSON.stringify(apresRecherche));
+    if (await page.locator('.zone').count()) {
+      const zoom = (hash) => Number(hash.slice(1).split('/')[0]);
+      const avantZone = await page.evaluate(() => location.hash);
+      await page.locator('.zone').first().tap();
+      await page.waitForTimeout(2500);
+      const apresZone = await page.evaluate(() => location.hash);
+      controle('interface : après une recherche, un appui sur une zone blanche zoome dessus', zoom(apresZone) > zoom(avantZone), `${avantZone} puis ${apresZone}`);
+    }
+    await page.tap('.icon-btn[data-role="close"]');
 
     // Un panneau qui s'ouvre ferme la recherche, dont les résultats le recouvriraient.
     await page.tap('button[aria-label="Rechercher un lieu"]');

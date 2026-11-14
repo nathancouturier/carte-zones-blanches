@@ -43,6 +43,11 @@ export interface Padding {
   left: number;
 }
 
+/** Décalage, depuis le centre de la carte, du centre de la partie laissée libre par les marges. */
+export function centerOffset(padding: Padding): [number, number] {
+  return [(padding.left - padding.right) / 2, (padding.top - padding.bottom) / 2];
+}
+
 export interface MapViewOptions {
   container: HTMLElement;
   /** Libellés des contrôles de la carte, dans la langue courante. */
@@ -201,8 +206,13 @@ export class MapView {
     );
   }
 
+  /**
+   * Centre la carte sur un point, au milieu de la partie que les marges laissent libre.
+   * Un décalage (offset) et non une marge (padding) : MapLibre garderait la marge après
+   * le vol et l'ajouterait à chaque cadrage suivant (import d'un GPX, zone du rapport).
+   */
   flyTo(lon: number, lat: number, zoom: number, padding: Padding): void {
-    this.map.flyTo({ center: [lon, lat], zoom, padding, duration: 700 });
+    this.map.flyTo({ center: [lon, lat], zoom, offset: centerOffset(padding), duration: 700 });
   }
 
   /**
