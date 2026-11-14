@@ -4,7 +4,9 @@
 // - À l'étranger : Photon (komoot), basé sur OpenStreetMap.
 //
 // Les deux services sont interrogés seulement quand l'utilisateur tape dans la
-// recherche. Rien d'autre ne leur est envoyé.
+// recherche. Ils reçoivent le texte tapé et le centre de la carte, arrondi à
+// environ 1 km, pour classer les lieux proches (Photon : la langue aussi). Rien
+// d'autre de l'utilisateur ne leur est envoyé.
 
 import { abortError } from '../coverage/abort';
 import {

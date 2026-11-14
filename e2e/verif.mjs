@@ -745,6 +745,16 @@ try {
     await page.selectOption('#langue', 'it');
     await page.waitForTimeout(600);
     controle('it : changement de langue dans les paramètres', (await page.title()) === 'Mappa delle zone senza copertura', await page.title());
+    // Panneau Sources : les pays à l'écran sont ouverts d'emblée, et cette ouverture n'est pas retenue
+    // comme un choix de l'utilisateur quand la carte passe ailleurs (ici de l'Espagne à la Suisse).
+    await page.click('.icon-btn[data-role="close"]');
+    await page.evaluate(() => (location.hash = '#10/46.02/7.75'));
+    await page.waitForTimeout(3000);
+    await page.click('.topbar .fab:last-child');
+    await page.click('[data-focus="sources"]');
+    await page.waitForSelector('.disclaimer--strong');
+    const ouverts = await page.evaluate(() => [...document.querySelectorAll('.panel__body details[open] > summary')].map((s) => s.dataset.focus).join(' '));
+    controle('sources : sections ouvertes pour les pays à l\'écran seulement', ouverts.includes('sources-CH') && !ouverts.includes('sources-ES') && !ouverts.includes('sources-FR'), ouverts);
     controle('es : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }

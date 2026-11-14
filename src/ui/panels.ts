@@ -64,7 +64,12 @@ function details(key: string, className: string, defaultOpen: boolean, ...childr
     {
       class: className,
       open: openDetails.get(key) ?? defaultOpen,
-      ontoggle: (event: Event) => openDetails.set(key, (event.currentTarget as HTMLDetailsElement).open),
+      ontoggle: (event: Event) => {
+        // Le navigateur signale aussi l'ouverture faite à la création : seul un état différent
+        // de celui par défaut (ou déjà retenu) est un choix de l'utilisateur.
+        const open = (event.currentTarget as HTMLDetailsElement).open;
+        if (openDetails.has(key) || open !== defaultOpen) openDetails.set(key, open);
+      },
     },
     children as never,
   );

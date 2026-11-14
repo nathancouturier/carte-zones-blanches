@@ -63,7 +63,7 @@ export class FakeMap {
   /** Règle de validation des styles, comme celle de MapLibre : messages d'erreur, vide si le style est accepté. */
   static validate: (style: FakeStyle) => string[] = () => [];
   readonly styles: FakeStyle[] = [];
-  readonly moves: { kind: 'flyTo' | 'fitBounds' | 'easeTo'; options: Record<string, unknown> }[] = [];
+  readonly moves: { kind: 'flyTo' | 'fitBounds'; options: Record<string, unknown> }[] = [];
   /** Dernier style accepté. */
   style: FakeStyle | null = null;
   center = { lng: 2.6, lat: 46.5 };
@@ -120,7 +120,7 @@ export class FakeMap {
   setPaintProperty(): void {}
   refreshTiles(): void {}
 
-  private move(kind: 'flyTo' | 'fitBounds' | 'easeTo', options: Record<string, unknown>, eventData?: Record<string, unknown>): this {
+  private move(kind: 'flyTo' | 'fitBounds', options: Record<string, unknown>, eventData?: Record<string, unknown>): this {
     this.moves.push({ kind, options });
     this.fire('movestart', { ...eventData });
     if (Array.isArray(options.center)) this.center = { lng: options.center[0] as number, lat: options.center[1] as number };
@@ -131,10 +131,6 @@ export class FakeMap {
 
   flyTo(options: Record<string, unknown>, eventData?: Record<string, unknown>): this {
     return this.move('flyTo', options, eventData);
-  }
-
-  easeTo(options: Record<string, unknown>, eventData?: Record<string, unknown>): this {
-    return this.move('easeTo', options, eventData);
   }
 
   fitBounds(bounds: unknown, options: Record<string, unknown>, eventData?: Record<string, unknown>): this {
