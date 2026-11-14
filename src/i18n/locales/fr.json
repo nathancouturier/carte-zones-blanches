@@ -171,5 +171,15 @@
   "attribution.coverage": "Couverture : {names}",
   "attribution.toggle": "Mentions des sources",
   "attribution.more": "Sources",
-  "date.quarter": "T{quarter} {year}"
+  "date.quarter": "T{quarter} {year}",
+  "report.profile": "Profil altimétrique",
+  "profile.label": "Profil altimétrique du tracé, de {min} à {max} m d'altitude",
+  "profile.hint": "Survolez ou touchez le profil pour situer un point sur la carte.",
+  "profile.at": "km {km}, {ele} m",
+  "profile.outside": "hors de la zone de données",
+  "profile.unknown": "pas de donnée pour ce service",
+  "network.allNOperators": "Les {count} opérateurs à la fois",
+  "network.atLeastOperators_one": "Au moins {count} opérateur",
+  "network.atLeastOperators_other": "Au moins {count} opérateurs",
+  "network.thresholdHint": "Cette source ne dit pas quel opérateur couvre. « Les {count} opérateurs à la fois » montre où vous aurez du réseau quel que soit l'opérateur utilisé en itinérance."
 }

@@ -8,11 +8,13 @@ import {
   countryHasOperatorChoice,
   countryHasService,
   manifestHasService,
+  selectableSlots,
   SERVICES,
   SOURCE_TYPE_KEYS,
   type ManifestCountry,
 } from '../coverage/manifest';
 import { LEVEL_SOLID } from '../coverage/render';
+import { hasThresholdSlots, slotLabel } from '../coverage/slotLabel';
 import type { CoverageStats } from '../gpx/analyze';
 import { describeOperators, describeZone, LEVEL_KEYS } from '../gpx/report';
 import { WHITE_ZONE_MIN_LENGTH_M } from '../config';
@@ -29,11 +31,18 @@ import {
 import { BASEMAP_ORDER, BASEMAPS, HILLSHADE, type BasemapChoice } from '../map/basemaps';
 import { OUTSIDE_COLOR } from '../map/style';
 import { h, icon, ICONS } from './dom';
+import { elevationProfile } from './profile';
 
 type Node_ = Node | string | null | false | undefined | Node_[];
 
 const LEVELS = [LEVEL_NONE, LEVEL_LIMITED, LEVEL_GOOD, LEVEL_VERY_GOOD];
 export const REPO_URL = 'https://github.com/nathancouturier/carte-zones-blanches';
+
+/** Noms des opérateurs d'un pays : ceux des emplacements, ou la liste du pays si la source est agrégée. */
+function operatorNames(country: ManifestCountry): string[] {
+  const named = country.slots.map((slot) => slot.name).filter((name): name is string => !!name);
+  return named.length > 0 ? named : (country.operators ?? []);
+}
 
 function capitalize(text: string): string {
   return text.charAt(0).toLocaleUpperCase(getLanguage()) + text.slice(1);
@@ -69,7 +78,7 @@ function operatorChips(app: App, country: ManifestCountry): HTMLElement {
     'div',
     { class: 'chips', role: 'group', 'aria-label': t('network.operator') },
     chip(ALL_OPERATORS, t('network.allOperators')),
-    country.slots.map((slot) => chip(slot.id, slot.name)),
+    selectableSlots(country).map((slot) => chip(slot.id, slotLabel(slot, country))),
   );
 }
 
@@ -86,10 +95,18 @@ function operatorSelect(app: App, country: ManifestCountry): HTMLElement {
           onchange: (event: Event) => app.setOperator(country.iso, (event.target as HTMLSelectElement).value),
         },
         h('option', { value: ALL_OPERATORS, selected: selected === ALL_OPERATORS }, t('network.allOperatorsCountry')),
-        country.slots.map((slot) => h('option', { value: slot.id, selected: selected === slot.id }, slot.name)),
+        selectableSlots(country).map((slot) => h('option', { value: slot.id, selected: selected === slot.id }, slotLabel(slot, country))),
       )
-    : h('span', { class: 'muted' }, t('network.aggregatedOnly'));
-  return h('div', { class: 'field field--row' }, h('label', { for: id, class: 'field__label' }, countryName(country.iso)), control);
+    : // Un seul opérateur dans le pays : on le nomme. Sinon la source ne détaille pas.
+      h('span', { class: 'muted' }, country.slots.length === 1 && country.slots[0].name ? country.slots[0].name : t('network.aggregatedOnly'));
+  return h(
+    'div',
+    { class: 'country-choice' },
+    h('div', { class: 'field field--row' }, h('label', { for: id, class: 'field__label' }, countryName(country.iso)), control),
+    hasThresholdSlots(country) && country.operators
+      ? h('p', { class: 'hint' }, t('network.thresholdHint', { count: country.operators.length }), ' ', t('sources.operators', { operators: country.operators.join(', ') }))
+      : null,
+  );
 }
 
 function legend(app: App): HTMLElement {
@@ -455,6 +472,14 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
     parts.push(note(t('report.noData'), 'warning'));
   }
 
+  // Profil altimétrique coloré selon la couverture (seulement si le GPX a des altitudes).
+  const profile = elevationProfile({
+    samples: track.samples,
+    classes: report.classes,
+    onHover: (index) => app.showTrackCursor(index),
+  });
+  if (profile) parts.push(section(t('report.profile'), profile));
+
   parts.push(
     section(
       t('report.zonesHeading', { count: report.zones.length }),
@@ -596,7 +621,7 @@ export function sourcesPanel(app: App): Node_[] {
               h('div', null, h('dt', null, t('sources.licence')), h('dd', null, externalLink(source.licence, source.licenceUrl))),
             ),
           ),
-          country.slots.length > 0 ? h('p', { class: 'hint' }, t('sources.operators', { operators: country.slots.map((s) => s.name).join(', ') })) : null,
+          operatorNames(country).length > 0 ? h('p', { class: 'hint' }, t('sources.operators', { operators: operatorNames(country).join(', ') })) : null,
           country.euRoaming ? null : h('p', { class: 'hint' }, t('report.roamingWarning', { country: countryName(country.iso) })),
         ),
       );

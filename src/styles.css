@@ -778,6 +778,51 @@ input[type="range"] {
   resize: vertical;
 }
 
+.profile__chart {
+  position: relative;
+}
+
+.profile__svg {
+  display: block;
+  width: 100%;
+  height: 130px;
+  border-radius: 8px;
+  background: #f1f3f5;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+
+.profile__scale {
+  position: absolute;
+  inset: 4px auto 4px 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #1b2733;
+  pointer-events: none;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+}
+
+.profile__distances {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--c-muted);
+}
+
+.profile__readout {
+  min-height: 1.4em;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--c-muted);
+}
+
+.country-choice + .country-choice {
+  margin-top: 4px;
+}
+
 /* --- Pied de carte, messages, dépôt de fichier -------------------------------- */
 
 .attribution {
@@ -912,6 +957,16 @@ input[type="range"] {
   border-radius: 50%;
   border: 3px solid #fff;
   box-shadow: 0 0 0 1.5px #111827, 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.track-cursor {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffd60a;
+  border: 3px solid #111827;
+  box-shadow: 0 0 0 2px #fff;
+  pointer-events: none;
 }
 
 .track-marker--start {

@@ -103,7 +103,11 @@ export function sampleManifest(): Manifest {
         code: 2,
         iso: 'CH',
         euRoaming: false,
-        slots: [],
+        operators: ['Swisscom', 'Sunrise', 'Salt'],
+        slots: [
+          { id: 'un', minOperators: 1 },
+          { id: 'tous', minOperators: 3 },
+        ],
         sources: [
           {
             type: 1,
@@ -114,8 +118,7 @@ export function sampleManifest(): Manifest {
             attribution: 'OFCOM',
             services: ['data', 'voice'],
             levels: 'binary',
-            levelMap: [0, 2, 2, 2],
-            perOperator: false,
+            perOperator: true,
           },
         ],
       },

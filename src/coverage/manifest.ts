@@ -25,10 +25,15 @@ export const SERVICES: readonly ServiceId[] = ['data', 'voice'];
 export type LevelsKind = 'four' | 'three' | 'binary';
 
 export interface ManifestSlot {
-  /** Identifiant stable de l'opérateur (par exemple « orange »). */
+  /** Identifiant stable de l'emplacement (par exemple « orange »). */
   id: string;
-  /** Nom affiché (nom propre, non traduit). */
-  name: string;
+  /** Nom de l'opérateur (nom propre, non traduit). Absent pour un emplacement à seuil. */
+  name?: string;
+  /**
+   * Emplacement à seuil d'une source agrégée : il vaut « couvert » là où au moins
+   * ce nombre d'opérateurs couvrent, sans qu'on sache lesquels.
+   */
+  minOperators?: number;
 }
 
 export interface ManifestSource {
@@ -51,7 +56,8 @@ export interface ManifestSource {
   /** Correspondance valeur brute (0 à 3) vers niveau (0 à 3). Identité par défaut. */
   levelMap?: number[];
   /**
-   * Vrai si la source distingue les opérateurs. Sinon la valeur agrégée
+   * Vrai si les emplacements se lisent un par un : un opérateur par emplacement,
+   * ou un seuil par emplacement pour une source agrégée. Sinon la valeur
    * (tous opérateurs confondus) est rangée dans l'emplacement 0.
    */
   perOperator: boolean;
@@ -68,8 +74,10 @@ export interface ManifestCountry {
   iso: string;
   /** Faux si le pays est hors de l'itinérance « comme à la maison » de l'UE. */
   euRoaming: boolean;
-  /** Opérateurs rangés dans les emplacements 0 à 3. */
+  /** Opérateurs (ou seuils) rangés dans les emplacements 0 à 3. */
   slots: ManifestSlot[];
+  /** Noms des opérateurs du pays, quand la source ne les distingue pas. */
+  operators?: string[];
   sources: ManifestSource[];
 }
 
@@ -183,8 +191,13 @@ export function parseManifest(raw: unknown): Manifest {
       fail(`countries[${i}].slots doit contenir au plus ${SLOT_COUNT} opérateurs`);
     }
     const slots: ManifestSlot[] = c.slots.map((s, j) => {
-      if (!isObject(s)) fail(`countries[${i}].slots[${j}] doit être un objet`);
-      return { id: str(s.id, `countries[${i}].slots[${j}].id`), name: str(s.name, `countries[${i}].slots[${j}].name`) };
+      const where = `countries[${i}].slots[${j}]`;
+      if (!isObject(s)) fail(`${where} doit être un objet`);
+      const slot: ManifestSlot = { id: str(s.id, `${where}.id`) };
+      if (s.name !== undefined) slot.name = str(s.name, `${where}.name`);
+      if (s.minOperators !== undefined) slot.minOperators = int(s.minOperators, `${where}.minOperators`, 1, 9);
+      if (slot.name === undefined && slot.minOperators === undefined) fail(`${where} doit avoir un nom ou un seuil minOperators`);
+      return slot;
     });
     if (new Set(slots.map((s) => s.id)).size !== slots.length) fail(`countries[${i}].slots contient des identifiants en double`);
     if (slots.some((s) => s.id === ALL_OPERATORS)) fail(`« ${ALL_OPERATORS} » est un identifiant réservé`);
@@ -227,7 +240,14 @@ export function parseManifest(raw: unknown): Manifest {
       return source;
     });
     if (typeof c.euRoaming !== 'boolean') fail(`countries[${i}].euRoaming doit être un booléen`);
-    return { code, iso, euRoaming: c.euRoaming, slots, sources };
+    const country: ManifestCountry = { code, iso, euRoaming: c.euRoaming, slots, sources };
+    if (c.operators !== undefined) {
+      if (!Array.isArray(c.operators) || c.operators.some((o) => typeof o !== 'string' || o === '')) {
+        fail(`countries[${i}].operators doit être une liste de noms`);
+      }
+      country.operators = c.operators as string[];
+    }
+    return country;
   });
 
   return {
@@ -266,9 +286,20 @@ export function manifestHasService(manifest: Manifest, service: ServiceId): bool
   return manifest.countries.some((c) => countryHasService(c, service));
 }
 
-/** Vrai si on peut choisir un opérateur précis dans ce pays. */
+/**
+ * Emplacements proposés au choix dans l'interface. Le seuil « au moins un
+ * opérateur » n'y figure pas : c'est exactement « tous opérateurs ».
+ */
+export function selectableSlots(country: ManifestCountry): ManifestSlot[] {
+  if (!country.sources.some((s) => s.perOperator)) return [];
+  return country.slots.filter((slot) => slot.minOperators !== 1);
+}
+
+/** Vrai si on peut choisir autre chose que « tous opérateurs » dans ce pays. */
 export function countryHasOperatorChoice(country: ManifestCountry): boolean {
-  return country.slots.length > 1 && country.sources.some((s) => s.perOperator);
+  const slots = selectableSlots(country);
+  // Un seul opérateur nommé : le choisir ne changerait rien. Un seuil, lui, est toujours un vrai choix.
+  return slots.length > 1 || slots.some((slot) => slot.minOperators !== undefined);
 }
 
 /**
@@ -370,5 +401,5 @@ export function buildLevelTables(manifest: Manifest, settings: DecodeSettings, f
 export function effectiveOperator(country: ManifestCountry, settings: DecodeSettings): ManifestSlot | null {
   const id = settings.operators[country.iso];
   if (!id || id === ALL_OPERATORS || !countryHasOperatorChoice(country)) return null;
-  return country.slots.find((s) => s.id === id) ?? null;
+  return selectableSlots(country).find((s) => s.id === id) ?? null;
 }

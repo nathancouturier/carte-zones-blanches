@@ -171,5 +171,15 @@
   "attribution.coverage": "Copertura: {names}",
   "attribution.toggle": "Crediti delle fonti",
   "attribution.more": "Fonti",
-  "date.quarter": "T{quarter} {year}"
+  "date.quarter": "T{quarter} {year}",
+  "report.profile": "Profilo altimetrico",
+  "profile.label": "Profilo altimetrico del percorso, da {min} a {max} m",
+  "profile.hint": "Passa il cursore o tocca il profilo per individuare un punto sulla mappa.",
+  "profile.at": "km {km}, {ele} m",
+  "profile.outside": "fuori dalla zona dei dati",
+  "profile.unknown": "nessun dato per questo servizio",
+  "network.allNOperators": "Tutti e {count} gli operatori",
+  "network.atLeastOperators_one": "Almeno {count} operatore",
+  "network.atLeastOperators_other": "Almeno {count} operatori",
+  "network.thresholdHint": "Questa fonte non indica quale operatore copre. «Tutti e {count} gli operatori» mostra dove avrai rete qualunque sia l'operatore usato in roaming."
 }

@@ -20,6 +20,7 @@ import {
   type Manifest,
   type ManifestCountry,
 } from '../coverage/manifest';
+import { slotLabel } from '../coverage/slotLabel';
 import {
   classify,
   computeStats,
@@ -138,7 +139,7 @@ export function describeOperators(report: Report, settings: DecodeSettings): str
   return report.countries
     .map((country) => {
       const operator = effectiveOperator(country, settings);
-      const label = operator ? operator.name : t('network.allOperatorsShort');
+      const label = operator ? slotLabel(operator, country) : t('network.allOperatorsShort');
       return t('report.operatorInCountry', { operator: label, country: countryName(country.iso) });
     })
     .join(', ');

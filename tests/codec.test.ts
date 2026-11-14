@@ -21,7 +21,10 @@ import {
   effectiveOperator,
   manifestHasService,
   parseManifest,
+  selectableSlots,
 } from '../src/coverage/manifest';
+import { hasThresholdSlots, slotLabel } from '../src/coverage/slotLabel';
+import { setLanguage } from '../src/i18n';
 import { sampleManifest } from './helpers';
 
 describe('encodage des canaux', () => {
@@ -76,7 +79,11 @@ describe('lecture du manifest', () => {
     expect(countryByCode(manifest, 9)).toBeUndefined();
     expect(manifestHasService(manifest, 'voice')).toBe(true);
     expect(countryHasOperatorChoice(manifest.countries[0])).toBe(true);
-    expect(countryHasOperatorChoice(manifest.countries[1])).toBe(false); // source agrégée
+    expect(selectableSlots(manifest.countries[0]).map((s) => s.id)).toEqual(['orange', 'sfr', 'bouygues', 'free']);
+    // Source agrégée à seuils : « au moins un opérateur » est le choix par défaut, seul « les trois » se choisit.
+    expect(countryHasOperatorChoice(manifest.countries[1])).toBe(true);
+    expect(selectableSlots(manifest.countries[1]).map((s) => s.id)).toEqual(['tous']);
+    expect(manifest.countries[1].operators).toEqual(['Swisscom', 'Sunrise', 'Salt']);
     expect(countryHasOperatorChoice(manifest.countries[2])).toBe(false); // opérateur unique
   });
 
@@ -97,6 +104,23 @@ describe('lecture du manifest', () => {
     const reserved = JSON.parse(JSON.stringify(base));
     reserved.countries[0].slots[0].id = ALL_OPERATORS;
     expect(() => parseManifest(reserved)).toThrow(/réservé/);
+  });
+
+  it('nomme les emplacements : opérateur ou seuil', () => {
+    const [france, suisse] = sampleManifest().countries;
+    setLanguage('fr');
+    expect(slotLabel(france.slots[1], france)).toBe('SFR');
+    expect(slotLabel(suisse.slots[1], suisse)).toBe('Les 3 opérateurs à la fois');
+    expect(slotLabel(suisse.slots[0], suisse)).toBe('Au moins 1 opérateur');
+    expect(slotLabel({ id: 'deux', minOperators: 2 }, suisse)).toBe('Au moins 2 opérateurs');
+    expect(hasThresholdSlots(suisse)).toBe(true);
+    expect(hasThresholdSlots(france)).toBe(false);
+    setLanguage('de');
+    expect(slotLabel(suisse.slots[1], suisse)).toBe('Alle 3 Anbieter gleichzeitig');
+    setLanguage('fr');
+    const bad = JSON.parse(JSON.stringify(sampleManifest()));
+    bad.countries[1].slots[0] = { id: 'x' };
+    expect(() => parseManifest(bad)).toThrow(/nom ou un seuil/);
   });
 
   it('choisit la bonne archive selon z, x et y', () => {
@@ -149,11 +173,18 @@ describe('tables de niveaux pilotées par le manifest', () => {
   });
 
   it('applique la correspondance des niveaux d\'une source binaire ou agrégée', () => {
-    // Suisse : valeur agrégée dans l'emplacement 0, tout niveau non nul vaut « bonne couverture ».
-    const swiss = buildLevelTable(suisse, suisse.sources[0], 'data', 'peu-importe');
-    expect(swiss[packSlots([0, 3, 3, 3])]).toBe(0);
-    expect(swiss[packSlots([1, 0, 0, 0])]).toBe(2);
-    expect(swiss[packSlots([3, 0, 0, 0])]).toBe(2);
+    // Suisse : emplacements à seuil. « Tous opérateurs » lit « au moins un », l'autre choix lit « les trois ».
+    const any = buildLevelTable(suisse, suisse.sources[0], 'data', ALL_OPERATORS);
+    const all3 = buildLevelTable(suisse, suisse.sources[0], 'data', 'tous');
+    expect([any[packSlots([2, 2])], all3[packSlots([2, 2])]]).toEqual([2, 2]); // les trois opérateurs couvrent
+    expect([any[packSlots([2, 0])], all3[packSlots([2, 0])]]).toEqual([2, 0]); // un ou deux seulement
+    expect([any[packSlots([0, 0])], all3[packSlots([0, 0])]]).toEqual([0, 0]);
+    // Source agrégée sans seuil : la valeur est dans l'emplacement 0, quel que soit l'opérateur demandé.
+    const flat = { ...suisse.sources[0], perOperator: false, levelMap: [0, 2, 2, 2] };
+    const aggregated = buildLevelTable(suisse, flat, 'data', 'peu-importe');
+    expect(aggregated[packSlots([0, 3, 3, 3])]).toBe(0);
+    expect(aggregated[packSlots([1, 0, 0, 0])]).toBe(2);
+    expect(aggregated[packSlots([3, 0, 0, 0])]).toBe(2);
     const andorra = buildLevelTable(andorre, andorre.sources[0], 'data', ALL_OPERATORS);
     expect([0, 1, 2, 3].map((v) => andorra[packSlots([v])])).toEqual([0, 1, 2, 2]);
   });
@@ -177,5 +208,8 @@ describe('tables de niveaux pilotées par le manifest', () => {
     expect(effectiveOperator(france, { service: 'data', operators: { FR: 'inconnu' } })).toBeNull();
     expect(effectiveOperator(france, { service: 'data', operators: { FR: 'orange' } })?.name).toBe('Orange');
     expect(effectiveOperator(suisse, { service: 'data', operators: { CH: 'orange' } })).toBeNull();
+    expect(effectiveOperator(suisse, { service: 'data', operators: { CH: 'tous' } })?.minOperators).toBe(3);
+    // « Au moins un opérateur » n'est pas un choix : c'est « tous opérateurs ».
+    expect(effectiveOperator(suisse, { service: 'data', operators: { CH: 'un' } })).toBeNull();
   });
 });

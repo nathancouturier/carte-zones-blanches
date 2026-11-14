@@ -57,6 +57,7 @@ export class MapView {
   private track: GeoJSON.FeatureCollection = EMPTY_COLLECTION;
   private zone: GeoJSON.FeatureCollection = EMPTY_COLLECTION;
   private markers: Marker[] = [];
+  private cursor: Marker | null = null;
   private inputs: StyleInputs | null = null;
 
   constructor(private readonly options: MapViewOptions) {
@@ -158,6 +159,22 @@ export class MapView {
       el.setAttribute('aria-label', p.label);
       return new Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(this.map);
     });
+  }
+
+  /** Repère mobile sur le tracé (point survolé dans le profil altimétrique). null pour le retirer. */
+  setCursor(point: { lon: number; lat: number } | null): void {
+    if (!point) {
+      this.cursor?.remove();
+      this.cursor = null;
+      return;
+    }
+    if (!this.cursor) {
+      const el = document.createElement('div');
+      el.className = 'track-cursor';
+      this.cursor = new Marker({ element: el }).setLngLat([point.lon, point.lat]).addTo(this.map);
+    } else {
+      this.cursor.setLngLat([point.lon, point.lat]);
+    }
   }
 
   fitBounds(bbox: [number, number, number, number], padding: Padding, maxZoom = 15): void {

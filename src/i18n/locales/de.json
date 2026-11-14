@@ -171,5 +171,15 @@
   "attribution.coverage": "Abdeckung: {names}",
   "attribution.toggle": "Quellenangaben",
   "attribution.more": "Quellen",
-  "date.quarter": "Q{quarter} {year}"
+  "date.quarter": "Q{quarter} {year}",
+  "report.profile": "Höhenprofil",
+  "profile.label": "Höhenprofil der Route, {min} bis {max} m",
+  "profile.hint": "Fahre mit der Maus über das Profil oder tippe darauf, um einen Punkt auf der Karte zu sehen.",
+  "profile.at": "km {km}, {ele} m",
+  "profile.outside": "außerhalb des Datengebiets",
+  "profile.unknown": "keine Daten für diesen Dienst",
+  "network.allNOperators": "Alle {count} Anbieter gleichzeitig",
+  "network.atLeastOperators_one": "Mindestens {count} Anbieter",
+  "network.atLeastOperators_other": "Mindestens {count} Anbieter",
+  "network.thresholdHint": "Diese Quelle gibt nicht an, welcher Anbieter abdeckt. „Alle {count} Anbieter gleichzeitig“ zeigt, wo du Netz hast, egal welchen Anbieter dein Roaming nutzt."
 }

@@ -11,6 +11,7 @@ import {
   countryHasOperatorChoice,
   manifestHasService,
   parseManifest,
+  selectableSlots,
   type DecodeSettings,
   type LevelTables,
   type Manifest,
@@ -121,7 +122,7 @@ export class App {
     const operators: Record<string, string> = {};
     for (const country of manifest.countries) {
       const id = network.operators[country.iso];
-      if (id && countryHasOperatorChoice(country) && country.slots.some((s) => s.id === id)) operators[country.iso] = id;
+      if (id && countryHasOperatorChoice(country) && selectableSlots(country).some((s) => s.id === id)) operators[country.iso] = id;
     }
     const service: ServiceId = manifestHasService(manifest, network.service) ? network.service : 'data';
     return { ...network, operators, service };
@@ -346,6 +347,7 @@ export class App {
       this.mapView.setTrack(EMPTY_COLLECTION);
       this.mapView.setZone(EMPTY_COLLECTION);
       this.mapView.setEndpoints([]);
+      this.mapView.setCursor(null);
       return;
     }
     this.mapView.setTrack(trackToGeoJson(track.samples, track.report?.classes ?? null));
@@ -366,6 +368,12 @@ export class App {
     const updated: LoadedTrack = { ...track, report: buildReport(track.analysis, manifest, this.decodeSettings()) };
     this.store.set({ track: updated, selectedZone: null });
     this.showTrack(updated);
+  }
+
+  /** Montre sur la carte le point du tracé survolé dans le profil altimétrique. */
+  showTrackCursor(index: number | null): void {
+    const sample = index === null ? undefined : this.state.track?.samples[index];
+    this.mapView.setCursor(sample ? { lon: sample.lon, lat: sample.lat } : null);
   }
 
   removeTrack(): void {

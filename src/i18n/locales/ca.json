@@ -171,5 +171,15 @@
   "attribution.coverage": "Cobertura: {names}",
   "attribution.toggle": "Crèdits de les fonts",
   "attribution.more": "Fonts",
-  "date.quarter": "T{quarter} de {year}"
+  "date.quarter": "T{quarter} de {year}",
+  "report.profile": "Perfil d'altitud",
+  "profile.label": "Perfil d'altitud de la ruta, de {min} a {max} m",
+  "profile.hint": "Passa el cursor o toca el perfil per situar un punt al mapa.",
+  "profile.at": "km {km}, {ele} m",
+  "profile.outside": "fora de la zona de dades",
+  "profile.unknown": "sense dades per a aquest servei",
+  "network.allNOperators": "Els {count} operadors alhora",
+  "network.atLeastOperators_one": "Almenys {count} operador",
+  "network.atLeastOperators_other": "Almenys {count} operadors",
+  "network.thresholdHint": "Aquesta font no indica quin operador dona cobertura. «Els {count} operadors alhora» mostra on tindràs xarxa sigui quin sigui l'operador utilitzat en itinerància."
 }
