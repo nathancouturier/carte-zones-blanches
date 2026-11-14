@@ -44,10 +44,22 @@ const GPX_DIFFICILE = Buffer.from(`
 // (Un tracé qui passe à l'étranger peut tomber sur un fond qu'on ne précharge pas, comme OpenTopoMap.)
 const TRACE_FRANCE = { name: 'vallouise.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(GPX_SECOURS) };
 
-function gpx(nom) {
+// Ce que le site publie : pays présents et emprise des données (lus dans son manifest).
+const manifest = await fetch(`${SITE}data/manifest.json`).then((r) => (r.ok ? r.json() : null), () => null);
+const paysPublies = (manifest?.countries ?? []).map((c) => c.iso);
+const [ouest, sud, est, nord] = manifest?.bounds ?? [0, 0, 0, 0];
+
+function echantillon(nom) {
   const chemin = fileURLToPath(new URL(`../samples/${nom}`, import.meta.url));
-  if (existsSync(chemin)) return { name: nom, mimeType: 'application/gpx+xml', buffer: readFileSync(chemin) };
-  return { name: 'secours.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(GPX_SECOURS) };
+  return existsSync(chemin) ? { name: nom, mimeType: 'application/gpx+xml', buffer: readFileSync(chemin) } : null;
+}
+
+// Le GPX de test des Alpes si les données publiées couvrent son départ (Les Chapieux), sinon un court tracé
+// des Hautes-Alpes : des données d'essai réduites à ce département suffisent alors.
+function gpx(nom) {
+  const fichier = echantillon(nom);
+  const couvert = ouest <= 6.73 && 6.73 <= est && sud <= 45.7 && 45.7 <= nord;
+  return fichier && couvert ? fichier : TRACE_FRANCE;
 }
 
 async function ouvrir(navigateur, options, chemin) {
@@ -297,6 +309,33 @@ try {
     controle('it : changement de langue dans les paramètres', (await page.title()) === 'Mappa delle zone senza copertura', await page.title());
     controle('es : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
+  }
+
+  // --- 4. Ordinateur, français : les deux GPX de test, de part et d'autre d'une frontière ------
+  // Chaque contrôle ne joue que si le pays étranger du tracé est publié : sinon il est annoncé comme sauté.
+  {
+    const cas = [
+      { nom: 'test-alpes.gpx', iso: 'IT', pays: 'Italie', zoneAttendue: null },
+      // Côté espagnol, l'arrivée au refuge de Góriz n'a aucun réseau 4G dans la carte du ministère.
+      { nom: 'test-pyrenees.gpx', iso: 'ES', pays: 'Espagne', zoneAttendue: /km \d+,\d à \d+,\d, soit [^\n]*, Espagne/ },
+    ];
+    for (const { nom, iso, pays, zoneAttendue } of cas) {
+      const fichier = echantillon(nom);
+      if (!fichier || !paysPublies.includes('FR') || !paysPublies.includes(iso)) {
+        console.log(`SAUTÉ étranger : ${nom} (${fichier ? `${pays} absente des données publiées` : 'fichier absent'})`);
+        continue;
+      }
+      const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '');
+      await importer(page, fichier);
+      const texte = await page.locator('.report-text').inputValue();
+      controle(`étranger : ${nom} traverse la France et l'${pays}`, texte.includes(`Pays traversés : France, ${pays}`), (texte.match(/Pays traversés[^\n]*/) ?? [''])[0]);
+      controle(`étranger : ${nom}, la couverture est lue des deux côtés`, new RegExp(`Opérateur : [^\\n]*\\(France\\)[^\\n]*\\(${pays}\\)`).test(texte) && !texte.includes('Hors de la zone couverte par les données'), (texte.match(/Opérateur[^\n]*/) ?? [''])[0]);
+      controle(`étranger : ${nom}, source qui dit seulement couvert ou non`, texte.includes(`${pays} : la source indique seulement si un lieu est couvert ou non.`));
+      if (zoneAttendue) controle(`étranger : ${nom}, zone blanche côté ${pays}`, zoneAttendue.test(texte), (texte.match(zoneAttendue) ?? [''])[0]);
+      controle(`étranger : ${nom}, aucune erreur JavaScript`, suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+      await capture(page, `10-ordinateur-fr-${nom.replace('.gpx', '')}`);
+      await contexte.close();
+    }
   }
 } finally {
   await navigateur.close();
