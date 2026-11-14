@@ -139,16 +139,26 @@ function lookup(key: string): string | undefined {
 }
 
 /**
- * Traduit une clé. Les paramètres remplacent les {noms} entre accolades.
- * Avec un paramètre « count », on cherche d'abord la forme plurielle de la
- * langue (clé suffixée par _one, _other, etc.).
+ * Traduit une clé. Les paramètres remplacent les {noms} entre accolades ; un
+ * paramètre nombre y est écrit selon la langue (« 1 234 », « 1.234 »), un texte
+ * tel quel (déjà formaté par l'appelant s'il le faut). Avec un paramètre
+ * « count », on cherche d'abord la forme plurielle de la langue (clé suffixée par
+ * _one, _other, etc.), choisie d'après le nombre brut.
  */
 export function t(key: string, params?: Params): string {
   const text = template(key, params);
   if (!params) return text;
   return text.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in params ? String(params[name]) : match,
+    name in params ? paramText(params[name]) : match,
   );
+}
+
+/** Valeur d'un paramètre dans le texte : un nombre passe par formatNumber, un texte reste tel quel. */
+function paramText(value: string | number): string {
+  if (typeof value !== 'number') return value;
+  if (Number.isInteger(value)) return formatNumber(value);
+  // Nombre à virgule (aucun texte n'en reçoit aujourd'hui) : ses décimales, trois au plus, sont gardées.
+  return formatNumber(value, Math.min(3, /\.(\d+)/.exec(String(value))?.[1].length ?? 0));
 }
 
 /** Texte de la clé, avant remplacement des paramètres (forme plurielle choisie selon « count »). */
@@ -180,7 +190,7 @@ export function tParts<T>(key: string, params: Record<string, T | string | numbe
     if (!(match[1] in params)) continue;
     if (match.index > last) parts.push(text.slice(last, match.index));
     const value = params[match[1]];
-    parts.push(typeof value === 'number' ? String(value) : value);
+    parts.push(typeof value === 'number' ? paramText(value) : value);
     last = match.index + match[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));
@@ -190,6 +200,14 @@ export function tParts<T>(key: string, params: Record<string, T | string | numbe
 /** Vrai si la clé existe dans la langue courante ou en français. */
 export function hasKey(key: string): boolean {
   return lookup(key) !== undefined;
+}
+
+/**
+ * Texte venu des données (nom d'une source, licence, contour d'un pays) dans la langue
+ * choisie : sa traduction si les données la donnent, sinon le texte d'origine, en français.
+ */
+export function localized(text: string, translations?: Readonly<Record<string, string>>): string {
+  return translations?.[current] ?? text;
 }
 
 // ---------------------------------------------------------------------------

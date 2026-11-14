@@ -15,10 +15,12 @@ import {
   getLanguage,
   initLanguage,
   langFromUrl,
+  localized,
   setLanguage,
   t,
   tParts,
 } from '../src/i18n';
+import { injectNoscript, noscriptLines } from '../src/i18n/noscript';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -136,6 +138,43 @@ describe('traductions', () => {
     expect(term('it', 'report.zonesHeading_one')).toContain('Zona senza copertura');
     expect(term('de', 'report.zonesHeading_one')).toContain('Funkloch');
   });
+
+  it('dit « zone blanche » avec le terme du glossaire partout où le français le dit (glo-01)', () => {
+    // Singulier ou pluriel ; des tirets dans le nom du fichier exporté, « oe » pour « ö » en allemand.
+    const glossary: Record<string, RegExp> = {
+      es: /zonas?[ -]sin[ -]cobertura/i,
+      ca: /zon(?:a|es)[ -]sense[ -]cobertura/i,
+      it: /zon[ae][ -]senza[ -]copertura/i,
+      de: /funkl(?:o|ö|oe)ch/i,
+    };
+    const keys = Object.keys(french).filter((key) => /zones?[ -]blanches?/i.test(french[key]));
+    // Les noms des points du GPX enrichi en font partie.
+    expect(keys).toEqual(expect.arrayContaining(['app.title', 'report.zonesHeading_one', 'export.waypointStart', 'export.waypointEnd', 'export.fileSuffix']));
+    for (const key of keys) {
+      for (const [code, expected] of Object.entries(glossary)) {
+        expect(dictionaries.get(code)![key], `${code} : ${key}`).toMatch(expected);
+      }
+    }
+  });
+
+  it('ne nomme pas les traits gris des zones estimées comme les hachures des tuiles illisibles (sources-24)', () => {
+    // Deux motifs gris bien distincts sur la carte : la légende de l'un ne reprend pas les mots du bandeau de l'autre.
+    const hachures: Record<string, RegExp> = { fr: /hachur/i, es: /rayad/i, ca: /ratll/i, it: /tratteggi/i, de: /schraffiert/i };
+    for (const [code, mot] of Object.entries(hachures)) {
+      const dict = dictionaries.get(code)!;
+      expect(dict['network.tilesUnavailable'], code).toMatch(mot);
+      expect(dict['legend.estimatedGood'], code).not.toMatch(mot);
+    }
+  });
+
+  it('renvoie au verbe du bouton du hors ligne quand il faut refaire l\'enregistrement', () => {
+    // Le message nomme l'action que l'utilisateur voit sur le bouton (« Desa la ruta... » en catalan).
+    const verbe: Record<string, RegExp> = { fr: /prépar/i, es: /prepar/i, ca: /\bdes(?:a|ar)\b/i, it: /prepar/i, de: /speicher/i };
+    for (const [code, mot] of Object.entries(verbe)) {
+      const dict = dictionaries.get(code)!;
+      for (const key of ['offline.prepare', 'offline.lost', 'offline.basemapNotAllowed']) expect(dict[key], `${code} : ${key}`).toMatch(mot);
+    }
+  });
 });
 
 describe('choix de la langue', () => {
@@ -190,6 +229,42 @@ describe('choix de la langue', () => {
       expect(t('search.credits'), code).toContain('OpenStreetMap');
       expect(t('sources.searchOsm'), code).toContain('OpenStreetMap');
     }
+  });
+
+  it('écrit les nombres insérés dans les textes selon la langue, sans changer le pluriel (lang-11)', () => {
+    const espaces = (text: string): string => text.replace(/\s/g, ' ');
+    setLanguage('fr');
+    expect(espaces(t('gpx.discarded', { count: 1234, km: formatNumber(10) }))).toBe('1 234 points aberrants ont été écartés : position (0, 0) ou points isolés à plus de 10 km du tracé.');
+    expect(t('gpx.discarded', { count: 1, km: '10' })).toMatch(/^Un point aberrant/); // le pluriel lit le nombre brut
+    expect(espaces(t('offline.basemapMissing', { basemap: 'Plan IGN', count: 1500, total: formatNumber(2000) }))).toBe('Plan IGN : il manque 1 500 éléments sur 2 000.');
+    setLanguage('de');
+    expect(t('gpx.jumps', { count: 1234, km: '10' })).toMatch(/^Die Route springt 1\.234-mal /);
+    expect(t('offline.basemapStored', { basemap: 'Plan IGN', count: 2500 })).toBe('Plan IGN: 2.500 Kacheln gespeichert.');
+    expect(tParts('report.zonesHeading', { count: 1200 })).toEqual(['Funklöcher (', '1.200', ')']);
+    setLanguage('ca');
+    expect(t('gpx.discarded', { count: 1234, km: '10' })).toMatch(/^S'han descartat 1\.234 punts /);
+  });
+
+  it('dit les textes des données dans la langue choisie, sinon en français (lang-06)', () => {
+    const traductions = { es: 'Límites administrativos', de: 'Verwaltungsgrenzen' };
+    setLanguage('es');
+    expect(localized('Contours administratifs', traductions)).toBe('Límites administrativos');
+    setLanguage('it');
+    expect(localized('Contours administratifs', traductions)).toBe('Contours administratifs');
+    expect(localized('Contours administratifs')).toBe('Contours administratifs');
+    setLanguage('fr');
+    expect(localized('Contours administratifs', traductions)).toBe('Contours administratifs');
+  });
+
+  it('écrit le message sans JavaScript dans chaque langue, chacun avec son attribut lang (lang-06)', () => {
+    const lines = noscriptLines(join(root, 'src/i18n/locales'));
+    expect(lines.map((line) => line.lang)).toEqual(['fr', 'ca', 'de', 'es', 'it']);
+    for (const { lang, text } of lines) expect(text, lang).toBe(_dictionaries().get(lang)!['app.noscript']);
+    const html = injectNoscript(readFileSync(join(root, 'index.html'), 'utf-8'), [...lines, { lang: 'xx', text: 'a < b & c' }]);
+    expect(html).toContain('<noscript><p lang="fr">Cette carte a besoin de JavaScript.</p><p lang="ca">');
+    expect(html).toContain('<p lang="de">Diese Karte braucht JavaScript.</p>');
+    expect(html).toContain('<p lang="xx">a &lt; b &amp; c</p></noscript>');
+    expect(() => injectNoscript('<html></html>', lines)).toThrow(/noscript/);
   });
 
   it('ignore une langue inconnue', () => {

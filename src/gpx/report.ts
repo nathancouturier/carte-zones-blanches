@@ -9,7 +9,7 @@ import {
   formatPercent,
   t,
 } from '../i18n';
-import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD } from '../coverage/codec';
+import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD, SOURCE_ESTIMATED } from '../coverage/codec';
 import {
   ALL_OPERATORS,
   buildLevelTables,
@@ -61,7 +61,7 @@ export interface Report {
   nonEuCountries: ManifestCountry[];
   /** Vrai si au moins un pays traversé a un opérateur précis sélectionné. */
   specificOperator: boolean;
-  /** Vrai si une partie du parcours repose sur une source estimée. */
+  /** Vrai si une partie du parcours repose sur une source estimée, pour le service choisi. */
   estimated: boolean;
   /** Pays traversés qui n'ont pas de données pour le service choisi. */
   missingService: ManifestCountry[];
@@ -91,7 +91,7 @@ export function buildReport(analysis: TrackAnalysis, manifest: Manifest, setting
     countries,
     nonEuCountries: countries.filter((c) => !c.euRoaming),
     specificOperator: countries.some((c) => effectiveOperator(c, settings) !== null),
-    estimated: hasEstimatedData(analysis.raw),
+    estimated: hasEstimatedData(analysis.raw, classes),
     missingService: countries.filter((c) => !countryHasService(c, settings.service)),
     binaryCountries: countries.filter((c) => c.sources.some((source) => source.levels === 'binary' && source.services.includes(settings.service))),
   };
@@ -242,10 +242,15 @@ export function reportText(
     lines.push(t('report.binaryNote', { countries: report.binaryCountries.map((c) => countryName(c.iso)).join(', ') }));
   }
   lines.push(t('sources.disclaimer'));
+  // Mentions des sources telles qu'elles les demandent ; devant celle d'une source estimée,
+  // le site dit « estimation » dans la langue choisie.
   const sources = report.countries.flatMap((country) =>
     country.sources
       .filter((s) => s.services.includes(settings.service))
-      .map((s) => `${s.attribution} (${countryName(country.iso)}, ${formatDataDate(s.date)})`),
+      .map((s) => {
+        const mention = s.type === SOURCE_ESTIMATED ? t('report.estimatedSource', { attribution: s.attribution }) : s.attribution;
+        return `${mention} (${countryName(country.iso)}, ${formatDataDate(s.date)})`;
+      }),
   );
   if (sources.length > 0) lines.push(t('report.sourcesLine', { sources: sources.join(t('report.sourcesSeparator')) }));
   return plain(lines.join('\n'));

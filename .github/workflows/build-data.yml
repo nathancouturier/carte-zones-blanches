@@ -160,10 +160,14 @@ jobs:
         run: |
           ls -la out
           # Nom de la release : data-AAAA-MM-JJ, puis data-AAAA-MM-JJ-2, -3... s'il y en a déjà une ce jour-là.
+          # Le numéro suit toujours le plus grand déjà pris : un nom libéré par le ménage n'est jamais repris.
           # On ne supprime jamais une release avant d'avoir publié la suivante.
           existantes=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName')
-          tag="data-$DATE"; n=1
-          while printf '%s\n' "$existantes" | grep -qx "$tag"; do n=$((n + 1)); tag="data-$DATE-$n"; done
+          tag="data-$DATE"
+          if printf '%s\n' "$existantes" | grep -Eq "^data-$DATE(-[0-9]+)?$"; then
+            dernier=$(printf '%s\n' "$existantes" | sed -n "s/^data-$DATE-\([0-9][0-9]*\)$/\1/p" | sort -n | tail -1)
+            tag="data-$DATE-$(( ${dernier:-1} + 1 ))"
+          fi
           {
             echo "Tuiles de couverture mobile (PMTiles) et manifest, générés par le workflow Données."
             echo
@@ -194,8 +198,9 @@ jobs:
       - name: Relancer le déploiement du site
         shell: bash
         run: |
-          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}" \
-            || echo "Déploiement non relancé : deploy.yml n'est pas encore sur la branche par défaut."
+          # deploy.yml est sur la branche par défaut : si le lancement échoue, l'étape échoue et le propriétaire
+          # est prévenu (sinon les nouvelles données resteraient publiées sans que le site les prenne).
+          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}"
 
   # GitHub désactive les workflows planifiés d'un dépôt resté 60 jours sans activité. Réactiver le
   # workflow à chaque passage mensuel remet ce compteur à zéro.

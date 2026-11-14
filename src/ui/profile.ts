@@ -7,9 +7,9 @@
 // Le profil se parcourt aussi au clavier (curseur de type « slider » : flèches,
 // pages, Début et Fin) et se résume pour les lecteurs d'écran.
 
-import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD, SOURCE_ESTIMATED, unpackSourceType } from '../coverage/codec';
+import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD } from '../coverage/codec';
 import { LEVEL_SOLID } from '../coverage/render';
-import { CLASS_OUTSIDE, CLASS_UNKNOWN, computeStats, enoughElevation, type RawCoverage } from '../gpx/analyze';
+import { CLASS_OUTSIDE, CLASS_UNKNOWN, computeStats, enoughElevation, estimatedFlags, type RawCoverage } from '../gpx/analyze';
 import { LEVEL_KEYS } from '../gpx/report';
 import type { Sample } from '../gpx/resample';
 import { formatKm, formatNumber, formatPercent, t } from '../i18n';
@@ -36,13 +36,6 @@ export interface ProfileColumn {
   cls: number;
   /** Vrai si la couverture d'au moins un point de la portion vient d'une source estimée. */
   estimated: boolean;
-}
-
-/** 1 pour les points dont la couverture vient d'une source estimée, 0 sinon. */
-export function estimatedFlags(raw: Pick<RawCoverage, 'meta' | 'inside'>): Uint8Array {
-  const flags = new Uint8Array(raw.meta.length);
-  for (let i = 0; i < flags.length; i++) flags[i] = raw.inside[i] && unpackSourceType(raw.meta[i]) === SOURCE_ESTIMATED ? 1 : 0;
-  return flags;
 }
 
 /** Ordre de gravité : pas de couverture d'abord, puis limitée, puis hors zone, puis le reste. */
@@ -90,15 +83,17 @@ export function profileColumns(
     // La colonne va jusqu'au premier point situé au-delà de sa limite, pour que les colonnes se touchent.
     // Comme sur la carte, chaque intervalle prend la couleur de son point de départ : un point n'est donc
     // compté que dans une seule colonne (sauf le tout dernier, rattaché à la dernière).
+    // Seul un point qui a un niveau pour le service choisi peut être dit estimé : là où la source estimée
+    // ne dit rien de ce service (appels et SMS en Andorre), pas de hachures, comme sur la carte.
     while (i < n - 1 && samples[i].dist < limit) {
       const here = classes ? classes[i] : -1;
       if (severity(here) < severity(cls)) cls = here;
-      if (estimated?.[i]) partlyEstimated = true;
+      if (estimated?.[i] && LEVEL_KEYS[here]) partlyEstimated = true;
       i++;
     }
     if (i === first) continue;
     if (i === n - 1 && classes && severity(classes[i]) < severity(cls)) cls = classes[i];
-    if (i === n - 1 && estimated?.[i]) partlyEstimated = true;
+    if (i === n - 1 && estimated?.[i] && classes && LEVEL_KEYS[classes[i]]) partlyEstimated = true;
     columns.push({
       first,
       last: i,

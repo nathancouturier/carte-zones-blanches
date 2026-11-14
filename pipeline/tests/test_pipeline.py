@@ -57,6 +57,17 @@ def test_build_outputs(built: Path):
     source = france["sources"][0]
     assert source["id"] == "fr_arcep" and source["type"] == 0 and source["date"] == "2026-T2"
     assert source["services"] == ["data", "voice"] and source["perOperator"] is True
+    # Aucune source ne donne la résolution des cartes de l'Arcep : le manifest n'en affirme aucune.
+    assert "resolutionM" not in source
+    # Textes affichés par le site : le français dans « name », ses traductions dans « nameI18n » ; la licence (un nom
+    # propre) n'en a pas ; la mention du contour, si.
+    config = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.yaml").read_text(encoding="utf-8"))
+    assert source["name"] == config["sources"]["fr_arcep"]["name"]
+    assert source["nameI18n"] == config["sources"]["fr_arcep"]["name_i18n"] and list(source["nameI18n"]) == ["es", "ca", "it", "de"]
+    assert "licenceI18n" not in source and "name_i18n" not in source
+    boundary = france["boundary"]
+    assert boundary["text"] == config["countries"]["FR"]["mask"]["credit"]["text"] and "text_i18n" not in boundary
+    assert boundary["textI18n"] == config["countries"]["FR"]["mask"]["credit"]["text_i18n"]
     assert len(manifest["archives"]) == 1 and "blocks" not in manifest["archives"][0]
     assert (built / manifest["archives"][0]["file"]).exists()
     state = json.loads((built / "etat-sources.json").read_text(encoding="utf-8"))

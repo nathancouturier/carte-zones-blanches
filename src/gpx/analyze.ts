@@ -16,7 +16,7 @@ import {
   WHITE_ZONE_MERGE_GAP_M,
   WHITE_ZONE_MIN_LENGTH_M,
 } from '../config';
-import { LEVEL_NONE, LEVEL_UNKNOWN, SOURCE_ESTIMATED, TILE_SIZE, unpackCountry, unpackSourceType } from '../coverage/codec';
+import { LEVEL_NONE, LEVEL_UNKNOWN, LEVEL_VERY_GOOD, SOURCE_ESTIMATED, TILE_SIZE, unpackCountry, unpackSourceType } from '../coverage/codec';
 import type { LevelTables, ServiceId } from '../coverage/manifest';
 import type { TileStore } from '../coverage/store';
 import { lonLatToTilePixel, tileKey } from '../coverage/tilemath';
@@ -70,7 +70,8 @@ export async function sampleCoverage(
     for (;;) {
       const group = queue.pop();
       if (!group) return;
-      const tile = await store.get(group.z, group.x, group.y);
+      // Sans entrer dans le cache des tuiles affichées : un long tracé ne les évince pas.
+      const tile = await store.getTransient(group.z, group.x, group.y);
       if (tile) {
         for (const i of group.items) {
           const o = offsets[i];
@@ -302,9 +303,21 @@ export function countriesCrossed(raw: RawCoverage): number[] {
   return seen;
 }
 
-/** Vrai si au moins un point du parcours vient d'une source estimée. */
-export function hasEstimatedData(raw: RawCoverage): boolean {
+/** 1 pour les points dont la couverture vient d'une source estimée, 0 sinon (profil, tracé sur la carte). */
+export function estimatedFlags(raw: Pick<RawCoverage, 'meta' | 'inside'>): Uint8Array {
+  const flags = new Uint8Array(raw.meta.length);
+  for (let i = 0; i < flags.length; i++) flags[i] = raw.inside[i] && unpackSourceType(raw.meta[i]) === SOURCE_ESTIMATED ? 1 : 0;
+  return flags;
+}
+
+/**
+ * Vrai si au moins un point du parcours vient d'une source estimée. Avec « classes », seuls
+ * comptent les points qui ont un niveau pour le service choisi : là où la source estimée ne
+ * dit rien de ce service, rien n'est estimé.
+ */
+export function hasEstimatedData(raw: RawCoverage, classes?: Uint8Array): boolean {
   for (let i = 0; i < raw.meta.length; i++) {
+    if (classes && classes[i] > LEVEL_VERY_GOOD) continue;
     if (raw.inside[i] && unpackSourceType(raw.meta[i]) === SOURCE_ESTIMATED) return true;
   }
   return false;

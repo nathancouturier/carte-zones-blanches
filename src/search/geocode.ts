@@ -5,8 +5,9 @@
 //
 // Les deux services sont interrogés seulement quand l'utilisateur tape dans la
 // recherche. Ils reçoivent le texte tapé et le centre de la carte, arrondi à
-// environ 1 km, pour classer les lieux proches (Photon : la langue aussi). Rien
-// d'autre de l'utilisateur ne leur est envoyé.
+// environ 10 km, pour classer les lieux proches (Photon : la langue aussi). Rien
+// d'autre de l'utilisateur ne leur est envoyé : après « Ma position », le centre
+// de la carte est sa position, qui ne doit pas partir.
 
 import { abortError } from '../coverage/abort';
 import {
@@ -55,9 +56,14 @@ export interface SearchResult {
   failed: SearchService[];
 }
 
-/** Position de la carte envoyée aux services, arrondie au centième de degré (environ 1 km) : rien de plus précis ne part. */
+/**
+ * Position de la carte envoyée aux services, arrondie au dixième de degré (environ 10 km) :
+ * assez pour classer les lieux proches, sans dévoiler où se trouve l'utilisateur.
+ */
 function roundedCenter(center: [number, number]): [string, string] {
-  return [center[0].toFixed(2), center[1].toFixed(2)];
+  // « || 0 » : « 0.0 » et non « -0.0 » près du méridien de Greenwich.
+  const round = (value: number): string => (Math.round(value * 10) / 10 || 0).toFixed(1);
+  return [round(center[0]), round(center[1])];
 }
 
 /** Signal d'une requête : annulée avec la recherche, ou au bout du délai maximal d'un service. */

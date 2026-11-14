@@ -3,7 +3,9 @@
 // Entrée : la tuile décodée (R, G, B, A = données). Sortie : une image RGBA
 // prête à afficher. Par défaut seuls les problèmes sont dessinés (pas de
 // couverture en rouge, couverture limitée en orange). Les zones estimées sont
-// hachurées pour qu'on les distingue des données officielles.
+// hachurées pour qu'on les distingue des données officielles ; là où leur
+// niveau n'est pas dessiné, de fins traits gris disent quand même qu'elles
+// sont estimées.
 
 import {
   LEVEL_GOOD,
@@ -47,6 +49,15 @@ const HATCH_WIDTH = 3;
 const HATCH_ALPHA = 0.35;
 
 /**
+ * Zone estimée dont le niveau n'est pas dessiné (bonne couverture, affichage par
+ * défaut) : de fins traits gris peu opaques, dans le sens des hachures des niveaux,
+ * sur fond transparent. Rien à voir avec la tuile « données indisponibles », voilée
+ * de gris et rayée de gris foncé dans l'autre sens.
+ */
+export const ESTIMATED_MASKED_STRIPE: Rgba = [75, 85, 99, 120];
+const ESTIMATED_MASKED_WIDTH = 2;
+
+/**
  * Tuile « données indisponibles » (lecture en échec) : un voile gris et des
  * rayures gris foncé, plus espacées que les hachures des zones estimées et dans
  * l'autre sens, pour qu'on ne la prenne ni pour une zone couverte ni pour une
@@ -88,7 +99,13 @@ export function renderTile(
     }
     const level = table ? table[data[o + channel]] : LEVEL_UNKNOWN;
     if (level === LEVEL_UNKNOWN || level >= minHidden) {
-      out[o] = out[o + 1] = out[o + 2] = out[o + 3] = 0;
+      // Niveau masqué d'une zone estimée : les traits gris la signalent quand même.
+      if (estimated && level !== LEVEL_UNKNOWN && ((i % size) + ((i / size) | 0)) % HATCH_PERIOD < ESTIMATED_MASKED_WIDTH) {
+        out.set(ESTIMATED_MASKED_STRIPE, o);
+        visible = true;
+      } else {
+        out[o] = out[o + 1] = out[o + 2] = out[o + 3] = 0;
+      }
       continue;
     }
     const color = LEVEL_COLORS[level];
