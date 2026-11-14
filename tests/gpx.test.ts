@@ -86,6 +86,12 @@ describe('lecture du GPX', () => {
     expect(gpx.segments).toHaveLength(1);
   });
 
+  it('accepte des blancs ou une marque d\'ordre des octets avant la déclaration XML', () => {
+    for (const before of ['\n', '\r\n  ', '﻿', '﻿\n']) {
+      expect(parseGpx(before + trackGpx, xmlParser).name, JSON.stringify(before)).toBe('Tour du lac');
+    }
+  });
+
   it('signale un fichier invalide ou vide', () => {
     const code = (text: string): string => {
       try {
@@ -453,6 +459,12 @@ describe('export du GPX enrichi', () => {
     const twice = enrichGpx(once, [waypoints[0]], xmlTools);
     const doc = xmlTools.parse(twice);
     expect(doc.getElementsByTagName('wpt')).toHaveLength(2); // Parking + 1 point
+  });
+
+  it('exporte un GPX précédé d\'un saut de ligne', () => {
+    const out = enrichGpx(`\n${trackGpx}`, waypoints, xmlTools);
+    expect(out.startsWith('<?xml')).toBe(true);
+    expect(parseGpx(out, xmlParser).segments).toEqual(parseGpx(trackGpx, xmlParser).segments);
   });
 
   it('fonctionne sur une route et sans point existant', () => {

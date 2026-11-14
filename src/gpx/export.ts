@@ -2,6 +2,8 @@
 // début et à la fin de chaque zone blanche, pour les voir sur une montre ou
 // une application GPS.
 
+import { trimXmlStart } from './parse';
+
 export interface ExtraWaypoint {
   lon: number;
   lat: number;
@@ -45,7 +47,7 @@ function localName(el: Element): string {
  * précédent sont remplacés.
  */
 export function enrichGpx(xml: string, waypoints: readonly ExtraWaypoint[], tools: XmlTools = browserXmlTools()): string {
-  const doc = tools.parse(xml);
+  const doc = tools.parse(trimXmlStart(xml));
   const root = doc.documentElement;
   if (!root || localName(root) !== 'gpx') throw new Error('GPX invalide');
   const ns = root.namespaceURI;

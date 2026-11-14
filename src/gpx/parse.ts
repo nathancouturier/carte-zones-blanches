@@ -35,6 +35,14 @@ export interface XmlParser {
   parseFromString(text: string, type: 'text/xml'): Document;
 }
 
+/**
+ * Retire les blancs et la marque d'ordre des octets (BOM) qui précèdent parfois
+ * la déclaration XML (sortie de certains scripts) : le navigateur refuserait le fichier.
+ */
+export function trimXmlStart(text: string): string {
+  return text.replace(/^[\s﻿]+/, '');
+}
+
 function toSegment(coords: unknown): TrackPoint[] {
   if (!Array.isArray(coords)) return [];
   const points: TrackPoint[] = [];
@@ -58,7 +66,7 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
   const xmlParser = parser ?? (new DOMParser() as unknown as XmlParser);
   let doc: Document;
   try {
-    doc = xmlParser.parseFromString(text, 'text/xml');
+    doc = xmlParser.parseFromString(trimXmlStart(text), 'text/xml');
   } catch {
     throw new GpxError('invalid');
   }
