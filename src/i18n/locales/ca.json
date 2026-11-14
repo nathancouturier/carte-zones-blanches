@@ -243,7 +243,7 @@
   "offline.quota": "No hi ha prou espai en aquest navegador per desar aquesta ruta.",
   "offline.unsupported": "Aquest navegador no permet el mode sense connexió.",
   "offline.restored": "Ruta sense connexió recuperada: {name}",
-  "offline.lost": "El navegador ha esborrat les dades sense connexió de «{name}»: torna a preparar la ruta.",
+  "offline.lost": "El navegador ha esborrat les dades sense connexió de «{name}»: torna a desar la ruta.",
   "offline.resume": "Recupera la ruta desada: {name}",
   "sources.missing": "{countries}: encara no hi ha dades.",
   "sources.binaryNote": "Aquesta font només indica «amb cobertura» o «sense cobertura». Al mapa i a l'informe, «bona cobertura» hi significa «amb cobertura», sense indicació de qualitat.",

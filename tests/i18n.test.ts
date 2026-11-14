@@ -166,6 +166,15 @@ describe('traductions', () => {
       expect(dict['legend.estimatedGood'], code).not.toMatch(mot);
     }
   });
+
+  it('renvoie au verbe du bouton du hors ligne quand il faut refaire l\'enregistrement', () => {
+    // Le message nomme l'action que l'utilisateur voit sur le bouton (« Desa la ruta... » en catalan).
+    const verbe: Record<string, RegExp> = { fr: /prépar/i, es: /prepar/i, ca: /\bdes(?:a|ar)\b/i, it: /prepar/i, de: /speicher/i };
+    for (const [code, mot] of Object.entries(verbe)) {
+      const dict = dictionaries.get(code)!;
+      for (const key of ['offline.prepare', 'offline.lost', 'offline.basemapNotAllowed']) expect(dict[key], `${code} : ${key}`).toMatch(mot);
+    }
+  });
 });
 
 describe('choix de la langue', () => {
