@@ -4,12 +4,12 @@
 
 import type { App } from '../app';
 import { SEARCH_DEBOUNCE_MS, SEARCH_MIN_CHARS, MAX_BOUNDS } from '../config';
+import { isAbortError } from '../coverage/abort';
 import { SOURCE_ESTIMATED } from '../coverage/codec';
 import { countryByIso } from '../coverage/manifest';
 import { getLanguage, onLanguageChange, t, tParts } from '../i18n';
 import { BASEMAPS, ESTIMATED_CREDIT, HILLSHADE, OSM_COPYRIGHT_URL } from '../map/basemaps';
 import type { Padding } from '../map/mapView';
-import { isAbortError } from '../coverage/abort';
 import { searchPlaces, type Place, type SearchResult } from '../search/geocode';
 import type { AppState, PanelId } from '../state';
 import { creditNodes, h, icon, ICONS, linkName, setChildren, type Child } from './dom';
@@ -480,6 +480,8 @@ export class Ui {
     this.pickFirst = false;
     const query = this.searchInput.value.trim();
     if (query.length < SEARCH_MIN_CHARS) {
+      // La liste ne montre plus de lieux : aucune saisie n'y répond.
+      this.resultsQuery = null;
       setChildren(this.searchResults, query.length > 0 ? h('li', { class: 'search__info' }, t('search.hint', { count: SEARCH_MIN_CHARS })) : null);
       return;
     }
@@ -532,7 +534,7 @@ export class Ui {
   }
 
   private searchLoading(): HTMLElement {
-    return h('li', { class: 'search__info', role: 'status' }, t('search.loading'));
+    return h('li', { class: 'search__info' }, t('search.loading'));
   }
 
   private showResults({ places, pending, failed }: SearchResult): void {
