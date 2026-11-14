@@ -390,6 +390,13 @@ a,
   .panel--collapsed .panel__body {
     display: none;
   }
+
+  /* La carte se voit, ses mentions aussi : le pied de carte passe au-dessus du panneau réduit
+     (titre de 60 px : boutons de 44 px et 8 px de marge en haut et en bas), au lieu d'être
+     caché dessous ou d'en dépasser à moitié. */
+  .panel--collapsed:not([hidden]) ~ .attribution {
+    bottom: calc(var(--safe-bottom) + var(--bar-height) + 16px + 60px + 8px);
+  }
 }
 
 /* --- Contenu des panneaux -------------------------------------------------- */
@@ -954,7 +961,8 @@ input[type="range"] {
   box-shadow: var(--shadow);
   font-size: 14px;
   line-height: 1.3;
-  z-index: 6;
+  /* Sous la barre du haut (6) : les résultats de la recherche, qui s'y déroulent, passent devant. */
+  z-index: 5;
 }
 
 .coverage-alert .btn {

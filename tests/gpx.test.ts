@@ -132,6 +132,16 @@ describe('lecture du GPX', () => {
     expect([route.discarded, route.jumps]).toEqual([1, 0]);
   });
 
+  it('garde telle quelle une trace dessinée aux points tous espacés de plus de 10 km', () => {
+    // Pas une trace GPS avec des erreurs de position : il ne resterait rien, et le fichier serait
+    // refusé comme « sans trace ni route ».
+    const trace = `${GPX_HEAD}<trk><trkseg>${[44.6, 44.71, 44.82, 44.93].map((lat) => `<trkpt lat="${lat}" lon="6.1"/>`).join('')}</trkseg></trk></gpx>`;
+    const sparse = parseGpx(trace, xmlParser);
+    expect(sparse.segments.map((s) => s.length)).toEqual([4]);
+    expect([sparse.discarded, sparse.jumps]).toEqual([0, 0]);
+    expect(trackLength(sparse.segments)).toBeGreaterThan(36_000);
+  });
+
   it('accepte des blancs ou une marque d\'ordre des octets avant la déclaration XML', () => {
     for (const before of ['\n', '\r\n  ', '\uFEFF', '\uFEFF\n']) {
       expect(parseGpx(before + trackGpx, xmlParser).name, JSON.stringify(before)).toBe('Tour du lac');
@@ -504,7 +514,7 @@ describe('analyse sur les tuiles du pipeline', () => {
     expect(text).toContain('Pays traversés : France');
     expect(text).toContain('Zone');
     expect(text).toContain('Couverture théorique, des écarts locaux sont possibles.');
-    expect(text).not.toMatch(/[–— ]/);
+    expect(text).not.toMatch(/[\u2013\u2014\u202f]/);
     const line = describeZone(report.zones[0], manifest);
     expect(line).toMatch(/^km \d+,\d à \d+,\d, soit \d+,\d km, altitude /);
     expect(line).toContain('France');

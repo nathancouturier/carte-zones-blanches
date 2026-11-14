@@ -360,12 +360,29 @@ try {
   // --- 2c. Téléphone, français : données de couverture illisibles, puis « Réessayer » --
   {
     let coupe = true;
-    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42', (c) =>
-      c.route(/\.pmtiles(\?|$)/, (route) => (coupe ? route.abort('internetdisconnected') : route.fallback())),
-    );
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42', async (c) => {
+      await c.route(/\.pmtiles(\?|$)/, (route) => (coupe ? route.abort('internetdisconnected') : route.fallback()));
+      // Géocodage simulé : le contrôle ne dépend pas du service et marche sans réseau.
+      await c.route(/data\.geopf\.fr\/geocodage\/completion/, (route) =>
+        route.fulfill({ json: { status: 'OK', results: [{ fulltext: 'Briançon', x: 6.6436, y: 44.8986, kind: 'municipality' }] } }),
+      );
+      await c.route(/photon\.komoot\.io/, (route) => route.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
+    });
     const bandeau = await page.locator('.coverage-alert').isVisible();
     controle('panne : un bandeau signale les données de couverture illisibles', bandeau, bandeau ? ((await page.locator('.coverage-alert').textContent()) ?? '') : 'pas de bandeau');
     await capture(page, '8d-telephone-fr-couverture-illisible');
+    // Rien n'est empilé : les résultats de la recherche passent devant le bandeau.
+    await page.tap('button[aria-label="Rechercher un lieu"]');
+    await page.type('.search__input', 'Bri');
+    const proposes = await page.waitForSelector('.search__item', { timeout: 10000 }).then(() => true, () => false);
+    const recouverts = await page.evaluate(() =>
+      [...document.querySelectorAll('.search__item')].filter((item) => {
+        const r = item.getBoundingClientRect();
+        return [0.1, 0.5, 0.9].some((f) => !item.contains(document.elementFromPoint(r.left + r.width * f, r.top + r.height / 2)));
+      }).length,
+    );
+    controle('panne : les résultats de la recherche passent devant le bandeau', bandeau && proposes && recouverts === 0, proposes ? `${recouverts} résultat(s) recouvert(s)` : 'aucun résultat');
+    await page.tap('button[aria-label="Rechercher un lieu"]');
     coupe = false;
     const lues = suivi.archives;
     if (bandeau) await page.click('.coverage-alert button');
@@ -509,6 +526,12 @@ try {
     const hauteur = await page.evaluate(() => document.querySelector('.panel').getBoundingClientRect().height);
     const reduits = await reperes();
     controle('interface : rapport réduit à son titre, tracé visible au-dessus', hauteur < 100 && reduits.length === 2 && reduits.every(Boolean), `panneau de ${Math.round(hauteur)} px`);
+    // La carte se voit : ses mentions aussi, au-dessus du panneau réduit (ni dessous, ni dépassant à moitié).
+    const piedReduit = await page.evaluate(() => ({
+      bas: Math.round(document.querySelector('.attribution').getBoundingClientRect().bottom),
+      panneau: Math.round(document.querySelector('.panel').getBoundingClientRect().top),
+    }));
+    controle('interface : pied de carte au-dessus du rapport réduit', piedReduit.bas <= piedReduit.panneau, `bas du pied de carte à ${piedReduit.bas} px, haut du panneau à ${piedReduit.panneau} px`);
     await capture(page, '7b-telephone-fr-rapport-reduit');
 
     // Recherche : Entrée juste après avoir complété « Bri » en « Brides » choisit Brides-les-Bains, pas Briançon.

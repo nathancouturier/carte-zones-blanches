@@ -193,7 +193,11 @@ export class App {
     this.mapView.refreshCoverage();
     this.scheduleViewUpdate();
     this.hooks.toast(t('network.dataUpdated'));
-    if (this.state.track) void this.retryAnalysis();
+    // Un tracé déjà analysé l'est de nouveau sans ouvrir le rapport ni déplacer la carte : personne ne
+    // l'a demandé, l'utilisateur regarde peut-être ailleurs. Un tracé qui attendait son analyse (import
+    // en cours) la reçoit comme à l'import : rapport ouvert, tracé cadré.
+    const { track } = this.state;
+    if (track) void this.retryAnalysis(!track.analysis);
   }
 
   /** Écarte les réglages mémorisés qui ne correspondent plus aux données. */
@@ -431,22 +435,27 @@ export class App {
     await this.analyse(track, seq, 'gpx');
   }
 
-  /** Relance l'analyse du tracé chargé (après un échec réseau, ou à l'arrivée des données). */
-  async retryAnalysis(): Promise<void> {
+  /**
+   * Relance l'analyse du tracé chargé (après un échec réseau, à l'arrivée des
+   * données, ou après une nouvelle publication). « reveal » à false : le rapport
+   * n'est pas ouvert et la carte ne bouge pas.
+   */
+  async retryAnalysis(reveal = true): Promise<void> {
     const { track, manifest } = this.state;
     if (!track || !manifest || !this.tileStore) return;
     this.restartReads();
     const seq = ++this.importSeq;
     this.store.set({ trackStatus: 'analyzing', trackError: null, progress: 0 });
-    await this.analyse(track, seq);
+    await this.analyse(track, seq, undefined, reveal);
   }
 
   /**
    * Lit la couverture le long du tracé, puis ouvre le rapport et recadre le tracé
-   * dans la partie de la carte que le panneau laisse visible. « seq » identifie
-   * l'import ou la relance : une analyse dépassée par un nouvel import est abandonnée.
+   * dans la partie de la carte que le panneau laisse visible (sauf si « reveal »
+   * est à false). « seq » identifie l'import ou la relance : une analyse dépassée
+   * par un nouvel import est abandonnée.
    */
-  private async analyse(track: LoadedTrack, seq: number, panelOnError?: PanelId): Promise<void> {
+  private async analyse(track: LoadedTrack, seq: number, panelOnError?: PanelId, reveal = true): Promise<void> {
     const store = this.tileStore;
     const manifest = this.state.manifest;
     if (!store || !manifest) return;
@@ -458,10 +467,11 @@ export class App {
       if (seq !== this.importSeq) return;
       const analysis = analyzeTrack(track.samples, raw);
       const analysed: LoadedTrack = { ...track, analysis, report: buildReport(analysis, manifest, this.decodeSettings()) };
-      this.store.set({ track: analysed, trackStatus: 'ready', panel: 'report' });
+      // Sans « reveal », le panneau reste tel quel ; les zones ont pu changer : on n'en garde aucune choisie.
+      this.store.set(reveal ? { track: analysed, trackStatus: 'ready', panel: 'report' } : { track: analysed, trackStatus: 'ready', selectedZone: null });
       this.showTrack(analysed);
       // Le panneau Rapport est rendu : le cadrage tient compte de la place qu'il prend.
-      this.fitTrack();
+      if (reveal) this.fitTrack();
     } catch (error) {
       console.warn('Analyse du tracé :', error);
       if (seq !== this.importSeq) return;

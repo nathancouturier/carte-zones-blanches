@@ -110,19 +110,22 @@ function withoutPrefix(doc: Document, ns: string): Document {
  * Coupe une trace là où deux points consécutifs sont à plus de TRACK_MAX_JUMP_M.
  * Un point loin de ses deux voisins, qui eux se suivent, est une erreur de
  * position : il est écarté sans couper la trace. Un point resté seul au bout
- * de la trace après une coupure l'est aussi.
+ * de la trace après une coupure l'est aussi. S'il ne reste alors rien
+ * d'utilisable, ce n'est pas une trace GPS mais une trace dessinée avec des
+ * points très espacés : elle est gardée telle quelle.
  */
 function splitAtJumps(points: TrackPoint[], cleanup: Cleanup): TrackPoint[][] {
   const far = (a: TrackPoint, b: TrackPoint): boolean => distance(a.lon, a.lat, b.lon, b.lat) > TRACK_MAX_JUMP_M;
   const pieces: TrackPoint[][] = [];
   let current: TrackPoint[] = [];
+  let spikes = 0; // points isolés écartés
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
     const previous = current[current.length - 1];
     if (previous && far(previous, point)) {
       const next = points[i + 1];
       if (next && !far(previous, next)) {
-        cleanup.discarded++;
+        spikes++;
         continue;
       }
       pieces.push(current);
@@ -131,10 +134,10 @@ function splitAtJumps(points: TrackPoint[], cleanup: Cleanup): TrackPoint[][] {
     current.push(point);
   }
   pieces.push(current);
-  if (pieces.length === 1) return pieces;
   const kept = pieces.filter((piece) => piece.length > 1);
-  cleanup.discarded += pieces.length - kept.length;
-  cleanup.jumps += Math.max(0, kept.length - 1);
+  if (kept.length === 0) return [points];
+  cleanup.discarded += spikes + pieces.length - kept.length;
+  cleanup.jumps += kept.length - 1;
   return kept;
 }
 
