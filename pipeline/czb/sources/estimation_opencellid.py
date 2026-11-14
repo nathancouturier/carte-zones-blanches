@@ -177,6 +177,9 @@ class EstimationOpenCellId(Source):
         out: list[list[dict[str, Any]]] = [[] for _ in slots]
         seen = kept = 0
         nets: dict[int, int] = {}
+        by_radio: dict[str, int] = {}
+        in_bbox: dict[str, int] = {}
+        sample_counts: list[int] = []
         for mcc in (int(m) for m in self.source_cfg["mcc"]):
             path = self.fetch_cells(ctx, mcc)
             with gzip.open(path, "rt", encoding="utf-8", errors="replace", newline="") as f:
@@ -199,14 +202,21 @@ class EstimationOpenCellId(Source):
                     if len(row) < 10:
                         continue
                     seen += 1
+                    by_radio[row[0]] = by_radio.get(row[0], 0) + 1
                     try:
+                        lon, lat, samples = float(row[6]), float(row[7]), int(float(row[9]))
+                        inside = west <= lon <= east and south <= lat <= north
+                        if inside:
+                            in_bbox[row[0]] = in_bbox.get(row[0], 0) + 1
                         if row[0] not in radios or int(row[1]) != mcc:
                             continue
                         net, cell = int(row[2]), int(row[4])
-                        lon, lat, samples = float(row[6]), float(row[7]), int(float(row[9]))
                     except ValueError:
                         continue
-                    if samples < min_samples or not (west <= lon <= east and south <= lat <= north):
+                    if not inside:
+                        continue
+                    sample_counts.append(samples)
+                    if samples < min_samples:
                         continue
                     slot = 0 if everything else slot_of_mnc.get(net)
                     if slot is None:
@@ -216,6 +226,10 @@ class EstimationOpenCellId(Source):
                     kept += 1
         ctx.stats.setdefault("estimation_cellules", {})[self.source_id] = {"lues": seen, "retenues": kept, "par_code_reseau": {str(k): v for k, v in sorted(nets.items())}}
         print(f"    {seen} cellules lues, {kept} retenues ({', '.join(sorted(radios))}), par code réseau : {dict(sorted(nets.items()))}", flush=True)
+        # Reconnaissance : ce que contient vraiment le fichier (utile au premier téléchargement, pour régler min_samples).
+        ordered = sorted(sample_counts)
+        quantiles = {q: ordered[min(len(ordered) - 1, int(q * len(ordered)))] for q in (0.1, 0.5, 0.9)} if ordered else {}
+        print(f"    par technologie dans le fichier : {dict(sorted(by_radio.items()))} ; dans l'emprise du pays : {dict(sorted(in_bbox.items()))} ; mesures par cellule retenue (1er décile, médiane, 9e décile) : {list(quantiles.values())}", flush=True)
         return out
 
     def build_sites(self, cells: list[dict[str, Any]]) -> tuple[list[tuple[float, float]], dict[str, int]]:
@@ -247,16 +261,24 @@ class EstimationOpenCellId(Source):
                 loose.append(local(c))
         points: list[tuple[float, float]] = []
         scattered = 0
+        spreads: list[float] = []
         for members in stations.values():
             mx = _median([p[0] for p in members])
             my = _median([p[1] for p in members])
-            if max(math.hypot(p[0] - mx, p[1] - my) for p in members) <= spread_max:
+            spread = max(math.hypot(p[0] - mx, p[1] - my) for p in members)
+            if len(members) > 1:
+                spreads.append(spread)
+            if spread <= spread_max:
                 points.append((mx, my))
             else:
                 scattered += 1
                 loose.extend(members)
         sites = cluster_sites(points + loose, merge_m)
         stats = {"stations": len(stations), "stations_dispersees": scattered, "sites": len(sites)}
+        if spreads:
+            # Reconnaissance : l'hypothèse « une station = identifiant de cellule divisé par 256 » tient-elle ?
+            stats["dispersion_mediane_m"] = round(_median(spreads))
+            stats["dispersion_max_m"] = round(max(spreads))
         return [(x / kx, y / ky) for x, y in sites], stats
 
     # -- relief --------------------------------------------------------------

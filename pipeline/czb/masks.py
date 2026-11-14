@@ -71,7 +71,9 @@ def _load_etalab_departements(mask_cfg: dict[str, Any], scope: dict[str, Any], w
 def _fetch(url: str, filename: str | None, workdir: Path) -> Path:
     local = workdir / (filename or url.rsplit("/", 1)[-1])
     if not local.exists():
-        download(url, local)
+        # Essais plus nombreux et plus espacés que pour les autres fichiers : sans contour, pas de construction,
+        # et certains serveurs (extraits OpenStreetMap) refusent parfois une connexion sur trois.
+        download(url, local, tries=7)
     return local
 
 

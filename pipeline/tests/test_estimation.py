@@ -155,7 +155,9 @@ def test_estimated_levels_follow_the_terrain(andorra: dict):
     assert source["type"] == 2 and source["levels"] == "three" and source["id"] == "ad_estimation"
     stats = report["stats"]
     assert stats["estimation_cellules"]["ad_estimation"] == {"lues": 7, "retenues": 4, "par_code_reseau": {"3": 4}}
-    assert stats["estimation_sites"]["ad_estimation"]["reseaux"] == {"stations": 1, "stations_dispersees": 0, "sites": 1, "cellules": 4}
+    sites = stats["estimation_sites"]["ad_estimation"]["reseaux"]
+    assert {k: sites[k] for k in ("stations", "stations_dispersees", "sites", "cellules")} == {"stations": 1, "stations_dispersees": 0, "sites": 1, "cellules": 4}
+    assert 100 < sites["dispersion_mediane_m"] < 300 and sites["dispersion_max_m"] == sites["dispersion_mediane_m"]
     shares = stats["estimation_parts"]["ad_estimation:reseaux"]
     assert shares["0"] > 30 and shares["2"] > 10 and abs(sum(shares.values()) - 100) < 0.5
     assert stats["copie_de_travail"]["ad_estimation"] == "reconstruite"
@@ -224,7 +226,8 @@ def test_sites_from_cells(andorra: dict):
         {"radio": "LTE", "net": 3, "cell": 17, "lon": lon, "lat": lat + 0.05},
     ]
     sites, stats = source.build_sites(cells)
-    assert stats == {"stations": 2, "stations_dispersees": 1, "sites": 4}
+    assert {k: stats[k] for k in ("stations", "stations_dispersees", "sites")} == {"stations": 2, "stations_dispersees": 1, "sites": 4}
+    assert stats["dispersion_max_m"] > 3000
     assert abs(sites[0][0] - lon) < 1e-9 and abs(sites[0][1] - lat) < 1e-9  # médiane des trois secteurs
     assert source.build_sites([]) == ([], {"stations": 0, "stations_dispersees": 0, "sites": 0})
     assert cluster_sites([(0, 0), (100, 0), (1000, 0), (1100, 50)], 300) == [(50.0, 0.0), (1050.0, 25.0)]
