@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 90
     env:
       SCRIPT_DEMANDE: ${{ inputs.script }}
+      # Pour vérifier le format des fichiers OpenCelliD (la valeur est masquée dans les logs).
+      OPENCELLID_TOKEN: ${{ secrets.OPENCELLID_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - name: Lancer la sonde
