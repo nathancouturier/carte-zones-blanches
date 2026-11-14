@@ -254,6 +254,22 @@ describe('nouvelle publication des données pendant la visite', () => {
     expect(carte.cadrages.length).toBe(cadrages); // la carte reste où l'utilisateur l'a mise
     expect(app.state.selectedZone).toBeNull(); // les zones ont pu changer avec les données
   });
+
+  it('un tracé importé pendant la publication est analysé dans les nouvelles données, rapport ouvert', async () => {
+    const app = await demarrer();
+    // L'utilisateur importe un tracé dont les tuiles ne sont pas encore lues : l'archive a disparu.
+    reseau.generation = '2026-12-01';
+    reseau.lecturesPerdues = 1;
+    await app.importGpx(ailleurs);
+    await vi.waitFor(() => {
+      expect(app.state.manifest?.generated).toBe('2026-12-01');
+      expect(app.state.track?.analysis).toBeTruthy();
+      expect(app.state.trackStatus).toBe('ready');
+    });
+    expect(app.state.trackError).toBeNull();
+    expect(app.state.panel).toBe('report'); // il attendait son rapport : il s'ouvre, comme à l'import
+    expect(carte.cadrages.at(-1)).toEqual({ bottom: 500 });
+  });
 });
 
 describe('fond Auto', () => {

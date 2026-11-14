@@ -180,8 +180,11 @@ export class App {
     this.mapView.refreshCoverage();
     this.scheduleViewUpdate();
     this.hooks.toast(t('network.dataUpdated'));
-    // Personne n'a demandé cette analyse : l'utilisateur regarde peut-être ailleurs, rapport fermé.
-    if (this.state.track) void this.retryAnalysis(false);
+    // Un tracé déjà analysé l'est de nouveau sans ouvrir le rapport ni déplacer la carte : personne ne
+    // l'a demandé, l'utilisateur regarde peut-être ailleurs. Un tracé qui attendait son analyse (import
+    // en cours) la reçoit comme à l'import : rapport ouvert, tracé cadré.
+    const { track } = this.state;
+    if (track) void this.retryAnalysis(!track.analysis);
   }
 
   /** Écarte les réglages mémorisés qui ne correspondent plus aux données. */
