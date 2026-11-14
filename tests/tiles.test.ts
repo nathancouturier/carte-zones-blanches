@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD, packMeta, packSlots, TILE_SIZE, unpackSlot, writePixel } from '../src/coverage/codec';
 import { LruCache } from '../src/coverage/lru';
 import { buildLevelTables } from '../src/coverage/manifest';
-import { LEVEL_COLORS, renderTile } from '../src/coverage/render';
+import { LEVEL_COLORS, renderTile, renderUnavailable } from '../src/coverage/render';
 import { TileStore } from '../src/coverage/store';
 import { lonLatToTilePixel, tileToLonLat } from '../src/coverage/tilemath';
 import { fixtureStore, readJsonFixture, sampleManifest } from './helpers';
@@ -100,6 +100,18 @@ describe('recolorisation des tuiles', () => {
     const officialAlphas = new Set<number>();
     for (let i = 0; i < 64; i++) officialAlphas.add(out[i * 4 + 3]);
     expect(officialAlphas.size).toBe(1);
+  });
+
+  it('raccorde les rayures des tuiles illisibles d\'une tuile à l\'autre', () => {
+    const out = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    renderUnavailable(out);
+    const alpha = (x: number, y: number): number => out[(y * TILE_SIZE + x) * 4 + 3];
+    // Les rayures suivent la diagonale : le premier pixel d'une ligne de la tuile voisine (à droite)
+    // prolonge le dernier pixel de la ligne du dessus, et de même pour la tuile du dessous.
+    for (let i = 1; i < TILE_SIZE; i++) {
+      expect(alpha(0, i), `ligne ${i}`).toBe(alpha(TILE_SIZE - 1, i - 1));
+      expect(alpha(i, 0), `colonne ${i}`).toBe(alpha(i - 1, TILE_SIZE - 1));
+    }
   });
 
   it('ne dessine rien pour un service sans données', () => {

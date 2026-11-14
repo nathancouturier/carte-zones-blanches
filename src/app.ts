@@ -63,7 +63,7 @@ export class App {
     readonly store: Store,
     mapContainer: HTMLElement,
   ) {
-    registerCoverageProtocol(() => this.renderState);
+    registerCoverageProtocol(() => this.renderState, (error) => this.onCoverageError(error));
     this.mapView = new MapView({
       container: mapContainer,
       labels: () => ({
@@ -90,6 +90,10 @@ export class App {
 
   async start(): Promise<void> {
     void this.applyStyle();
+    // Le réseau revient : on relit tout seul les tuiles qui n'avaient pas pu l'être.
+    window.addEventListener('online', () => {
+      if (this.state.coverageErrors > 0) this.retryCoverage();
+    });
     await this.loadManifest();
   }
 
@@ -207,6 +211,19 @@ export class App {
 
   setShowAll(showAll: boolean): void {
     this.updateNetwork({ showAll }, true);
+  }
+
+  /** Une tuile de couverture n'a pas pu être lue : elle est hachurée en gris et un bandeau propose de réessayer. */
+  private onCoverageError(error: unknown): void {
+    if (this.state.coverageErrors === 0) console.warn('Couche réseau : tuile illisible', error);
+    this.store.set({ coverageErrors: this.state.coverageErrors + 1 });
+  }
+
+  /** « Réessayer » : relit les tuiles de couverture qui n'ont pas pu l'être. */
+  retryCoverage(): void {
+    this.restartReads();
+    this.store.set({ coverageErrors: 0 });
+    this.mapView.refreshCoverage();
   }
 
   /** Opacité de la couche réseau. « commit » à false pendant le glissement du curseur. */

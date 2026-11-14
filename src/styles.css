@@ -901,6 +901,53 @@ input[type="range"] {
   }
 }
 
+/* Bandeau « données de couverture indisponibles », sous la barre du haut. */
+.coverage-alert {
+  position: fixed;
+  top: calc(var(--safe-top) + 66px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(460px, calc(100vw - 120px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--c-warning-border);
+  border-radius: 12px;
+  background: var(--c-warning-bg);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  line-height: 1.3;
+  z-index: 6;
+}
+
+.coverage-alert .btn {
+  flex: none;
+  min-height: 44px;
+  padding: 8px 12px;
+}
+
+/* Même motif que les tuiles illisibles sur la carte. */
+.swatch--unavailable {
+  background: repeating-linear-gradient(45deg, #374151 0 2px, #c9ccd1 2px 7px);
+}
+
+@media (pointer: coarse) {
+  /* Sur écran tactile, pas de boutons de zoom à droite : le bandeau peut s'élargir. */
+  .coverage-alert {
+    max-width: min(460px, calc(100vw - 24px));
+  }
+}
+
+@media (min-width: 900px) {
+  /* Panneau ouvert sur le côté : le bandeau se centre sur la carte qui reste visible. */
+  .panel:not([hidden]) ~ .coverage-alert {
+    left: calc(50% + 210px);
+    max-width: min(460px, calc(100vw - 540px));
+  }
+}
+
 .toast {
   position: fixed;
   top: calc(var(--safe-top) + 70px);
@@ -914,6 +961,11 @@ input[type="range"] {
   font-size: 15px;
   box-shadow: var(--shadow);
   z-index: 20;
+}
+
+/* Bandeau affiché : le message bref passe en dessous. */
+.coverage-alert:not([hidden]) ~ .toast {
+  top: calc(var(--safe-top) + 150px);
 }
 
 .dropzone {

@@ -46,8 +46,9 @@ function gpx(nom) {
   return { name: 'secours.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(GPX_SECOURS) };
 }
 
-async function ouvrir(navigateur, options, chemin) {
+async function ouvrir(navigateur, options, chemin, preparer) {
   const contexte = await navigateur.newContext(options);
+  if (preparer) await preparer(contexte); // par exemple pour simuler une panne avant le chargement
   const page = await contexte.newPage();
   const suivi = { reponses: new Map(), erreurs: [], echecs: new Map(), manifest: 0, archives: 0 };
   page.on('response', (r) => {
@@ -271,6 +272,26 @@ try {
     await capture(page, '8c-telephone-fr-hors-ligne-carte');
     await contexte.setOffline(false);
     controle('hors ligne : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 2c. Téléphone, français : données de couverture illisibles, puis « Réessayer » --
+  {
+    let coupe = true;
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42', (c) =>
+      c.route(/\.pmtiles(\?|$)/, (route) => (coupe ? route.abort('internetdisconnected') : route.fallback())),
+    );
+    const bandeau = await page.locator('.coverage-alert').isVisible();
+    controle('panne : un bandeau signale les données de couverture illisibles', bandeau, bandeau ? ((await page.locator('.coverage-alert').textContent()) ?? '') : 'pas de bandeau');
+    await capture(page, '8d-telephone-fr-couverture-illisible');
+    coupe = false;
+    const lues = suivi.archives;
+    if (bandeau) await page.click('.coverage-alert button');
+    const repris = await page.waitForSelector('.coverage-alert', { state: 'hidden', timeout: 30000 }).then(() => true, () => false);
+    await page.waitForTimeout(3000);
+    const toujours = await page.locator('.coverage-alert').isVisible();
+    controle('panne : « Réessayer » relit les tuiles une fois le réseau revenu', bandeau && repris && !toujours && suivi.archives > lues, `${suivi.archives - lues} lectures dans les archives après « Réessayer »`);
+    controle('panne : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
 

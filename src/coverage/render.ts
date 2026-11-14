@@ -47,6 +47,18 @@ const HATCH_WIDTH = 3;
 const HATCH_ALPHA = 0.35;
 
 /**
+ * Tuile « données indisponibles » (lecture en échec) : un voile gris et des
+ * rayures gris foncé, plus espacées que les hachures des zones estimées et dans
+ * l'autre sens, pour qu'on ne la prenne ni pour une zone couverte ni pour une
+ * zone estimée. La période divise la taille des tuiles : les rayures se
+ * raccordent d'une tuile à l'autre.
+ */
+export const UNAVAILABLE_VEIL: Rgba = [107, 114, 128, 90];
+export const UNAVAILABLE_STRIPE: Rgba = [55, 65, 81, 220];
+const UNAVAILABLE_PERIOD = 16;
+const UNAVAILABLE_WIDTH = 4;
+
+/**
  * Dessine une tuile de données dans « out » (RGBA, même taille).
  * Renvoie vrai si au moins un pixel est visible.
  */
@@ -93,4 +105,15 @@ export function renderTile(
     visible = true;
   }
   return visible;
+}
+
+/** Dessine dans « out » (RGBA) la tuile « données indisponibles ». */
+export function renderUnavailable(out: Uint8ClampedArray, size: number = TILE_SIZE): void {
+  for (let y = 0, o = 0; y < size; y++) {
+    for (let x = 0; x < size; x++, o += 4) {
+      // x - y constant le long d'une rayure ; les zones estimées sont hachurées selon x + y.
+      const stripe = (x - y + size * UNAVAILABLE_PERIOD) % UNAVAILABLE_PERIOD < UNAVAILABLE_WIDTH;
+      out.set(stripe ? UNAVAILABLE_STRIPE : UNAVAILABLE_VEIL, o);
+    }
+  }
 }
