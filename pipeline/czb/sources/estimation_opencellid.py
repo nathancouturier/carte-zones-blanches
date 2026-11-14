@@ -57,6 +57,8 @@ CACHE_FORMAT = 1
 MONTH_ITEM = "CZB_MOIS"
 #: Marge autour du pays pour retenir une cellule, en mètres : un fichier de pays peut contenir des cellules voisines.
 CELL_MARGIN_M = 2000.0
+#: Les bords de la fenêtre de calcul tombent sur des multiples de ce nombre de pixels (environ 1,7 km).
+WINDOW_SNAP = 64
 
 
 class EstimationOpenCellId(Source):
@@ -325,7 +327,9 @@ class EstimationOpenCellId(Source):
             xs = ((vgt[0] + (np.arange(vw) + 0.5) * res - x) / k / 1000.0).astype(np.float32)
             ys = ((vgt[3] - (np.arange(vh) + 0.5) * res - y) / k / 1000.0).astype(np.float32)
             dist = np.sqrt(xs[None, :] ** 2 + ys[:, None] ** 2)
-            dist[dist > reach_km] = np.inf
+            # Au-delà de la portée, GDAL ne calcule rien (la valeur 0 se lirait « visible ») : on écarte ces pixels,
+            # avec deux pixels de marge pour ne pas dépendre d'un arrondi à la limite du disque.
+            dist[dist > reach_km - 2 * res / k / 1000.0] = np.inf
             sl = (slice(r0, r0 + vh), slice(c0, c0 + vw))
             np.minimum(d_any[sl], dist, out=d_any[sl])
             np.minimum(d_near[sl], np.where(needed <= near_miss, dist, np.inf), out=d_near[sl])
@@ -364,11 +368,22 @@ class EstimationOpenCellId(Source):
         reach_m = 1000.0 * max(float(limited["visible_km"]), float(limited["near_km"]), float(limited["any_km"]))
         k = 1.0 / math.cos(math.radians(mercator_to_lonlat(extent[2], extent[3])[1]))
         margin = reach_m * k + 20 * res
-        col0 = math.floor((extent[0] - margin - canvas.origin_x) / res)
-        col1 = math.ceil((extent[2] + margin - canvas.origin_x) / res)
-        row0 = math.floor((canvas.origin_y - extent[3] - margin) / res)
-        row1 = math.ceil((canvas.origin_y - extent[1] + margin) / res)
-        return col0, row0, col1 - col0, row1 - row0
+        # Fenêtre repérée depuis l'origine du monde (et non depuis le coin de la grille, qui dépend du périmètre),
+        # élargie à des multiples de WINDOW_SNAP pixels : la copie de travail reste valable si le contour du pays
+        # bouge de quelques pixels ou si d'autres pays s'ajoutent à la construction.
+        world_col0 = canvas.tx0 * canvas.grid.tile_size
+        world_row0 = canvas.ty0 * canvas.grid.tile_size
+        col0 = math.floor((world_col0 + (extent[0] - margin - canvas.origin_x) / res) / WINDOW_SNAP) * WINDOW_SNAP
+        col1 = math.ceil((world_col0 + (extent[2] + margin - canvas.origin_x) / res) / WINDOW_SNAP) * WINDOW_SNAP
+        row0 = math.floor((world_row0 + (canvas.origin_y - extent[3] - margin) / res) / WINDOW_SNAP) * WINDOW_SNAP
+        row1 = math.ceil((world_row0 + (canvas.origin_y - extent[1] + margin) / res) / WINDOW_SNAP) * WINDOW_SNAP
+        return col0 - world_col0, row0 - world_row0, col1 - col0, row1 - row0
+
+    def world_window(self, ctx: BuildContext, window: tuple[int, int, int, int]) -> list[int]:
+        """La même fenêtre, comptée en pixels depuis l'origine du monde : c'est elle qui entre dans la clé de la copie de travail."""
+        canvas = ctx.canvas
+        assert canvas is not None
+        return [window[0] + canvas.tx0 * canvas.grid.tile_size, window[1] + canvas.ty0 * canvas.grid.tile_size, window[2], window[3]]
 
     def compute(self, ctx: BuildContext, window: tuple[int, int, int, int], services: list[str]) -> "np.ndarray":
         """Niveaux estimés : un tableau (lignes, colonnes) par emplacement d'opérateur."""
@@ -424,7 +439,7 @@ class EstimationOpenCellId(Source):
         col0, row0, width, height = window
         res = canvas.grid.resolution
         gt = (canvas.origin_x + col0 * res, res, 0.0, canvas.origin_y - row0 * res, 0.0, -res)
-        key = json.dumps({"format": CACHE_FORMAT, "parametres": self.parameters(), "fenetre": list(window), "zoom": canvas.grid.zoom, "emplacements": [s["id"] for s in slots]}, sort_keys=True, ensure_ascii=False)
+        key = json.dumps({"format": CACHE_FORMAT, "parametres": self.parameters(), "fenetre": self.world_window(ctx, window), "zoom": canvas.grid.zoom, "emplacements": [s["id"] for s in slots]}, sort_keys=True, ensure_ascii=False)
         cached = ctx.workdir / "cache" / cache_name(self.source_id)
         stored = read_cache(cached, key)
         stored_month = self._cached_month(cached) if stored is not None else None

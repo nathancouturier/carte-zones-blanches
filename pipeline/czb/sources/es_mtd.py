@@ -46,6 +46,8 @@ NO_DATA = 255
 WITNESS_MARGIN = 0.03
 #: Contrôle de la copie de travail contre les polygones : nombre de points tirés par région et part d'écarts tolérée
 #: (les mailles coupées par une limite de commune ou de région ne sont pas des carrés entiers).
+#: Les bords de la fenêtre de la copie de travail tombent sur des multiples de ce nombre de mailles (environ 7 km).
+WINDOW_SNAP = 256
 CHECK_POINTS = 400
 CHECK_TOLERANCE = 0.01
 
@@ -112,10 +114,12 @@ class EsMtd(Source):
         x0, y0 = (float(v) for v in self.source_cfg["grid_origin"])
         west, south = mercator_to_lonlat(extent[0], extent[1])
         east, north = mercator_to_lonlat(extent[2], extent[3])
-        col0 = math.floor((west - x0) / step) - 2
-        col1 = math.ceil((east - x0) / step) + 2
-        row0 = math.floor((y0 - north) / step) - 2
-        row1 = math.ceil((y0 - south) / step) + 2
+        # Fenêtre élargie à des multiples de WINDOW_SNAP mailles : si le contour du pays bouge de quelques
+        # pixels d'une construction à l'autre, la fenêtre reste la même et la copie de travail reste valable.
+        col0 = math.floor((west - x0) / step / WINDOW_SNAP) * WINDOW_SNAP
+        col1 = math.ceil((east - x0) / step / WINDOW_SNAP) * WINDOW_SNAP
+        row0 = math.floor((y0 - north) / step / WINDOW_SNAP) * WINDOW_SNAP
+        row1 = math.ceil((y0 - south) / step / WINDOW_SNAP) * WINDOW_SNAP
         return col0, row0, col1 - col0, row1 - row0
 
     def geotransform(self, window: tuple[int, int, int, int]) -> tuple[float, float, float, float, float, float]:
