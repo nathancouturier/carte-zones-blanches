@@ -17,6 +17,7 @@ import {
   buildStyle,
   COVERAGE_LAYER,
   COVERAGE_SOURCE,
+  loadedVectorStyle,
   loadVectorStyle,
   TRACK_SOURCE,
   ZONE_SOURCE,
@@ -29,6 +30,8 @@ setWorkerUrl(workerUrl);
 
 /** Délai maximal pour obtenir la position GPS, en millisecondes. */
 const LOCATE_TIMEOUT_MS = 15_000;
+/** Délai au-delà duquel un style sans réponse de MapLibre (rien à changer) est tenu pour accepté. */
+const STYLE_CHECK_MS = 2000;
 
 export interface StyleInputs {
   basemap: BasemapId;
@@ -54,8 +57,8 @@ export interface MapViewOptions {
   labels: () => Record<string, string>;
   onMoveEnd: () => void;
   onLocateError: () => void;
-  /** Appelé quand un style vectoriel n'a pas pu être chargé et qu'on affiche le fond de repli. */
-  onStyleFallback: (basemap: BasemapId) => void;
+  /** Appelé quand un style vectoriel n'a pas pu être chargé (ou a été refusé) et qu'on affiche le fond de repli. */
+  onStyleFallback: (basemap: BasemapId, reason: 'unreachable' | 'refused') => void;
 }
 
 export class MapView {
@@ -68,6 +71,8 @@ export class MapView {
   private cursor: Marker | null = null;
   private vectorStyle: StyleSpecification | null = null;
   private inputs: StyleInputs | null = null;
+  /** Styles vectoriels que MapLibre a refusés : la version en images les remplace sans nouvel essai. */
+  private readonly refusedStyles = new Set<string>();
 
   constructor(private readonly options: MapViewOptions) {
     this.map = new MapLibreMap({
@@ -113,21 +118,50 @@ export class MapView {
     });
   }
 
-  /** Applique le fond, l'estompage et la couche réseau demandés. */
+  /**
+   * Applique le fond, l'estompage et la couche réseau demandés. Un fond vectoriel dont
+   * le style n'est pas encore là est d'abord montré en images (Plan IGN raster), avec
+   * la couche réseau et le tracé : rien n'attend le style, dont le téléchargement est
+   * borné. Style injoignable, trop lent ou refusé par MapLibre : la version en images
+   * reste, et on le dit.
+   */
   async setStyleInputs(inputs: StyleInputs): Promise<void> {
     this.inputs = inputs;
     const seq = ++this.styleSeq;
     const basemap = BASEMAPS[inputs.basemap];
-    let vectorStyle: StyleSpecification | null = null;
-    if (basemap.kind === 'vector') {
+    if (basemap.kind !== 'vector' || this.refusedStyles.has(basemap.styleUrl)) {
+      void this.applyStyle(inputs, null);
+      return;
+    }
+    let vectorStyle = loadedVectorStyle(basemap.styleUrl);
+    if (!vectorStyle) {
+      void this.applyStyle(inputs, null);
       try {
         vectorStyle = await loadVectorStyle(basemap.styleUrl);
-      } catch {
-        // Style vectoriel injoignable : on affiche le Plan IGN en tuiles raster.
-        this.options.onStyleFallback(inputs.basemap);
+      } catch (error) {
+        if (seq !== this.styleSeq) return;
+        console.warn('Style du Plan IGN injoignable, version en images :', error);
+        this.options.onStyleFallback(inputs.basemap, 'unreachable');
+        return;
       }
+      if (seq !== this.styleSeq) return; // un autre changement est arrivé entre-temps
     }
-    if (seq !== this.styleSeq) return; // un autre changement est arrivé entre-temps
+    const { styleUrl } = basemap;
+    void this.applyStyle(inputs, vectorStyle).then((accepted) => {
+      if (accepted || seq !== this.styleSeq) return;
+      console.warn(`Style ${styleUrl} refusé par MapLibre : version en images.`);
+      this.refusedStyles.add(styleUrl);
+      void this.applyStyle(inputs, null);
+      this.options.onStyleFallback(inputs.basemap, 'refused');
+    });
+  }
+
+  /**
+   * Bâtit et applique le style. Résout faux si MapLibre le refuse : il le valide pendant
+   * l'appel (style déjà chargé) ou à l'image suivante (style rechargé en entier), et
+   * signale chaque défaut par une erreur qui ne vient d'aucune source ni d'aucune tuile.
+   */
+  private applyStyle(inputs: StyleInputs, vectorStyle: StyleSpecification | null): Promise<boolean> {
     this.vectorStyle = vectorStyle;
     const style = buildStyle({
       basemap: inputs.basemap,
@@ -137,7 +171,26 @@ export class MapView {
       track: this.track,
       zone: this.zone,
     });
-    this.map.setStyle(style, { diff: true });
+    return new Promise((resolve) => {
+      let refused = false;
+      const finish = (): void => {
+        clearTimeout(timer);
+        this.map.off('error', onError);
+        this.map.off('style.load', finish);
+        resolve(!refused);
+      };
+      const onError = (event: unknown): void => {
+        const { sourceId, tile } = event as { sourceId?: string; tile?: unknown };
+        if (sourceId || tile) return;
+        refused = true;
+        finish();
+      };
+      this.map.on('error', onError);
+      this.map.on('style.load', finish);
+      // Rien à changer : MapLibre n'émet rien. Passé ce délai, le style est tenu pour accepté.
+      const timer = setTimeout(finish, STYLE_CHECK_MS);
+      this.map.setStyle(style, { diff: true });
+    });
   }
 
   /** Style vectoriel du fond affiché, ou null si le fond est en images. */

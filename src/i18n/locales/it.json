@@ -79,6 +79,7 @@
   "basemap.hillshade": "Ombreggiatura del rilievo",
   "basemap.hillshadeHint": "Disponibile in Francia.",
   "basemap.fallback": "Impossibile caricare lo stile del Plan IGN: viene mostrata la versione a immagini.",
+  "basemap.styleRefused": "Impossibile leggere lo stile del Plan IGN: viene mostrata la versione a immagini.",
   "gpx.title": "Importa un GPX",
   "gpx.intro": "Importa un percorso per sapere in quali tratti non avrai rete.",
   "gpx.choose": "Scegli un file GPX",

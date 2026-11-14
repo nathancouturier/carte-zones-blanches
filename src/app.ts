@@ -110,7 +110,7 @@ export class App {
       }),
       onMoveEnd: () => this.scheduleViewUpdate(),
       onLocateError: () => this.hooks.toast(t('locate.error')),
-      onStyleFallback: () => this.hooks.toast(t('basemap.fallback')),
+      onStyleFallback: (_basemap, reason) => this.hooks.toast(t(reason === 'refused' ? 'basemap.styleRefused' : 'basemap.fallback')),
     });
     // Le mode Auto revoit son choix quand le réseau va et vient (fonds enregistrés seulement, sans réseau).
     globalThis.addEventListener?.('online', () => this.scheduleViewUpdate());

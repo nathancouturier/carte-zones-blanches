@@ -79,6 +79,7 @@
   "basemap.hillshade": "Reliefschattierung",
   "basemap.hillshadeHint": "In Frankreich verfügbar.",
   "basemap.fallback": "Der Stil des Plan IGN ist nicht erreichbar: Die Bildversion wird angezeigt.",
+  "basemap.styleRefused": "Der Stil des Plan IGN konnte nicht gelesen werden: Die Bildversion wird angezeigt.",
   "gpx.title": "GPX importieren",
   "gpx.intro": "Importiere eine Route und sieh, auf welchen Abschnitten du kein Netz hast.",
   "gpx.choose": "GPX-Datei auswählen",

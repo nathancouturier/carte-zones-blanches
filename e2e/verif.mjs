@@ -601,6 +601,42 @@ try {
     await contexte.close();
   }
 
+  // --- 2g. Téléphone, français : style du Plan IGN sans réponse, puis refusé (réponses simulées) --
+  // Le Plan IGN en images s'affiche tout de suite avec la couche réseau ; le délai passé, ou le style
+  // refusé par la carte, un message le dit (carte-2).
+  {
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const invalide = { version: 8, sources: {}, layers: [{ id: 'noms', type: 'symbol', source: 'absente', layout: { 'text-field': 'x' } }] };
+    for (const [cas, repondre, attendu] of [
+      ['style sans réponse', () => undefined, /Le style du Plan IGN est injoignable/],
+      ['style refusé par la carte', (route) => route.fulfill({ json: invalide, headers: { 'access-control-allow-origin': '*' } }), /Le style du Plan IGN n'a pas pu être lu/],
+    ]) {
+      let images = 0;
+      const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42', async (c) => {
+        await c.addInitScript(() => localStorage.setItem('czb.fond', JSON.stringify({ choice: 'ign-classique', hillshade: false })));
+        await c.route(/PLAN\.IGN\/classique\.json/, repondre);
+        await c.route(/data\.geopf\.fr\/wmts\?.*PLANIGNV2/, (route) => {
+          images += 1;
+          route.fulfill({ status: 200, contentType: 'image/png', body: image, headers: { 'access-control-allow-origin': '*' } });
+        });
+        await c.addInitScript(() => {
+          window.messagesVus = [];
+          new MutationObserver(() => {
+            const toast = document.querySelector('.toast');
+            if (toast && !toast.hidden && !window.messagesVus.includes(toast.textContent)) window.messagesVus.push(toast.textContent);
+          }).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+        });
+      });
+      // ouvrir() a déjà attendu 6 s : le Plan IGN en images et la couverture sont là, le style vectoriel non.
+      const tot = { images, archives: suivi.archives };
+      await page.waitForTimeout(4000);
+      const messages = await page.evaluate(() => window.messagesVus.join(' | '));
+      controle(`style : ${cas}, Plan IGN en images et couche réseau sans attendre, puis message`, tot.images > 0 && tot.archives > 0 && attendu.test(messages), `${tot.images} images du Plan IGN, ${tot.archives} lectures de couverture, message : ${messages || 'aucun'}`);
+      controle(`style : ${cas}, aucune erreur JavaScript`, suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+      await contexte.close();
+    }
+  }
+
   // --- 3. Téléphone, espagnol : sources et changement de langue -----------------
   {
     const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '?lang=es#9/42.6/0.9');

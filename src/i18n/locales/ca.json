@@ -79,6 +79,7 @@
   "basemap.hillshade": "Ombrejat del relleu",
   "basemap.hillshadeHint": "Disponible a França.",
   "basemap.fallback": "No es pot carregar l'estil del Plan IGN: es mostra la versió en imatges.",
+  "basemap.styleRefused": "No s'ha pogut llegir l'estil del Plan IGN: es mostra la versió en imatges.",
   "gpx.title": "Importa un GPX",
   "gpx.intro": "Importa una ruta per saber en quins trams no tindràs xarxa.",
   "gpx.choose": "Tria un fitxer GPX",

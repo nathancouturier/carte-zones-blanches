@@ -79,6 +79,7 @@
   "basemap.hillshade": "Estompage du relief",
   "basemap.hillshadeHint": "Disponible en France.",
   "basemap.fallback": "Le style du Plan IGN est injoignable : affichage de la version en images.",
+  "basemap.styleRefused": "Le style du Plan IGN n'a pas pu être lu : affichage de la version en images.",
   "gpx.title": "Importer un GPX",
   "gpx.intro": "Importez un tracé pour savoir sur quelles portions vous n'aurez pas de réseau.",
   "gpx.choose": "Choisir un fichier GPX",
