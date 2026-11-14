@@ -62,7 +62,8 @@ export class Ui {
   /** Entrée appuyée avant l'arrivée des résultats : le premier sera choisi. */
   private pickFirst = false;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
-  private attributionOpen = false;
+  /** Mentions dépliées sur téléphone : au chargement, jusqu'au premier geste sur la carte. */
+  private attributionOpen = true;
   /** Panneau Rapport réduit à son titre (téléphone), pour voir la carte. */
   private panelCollapsed = false;
   private dragDepth = 0;
@@ -141,6 +142,14 @@ export class Ui {
       this.renderAll();
     });
     this.bindDragAndDrop();
+    // Comme le mode compact de MapLibre : les mentions se replient au premier geste sur la carte
+    // (glisser, pincer, molette). Les déplacements commandés par le site n'ont pas d'originalEvent.
+    const firstGesture = this.app.mapView.map.on('movestart', (event) => {
+      if (!event.originalEvent) return;
+      firstGesture.unsubscribe();
+      this.attributionOpen = false;
+      this.renderAttribution();
+    });
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
       if (this.searchOpen) this.closeSearch();

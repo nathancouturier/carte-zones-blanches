@@ -865,6 +865,7 @@ input[type="range"] {
 
 /* --- Pied de carte, messages, dépôt de fichier -------------------------------- */
 
+/* Au-dessus de la barre d'outils, sur téléphone comme sur PC : jamais dessous. */
 .attribution {
   position: fixed;
   right: calc(var(--safe-right) + 8px);
@@ -884,8 +885,8 @@ input[type="range"] {
 
 .attribution__toggle {
   flex: none;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.92);
@@ -910,7 +911,6 @@ input[type="range"] {
 
 @media (min-width: 900px) {
   .attribution {
-    bottom: calc(var(--safe-bottom) + 6px);
     max-width: 42vw;
   }
 
