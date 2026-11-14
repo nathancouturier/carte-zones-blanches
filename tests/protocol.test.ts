@@ -101,6 +101,30 @@ describe('tuile illisible', () => {
     expect(errors).toHaveLength(0);
   });
 
+  it('fabrique les tuiles des zooms 13 à 16 à partir de la tuile du zoom 12, hachures à l\'échelle de l\'écran', async () => {
+    const manifest = sampleManifest();
+    // Tuile z12 : Andorre estimée, « pas de couverture » partout.
+    const parent = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    for (let i = 0; i < TILE_SIZE * TILE_SIZE; i++) writePixel(parent, i, { data: [0], country: 5, sourceType: 2 });
+    const asked: string[] = [];
+    const store = new TileStore(manifest, async (_file, z, x, y) => {
+      asked.push(`${z}/${x}/${y}`);
+      return new ArrayBuffer(8);
+    }, async () => parent);
+    const state: CoverageRenderState = { store, tables: buildLevelTables(manifest, { service: 'data', operators: {} }), settings: { service: 'data', showAll: false } };
+    const load = coverageTileLoader(() => state);
+    // Tuile z16 (x = 2116 * 16 + 5, y = 1479 * 16 + 9) : elle est dans la tuile z12 2116/1479.
+    const response = await load({ url: `couverture://16/${2116 * 16 + 5}/${1479 * 16 + 9}` }, new AbortController());
+    expect(asked).toEqual(['12/2116/1479']);
+    const image = response.data as unknown as FakeImageData;
+    expect(image.width).toBe(TILE_SIZE);
+    // Les hachures alternent tous les quelques pixels de la tuile affichée, comme au zoom 12.
+    const alphas = new Set<number>();
+    for (let x = 0; x < 16; x++) alphas.add(image.data[x * 4 + 3]);
+    expect(alphas.size).toBe(2);
+    expect(Math.max(...alphas)).toBe(LEVEL_COLORS[LEVEL_NONE][3]);
+  });
+
   it('une annulation ne compte pas comme un échec', async () => {
     const state = stalledState();
     const errors: unknown[] = [];

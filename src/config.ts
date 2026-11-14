@@ -11,6 +11,15 @@ export const DATA_BASE_URL = `${import.meta.env.BASE_URL}data/`;
  */
 export const TILE_READ_TIMEOUT_MS = 20_000;
 
+/**
+ * Zoom maximal des tuiles de la couche réseau affichées. Les données s'arrêtent
+ * au zoom 12 : les tuiles des zooms suivants sont fabriquées à partir de la
+ * tuile du zoom 12 (plus proche voisin), pour que les hachures des zones
+ * estimées restent fines à l'écran. Au-delà, la carte agrandit les tuiles de ce
+ * zoom. L'analyse des GPX lit toujours les tuiles du zoom 12.
+ */
+export const COVERAGE_DISPLAY_MAX_ZOOM = 16;
+
 /** Vue de départ : la France métropolitaine. */
 export const INITIAL_VIEW = { center: [2.6, 46.5] as [number, number], zoom: 5.2 };
 /** Emprise utile de la carte : ouest, sud, est, nord. */

@@ -107,6 +107,28 @@ export function renderTile(
   return visible;
 }
 
+/**
+ * Données d'une tuile située « dz » zooms au-delà des données, dans la tuile
+ * parente : (cx, cy) est sa position parmi les 2^dz x 2^dz tuiles enfants.
+ * Chaque pixel de la partie couverte devient un carré de 2^dz pixels (plus
+ * proche voisin, jamais de moyenne, qui casserait l'encodage).
+ */
+export function childTile(parent: Uint8ClampedArray, dz: number, cx: number, cy: number, size: number = TILE_SIZE): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(size * size * 4);
+  const span = size >> dz; // côté, en pixels de la tuile parente, de la partie couverte
+  for (let y = 0, o = 0; y < size; y++) {
+    const row = (cy * span + (y >> dz)) * size + cx * span;
+    for (let x = 0; x < size; x++, o += 4) {
+      const p = (row + (x >> dz)) * 4;
+      out[o] = parent[p];
+      out[o + 1] = parent[p + 1];
+      out[o + 2] = parent[p + 2];
+      out[o + 3] = parent[p + 3];
+    }
+  }
+  return out;
+}
+
 /** Dessine dans « out » (RGBA) la tuile « données indisponibles ». */
 export function renderUnavailable(out: Uint8ClampedArray, size: number = TILE_SIZE): void {
   for (let y = 0, o = 0; y < size; y++) {

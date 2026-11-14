@@ -1,7 +1,7 @@
 // Chef d'orchestre : relie l'état, la carte, les données et l'interface.
 
 import { PMTiles } from 'pmtiles';
-import { DATA_BASE_URL, MAX_GPX_BYTES, TILE_READ_TIMEOUT_MS } from './config';
+import { COVERAGE_DISPLAY_MAX_ZOOM, DATA_BASE_URL, MAX_GPX_BYTES, TILE_READ_TIMEOUT_MS } from './config';
 import { createArchiveReader, type OnlineArchiveReader } from './coverage/archives';
 import { unpackCountry } from './coverage/codec';
 import { createTileDecoder } from './coverage/decode';
@@ -208,7 +208,12 @@ export class App {
       basemap: activeBasemap,
       hillshade: basemap.hillshade,
       coverage: manifest
-        ? { minzoom: manifest.tiles.minzoom, maxzoom: manifest.tiles.maxzoom, bounds: manifest.bounds, opacity: network.opacity }
+        ? {
+            minzoom: manifest.tiles.minzoom,
+            maxzoom: Math.max(manifest.tiles.maxzoom, COVERAGE_DISPLAY_MAX_ZOOM),
+            bounds: manifest.bounds,
+            opacity: network.opacity,
+          }
         : null,
     });
   }

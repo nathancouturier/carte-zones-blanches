@@ -5,12 +5,16 @@
 // puis archive PMTiles), on la recolore et on renvoie une image. Quand un
 // réglage change, la carte redemande ses tuiles (refreshTiles) : elles sont
 // redessinées à partir du cache, sans téléchargement.
+//
+// Au-delà du zoom des données (12), la tuile est fabriquée à partir de sa tuile
+// parente, en plus proche voisin : les hachures des zones estimées sont tracées
+// dans la grille de la tuile affichée et restent lisibles aux grands zooms.
 
 import { addProtocol, type GetResourceResponse, type RequestParameters } from 'maplibre-gl';
 import { untilAborted } from './abort';
 import { TILE_SIZE } from './codec';
 import type { LevelTables } from './manifest';
-import { renderTile, renderUnavailable, type RenderSettings } from './render';
+import { childTile, renderTile, renderUnavailable, type RenderSettings } from './render';
 import type { TileStore } from './store';
 
 export const COVERAGE_PROTOCOL = 'couverture';
@@ -46,12 +50,14 @@ export function coverageTileLoader(getState: () => CoverageRenderState | null, o
     const state = getState();
     if (!match || !state) return { data: await transparentTile() };
     const [z, x, y] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    // Nombre de zooms au-delà des données : la tuile lue est alors la tuile parente.
+    const dz = Math.max(0, z - state.store.maxZoom);
     let data;
     try {
       // Tuile annulée (sortie de la vue) : on rend la main tout de suite, sans attendre la lecture,
       // qui continue et remplira le cache. Sinon une lecture qui cale garderait sa place dans la
       // file d'images de MapLibre, partagée avec les fonds raster, et bloquerait leur affichage.
-      data = await untilAborted(state.store.get(z, x, y), abortController.signal);
+      data = await untilAborted(state.store.get(z - dz, x >> dz, y >> dz), abortController.signal);
     } catch (error) {
       if (abortController.signal.aborted) throw error;
       // Les données ont changé pendant la lecture (nouvelle publication) : on lit dans les nouvelles.
@@ -65,6 +71,7 @@ export function coverageTileLoader(getState: () => CoverageRenderState | null, o
     const current = getState() ?? state;
     if (current.store !== state.store) return load(params, abortController);
     if (!data) return { data: await transparentTile() };
+    if (dz > 0) data = childTile(data, dz, x - ((x >> dz) << dz), y - ((y >> dz) << dz));
     const image = new ImageData(TILE_SIZE, TILE_SIZE);
     const visible = renderTile(data, current.tables, current.settings, image.data);
     if (!visible) return { data: await transparentTile() };
