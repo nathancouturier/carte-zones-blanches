@@ -254,6 +254,33 @@ describe('lecture des archives PMTiles produites par le pipeline', () => {
     expect(lues.length - apres).toBe(0);
   });
 
+  it('la carte, cadrée ensuite sur un tracé court, affiche ses tuiles sans les relire (archi-21)', async () => {
+    const lues: string[] = [];
+    const store = new TileStore(
+      sampleManifest(),
+      async (_file, z, x, y) => {
+        lues.push(`${z}/${x}/${y}`);
+        return new ArrayBuffer(8);
+      },
+      async () => new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4).fill(255),
+    );
+    // Une vue au zoom 8, puis une randonnée d'une vingtaine de kilomètres (quelques tuiles du zoom 12).
+    const vue: [number, number, number][] = [];
+    for (let x = 128; x < 137; x++) for (let y = 88; y < 94; y++) vue.push([8, x, y]);
+    await Promise.all(vue.map(([z, x, y]) => store.get(z, x, y)));
+    const samples: Sample[] = Array.from({ length: 1001 }, (_, i) => ({ lon: 6.73 + (0.17 * i) / 1000, lat: 45.7 + (0.09 * i) / 1000, ele: null, dist: i * 20, seg: 0 }));
+    lues.length = 0;
+    await sampleCoverage(samples, store);
+    const trace = lues.map((cle) => cle.split('/').map(Number) as [number, number, number]);
+    expect(trace.length).toBeGreaterThan(1);
+    // Après l'analyse, la carte zoome sur le tracé : elle trouve ses tuiles sans relire l'archive,
+    // et les tuiles de la vue précédente sont toujours en cache.
+    lues.length = 0;
+    await Promise.all(trace.map(([z, x, y]) => store.get(z, x, y)));
+    await Promise.all(vue.map(([z, x, y]) => store.get(z, x, y)));
+    expect(lues).toEqual([]);
+  });
+
   it('une tuile lue pour l\'analyse et demandée en même temps par la carte n\'est lue qu\'une fois (archi-21)', async () => {
     let lectures = 0;
     let liberer = (): void => undefined;

@@ -1,8 +1,9 @@
 // Accès aux tuiles de couverture : lecture dans les archives PMTiles, décodage
 // et cache LRU des tuiles décodées. Le cache garde les tuiles affichées :
 // changer un réglage ne retélécharge rien. L'analyse d'un GPX y prend ce qui s'y
-// trouve déjà, mais n'y range pas ce qu'elle lit : un long tracé n'évince pas
-// les tuiles de la carte.
+// trouve déjà, mais range ce qu'elle lit à part, dans un petit cache à elle : un
+// long tracé n'évince pas les tuiles de la carte, et la carte, cadrée ensuite sur
+// un tracé court, y trouve ses tuiles sans les relire.
 
 import { TILE_READ_TIMEOUT_MS } from '../config';
 import { untilAborted } from './abort';
@@ -29,9 +30,14 @@ type Cached = Uint8ClampedArray | typeof EMPTY;
 
 export class TileStore {
   private readonly cache: LruCache<string, Cached>;
+  /**
+   * Dernières tuiles lues pour l'analyse d'un tracé, à part des tuiles affichées (un cinquième
+   * de leur nombre) : une tuile que la carte demande ensuite passe de l'un à l'autre sans relecture.
+   */
+  private readonly analysed: LruCache<string, Cached>;
   /** Lectures en cours qui rempliront le cache. */
   private readonly pending = new Map<string, Promise<DecodedTile>>();
-  /** Lectures en cours pour l'analyse d'un tracé, hors cache. */
+  /** Lectures en cours pour l'analyse d'un tracé, hors du cache des tuiles affichées. */
   private readonly transient = new Map<string, Promise<DecodedTile>>();
 
   constructor(
@@ -43,6 +49,7 @@ export class TileStore {
     private readonly timeoutMs = TILE_READ_TIMEOUT_MS,
   ) {
     this.cache = new LruCache(capacity);
+    this.analysed = new LruCache(Math.max(1, Math.round(capacity / 5)));
   }
 
   get maxZoom(): number {
@@ -56,10 +63,10 @@ export class TileStore {
     return cached === EMPTY ? null : cached;
   }
 
-  /** Tuile décodée, depuis le cache ou depuis l'archive. */
+  /** Tuile décodée, depuis le cache (ou celui de l'analyse d'un tracé) ou depuis l'archive. */
   get(z: number, x: number, y: number): Promise<DecodedTile> {
     const key = tileKey(z, x, y);
-    const cached = this.cache.get(key);
+    const cached = this.cache.get(key) ?? this.fromAnalysis(key);
     if (cached !== undefined) return Promise.resolve(cached === EMPTY ? null : cached);
     let promise = this.pending.get(key);
     if (!promise) {
@@ -67,6 +74,7 @@ export class TileStore {
       const loading: Promise<DecodedTile> = (this.transient.get(key) ?? this.load(z, x, y))
         .then((tile) => {
           this.cache.set(key, tile ?? EMPTY);
+          this.analysed.delete(key);
           return tile;
         })
         .finally(() => {
@@ -80,21 +88,36 @@ export class TileStore {
   }
 
   /**
-   * Tuile décodée pour l'analyse d'un tracé : celle du cache si elle y est, sinon lue dans
-   * l'archive sans entrer dans le cache. Les valeurs utiles sont gardées avec le tracé :
-   * l'analyse n'a pas à les garder en cache, et les tuiles affichées y restent.
+   * Tuile décodée pour l'analyse d'un tracé : celle d'un des deux caches si elle y est, sinon
+   * lue dans l'archive et rangée dans le cache de l'analyse, jamais dans celui des tuiles
+   * affichées : un long tracé n'en évince rien.
    */
   getTransient(z: number, x: number, y: number): Promise<DecodedTile> {
     const key = tileKey(z, x, y);
-    const cached = this.cache.get(key);
+    const cached = this.cache.get(key) ?? this.analysed.get(key);
     if (cached !== undefined) return Promise.resolve(cached === EMPTY ? null : cached);
     const reading = this.pending.get(key) ?? this.transient.get(key);
     if (reading) return reading;
-    const loading = this.load(z, x, y).finally(() => {
-      if (this.transient.get(key) === loading) this.transient.delete(key);
-    });
+    const loading = this.load(z, x, y)
+      .then((tile) => {
+        this.analysed.set(key, tile ?? EMPTY);
+        return tile;
+      })
+      .finally(() => {
+        if (this.transient.get(key) === loading) this.transient.delete(key);
+      });
     this.transient.set(key, loading);
     return loading;
+  }
+
+  /** Tuile lue pour l'analyse d'un tracé, que la carte affiche maintenant : elle passe dans le cache des tuiles affichées. */
+  private fromAnalysis(key: string): Cached | undefined {
+    const tile = this.analysed.get(key);
+    if (tile !== undefined) {
+      this.analysed.delete(key);
+      this.cache.set(key, tile);
+    }
+    return tile;
   }
 
   /**
@@ -170,6 +193,7 @@ export class TileStore {
 
   clear(): void {
     this.cache.clear();
+    this.analysed.clear();
   }
 }
 
