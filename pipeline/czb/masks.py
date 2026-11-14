@@ -173,6 +173,17 @@ LOADERS = {
 }
 
 
+def ground_area_km2(geoms: list[ogr.Geometry]) -> float:
+    """Surface au sol de polygones en EPSG:3857 (en Mercator, les surfaces sont dilatées de 1 / cos²(latitude))."""
+    total = 0.0
+    for geom in geoms:
+        for poly in _polygons(geom):
+            _, _, y0, y1 = poly.GetEnvelope()
+            lat = 2 * math.atan(math.exp((y0 + y1) / 2 / EARTH_RADIUS)) - math.pi / 2
+            total += poly.GetArea() * math.cos(lat) ** 2
+    return total / 1e6
+
+
 def load_mask_geometries(ctx: BuildContext) -> dict[str, list[ogr.Geometry]]:
     """Charge, pour chaque pays du périmètre, les polygones de son masque en EPSG:3857."""
     result: dict[str, list[ogr.Geometry]] = {}
@@ -182,7 +193,12 @@ def load_mask_geometries(ctx: BuildContext) -> dict[str, list[ogr.Geometry]]:
         if loader is None:
             raise ValueError(f"type de masque inconnu : {mask_cfg['type']}")
         result[iso] = loader(mask_cfg, ctx.scope, ctx.workdir)
-        print(f"   masque {iso} : {len(result[iso])} polygone(s)", flush=True)
+        area = ground_area_km2(result[iso])
+        print(f"   masque {iso} : {len(result[iso])} polygone(s), {area:,.1f} km2".replace(",", " "), flush=True)
+        # Garde-fou pour les contours tirés d'une base modifiable par tous (OpenStreetMap) : la surface attendue.
+        expected = mask_cfg.get("expect_area_km2")
+        if expected is not None and not float(expected[0]) <= area <= float(expected[1]):
+            raise RuntimeError(f"masque {iso} : surface de {area:.2f} km2, hors de l'intervalle attendu {list(expected)} : le contour a changé, à vérifier avant de construire")
     return result
 
 

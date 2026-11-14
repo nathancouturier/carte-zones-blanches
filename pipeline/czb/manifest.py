@@ -68,6 +68,8 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
                 "euRoaming": bool(country["eu_roaming"]),
                 # Opérateurs du pays, pour l'affichage quand la source ne les distingue pas.
                 **({"operators": list(country["operators"])} if country.get("operators") else {}),
+                # Mention du contour du pays (source et licence), à afficher avec les sources.
+                **({"boundary": dict(country["mask"]["credit"])} if country.get("mask", {}).get("credit") else {}),
                 "slots": [_slot(s) for s in country.get("slots", [])],
                 "sources": sources,
             }

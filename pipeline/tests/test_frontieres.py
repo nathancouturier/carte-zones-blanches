@@ -225,6 +225,26 @@ def test_fill_gaps_gives_small_holes_to_the_lower_priority_country():
     assert len(fill_gaps(geoms, ["IT", "CH"])["CH"]) == 1
 
 
+def test_mask_area_guard(border: dict, tmp_path: Path):
+    """Un contour dont la surface sort de l'intervalle attendu arrête la construction (contours tirés d'OpenStreetMap)."""
+    import copy
+
+    from czb.context import BuildContext, grid_from_config
+    from czb.masks import ground_area_km2, load_mask_geometries
+
+    cfg = copy.deepcopy(border["cfg"])
+    cfg["scopes"]["ouest"] = {"countries": ["CH"]}
+    ctx = BuildContext(cfg=cfg, scope_name="ouest", services=["data"], workdir=tmp_path, outdir=tmp_path / "out", grid=grid_from_config(cfg))
+    geoms = load_mask_geometries(ctx)
+    # Le pays de l'ouest : 10 km sur 10 km, moins une enclave de 2 km de côté.
+    assert abs(ground_area_km2(geoms["CH"]) - 96.0) < 0.5
+    cfg["countries"]["CH"]["mask"]["expect_area_km2"] = [90, 100]
+    assert len(load_mask_geometries(ctx)["CH"]) == 1
+    cfg["countries"]["CH"]["mask"]["expect_area_km2"] = [150, 200]
+    with pytest.raises(RuntimeError, match="hors de l'intervalle attendu"):
+        load_mask_geometries(ctx)
+
+
 def test_extrapolate_marked_takes_the_lowest_known_neighbour(tmp_path: Path):
     canvas = Canvas(Grid(12, 256), 2100, 1400, 2100, 1400)
     layers = Layers(canvas, tmp_path)

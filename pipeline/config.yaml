@@ -42,6 +42,8 @@ countries:
       url: https://etalab-datasets.geo.data.gouv.fr/contours-administratifs/latest/geojson/departements-5m.geojson.gz
       # France métropolitaine, Corse comprise : les départements dont le code a 2 caractères.
       metropole_only: true
+      # Mention du contour, reprise dans le manifest et affichée dans le panneau Sources.
+      credit: {text: "Contours administratifs (Etalab), d'après ADMIN EXPRESS de l'IGN"}
     slots:
       - {id: orange, name: Orange, arcep: OF}
       - {id: sfr, name: SFR, arcep: SFR0}
@@ -60,6 +62,7 @@ countries:
       where: "icc = 'CH'"
       expect: 1
       delete_after: true
+      credit: {text: "© swisstopo, swissBOUNDARIES3D", url: "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices"}
     # La source suisse ne dit pas quel opérateur couvre, seulement combien : les emplacements portent des seuils.
     operators: [Swisscom, Sunrise, Salt]
     slots:
@@ -78,6 +81,7 @@ countries:
       where: "COD_REG IN (1, 2, 7)"
       expect: 3
       delete_after: true
+      credit: {text: "Istat, Confini delle unità amministrative a fini statistici al 1° gennaio 2026, CC BY 4.0, données modifiées", url: "https://creativecommons.org/licenses/by/4.0/deed.it"}
     # La source italienne donne un nombre de réseaux 4G par carré (1 à 4), sans les nommer.
     slots:
       - {id: it_1, min_operators: 1}
@@ -93,6 +97,7 @@ countries:
     mask:
       type: vector_file
       expect: 4
+      credit: {text: "Obra derivada de BDLJE CC-BY 4.0 ign.es", url: "https://www.ign.es/resources/licencia/Condiciones_licenciaUso_IGN.pdf"}
       urls:
         - {url: "https://api-features.ign.es/collections/administrativeunit/items?f=json&nationalcode=34020000000", filename: es-34020000000.geojson}
         - {url: "https://api-features.ign.es/collections/administrativeunit/items?f=json&nationalcode=34090000000", filename: es-34090000000.geojson}
@@ -116,6 +121,9 @@ countries:
       layer: multipolygons
       where: "osm_id = '9407'"
       expect: 1
+      # OpenStreetMap est modifiable par tous : on vérifie que la surface reste celle de l'Andorre (467,5 km2 mesurés).
+      expect_area_km2: [455, 480]
+      credit: {text: "© OpenStreetMap contributors (ODbL 1.0)", url: "https://www.openstreetmap.org/copyright"}
     # Pas de carte officielle : estimation, tous réseaux du pays confondus.
     slots:
       - {id: ad_1, min_operators: 1}
@@ -129,6 +137,9 @@ countries:
       type: osm_land_area
       url: https://download.geofabrik.de/europe/monaco-latest.osm.pbf
       relation: 36990
+      # Terre ferme de Monaco : 2,08 km2 mesurés (la marge laisse la place à un nouveau terrain gagné sur la mer).
+      expect_area_km2: [1.9, 2.4]
+      credit: {text: "© OpenStreetMap contributors (ODbL 1.0)", url: "https://www.openstreetmap.org/copyright"}
     slots:
       - {id: mc_1, min_operators: 1}
     sources: [mc_estimation]
