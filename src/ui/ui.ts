@@ -9,7 +9,8 @@ import { countryByIso } from '../coverage/manifest';
 import { getLanguage, onLanguageChange, t, tParts } from '../i18n';
 import { BASEMAPS, ESTIMATED_CREDIT, HILLSHADE, OSM_COPYRIGHT_URL } from '../map/basemaps';
 import type { Padding } from '../map/mapView';
-import { searchPlaces, type Place } from '../search/geocode';
+import { isAbortError } from '../coverage/abort';
+import { searchPlaces, type Place, type SearchResult } from '../search/geocode';
 import type { AppState, PanelId } from '../state';
 import { creditNodes, h, icon, ICONS, linkName, setChildren, type Child } from './dom';
 import { basemapPanel, gpxPanel, networkPanel, reportPanel, settingsPanel, sourcesPanel } from './panels';
@@ -489,34 +490,54 @@ export class Ui {
     const seq = ++this.searchSeq;
     this.searchAbort = new AbortController();
     const center = this.app.mapView.map.getCenter();
+    // Rien d'affiché pour cette saisie : on dit que la recherche est en cours (et non « aucun lieu »).
+    if (this.resultsQuery !== query) {
+      this.resultsQuery = null;
+      setChildren(this.searchResults, this.searchLoading());
+    }
     try {
-      const places = await searchPlaces(query, {
-        lang: getLanguage(),
-        center: [center.lng, center.lat],
-        bounds: MAX_BOUNDS,
-        abroadFirst: this.app.centerIsAbroad(),
-        signal: this.searchAbort.signal,
-      });
+      const result = await searchPlaces(
+        query,
+        {
+          lang: getLanguage(),
+          center: [center.lng, center.lat],
+          bounds: MAX_BOUNDS,
+          abroadFirst: this.app.centerIsAbroad(),
+          signal: this.searchAbort.signal,
+        },
+        // Le premier service qui répond est affiché sans attendre l'autre.
+        (partial) => {
+          if (seq !== this.searchSeq || !this.searchOpen) return;
+          this.resultsQuery = partial.places.length > 0 ? query : null;
+          this.showResults(partial);
+        },
+      );
       if (seq !== this.searchSeq || !this.searchOpen) return;
       this.resultsQuery = query;
-      if (this.pickFirst && places.length > 0) {
+      if (this.pickFirst && result.places.length > 0) {
         this.pickFirst = false;
-        this.pickPlace(places[0]);
+        this.pickPlace(result.places[0]);
         return;
       }
       this.pickFirst = false;
-      this.showResults(places);
+      this.showResults(result);
     } catch (error) {
-      if (seq !== this.searchSeq || (error instanceof Error && error.name === 'AbortError')) return;
+      // Recherche annulée par une nouvelle saisie : la suivante prend le relais.
+      if (seq !== this.searchSeq || isAbortError(error)) return;
+      console.warn('Recherche de lieux :', error);
       this.pickFirst = false;
       this.resultsQuery = null;
       setChildren(this.searchResults, h('li', { class: 'search__info' }, t('search.error')));
     }
   }
 
-  private showResults(places: Place[]): void {
+  private searchLoading(): HTMLElement {
+    return h('li', { class: 'search__info', role: 'status' }, t('search.loading'));
+  }
+
+  private showResults({ places, pending, failed }: SearchResult): void {
     if (places.length === 0) {
-      setChildren(this.searchResults, h('li', { class: 'search__info' }, t('search.empty')));
+      setChildren(this.searchResults, pending ? this.searchLoading() : h('li', { class: 'search__info' }, t('search.empty')));
       return;
     }
     setChildren(
@@ -529,11 +550,15 @@ export class Ui {
             'button',
             { type: 'button', class: 'search__item', role: 'option', onclick: () => this.pickPlace(place) },
             h('span', { class: 'search__label' }, place.label),
-            place.detail ? h('span', { class: 'search__detail' }, place.detail) : null,
+            place.kindKey || place.detail ? h('span', { class: 'search__detail' }, [place.kindKey ? t(place.kindKey) : '', place.detail].filter(Boolean).join(', ')) : null,
             h('span', { class: 'search__source' }, place.source === 'ign' ? 'IGN' : 'OSM'),
           ),
         ),
       ),
+      pending ? this.searchLoading() : null,
+      // Un service en panne : ses lieux manquent, on le dit sous ceux de l'autre.
+      failed.includes('france') ? h('li', { class: 'search__info' }, t('search.franceUnavailable')) : null,
+      failed.includes('abroad') ? h('li', { class: 'search__info' }, t('search.abroadUnavailable')) : null,
       // Les résultats étrangers viennent d'OpenStreetMap : le nom renvoie vers sa page des droits et de la licence.
       h('li', { class: 'search__credits' }, linkName(t('search.credits'), 'OpenStreetMap', OSM_COPYRIGHT_URL)),
     );
@@ -561,7 +586,8 @@ export class Ui {
       }
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
-      this.searchResults.querySelector<HTMLButtonElement>('.search__item')?.focus();
+      // Même garde qu'Entrée : on n'entre que dans une liste qui répond à la saisie actuelle.
+      if (this.searchInput.value.trim() === this.resultsQuery) this.searchResults.querySelector<HTMLButtonElement>('.search__item')?.focus();
     }
   }
 

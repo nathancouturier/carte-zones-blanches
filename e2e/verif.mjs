@@ -472,7 +472,7 @@ try {
     const { contexte, page, suivi } = await ouvrir(navigateur, { ...telephone, ...position }, '#10/44.9/6.45', async (c) => {
       await c.route(/data\.geopf\.fr\/geocodage\/completion/, (route) => {
         const q = (new URL(route.request().url()).searchParams.get('text') ?? '').toLowerCase();
-        setTimeout(() => route.fulfill({ json: { status: 'OK', results: lieux(q).map((l) => ({ ...l, kind: 'municipality' })) } }).catch(() => undefined), 300);
+        setTimeout(() => route.fulfill({ json: { status: 'OK', results: lieux(q).map((l) => ({ ...l, country: 'StreetAddress', kind: 'municipality' })) } }).catch(() => undefined), 300);
       });
       await c.route(/photon\.komoot\.io/, (route) => route.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
     });
@@ -540,6 +540,26 @@ try {
       controle('interface : après une recherche, un appui sur une zone blanche zoome dessus', zoom(apresZone) > zoom(avantZone), `${avantZone} puis ${apresZone}`);
     }
     await page.tap('.icon-btn[data-role="close"]');
+
+    // Photon lent : les lieux de l'IGN s'affichent sans l'attendre, une ligne dit que la recherche continue,
+    // puis, le délai passé, que les lieux hors de France manquent (recherche-2) ; le type d'adresse est traduit (recherche-5).
+    const photonLent = (route) => setTimeout(() => route.fulfill({ json: { type: 'FeatureCollection', features: [] } }).catch(() => undefined), 20000);
+    await contexte.route(/photon\.komoot\.io/, photonLent);
+    await page.tap('button[aria-label="Rechercher un lieu"]');
+    await page.type('.search__input', 'Brides');
+    const sansAttendre = await page.waitForSelector('.search__item', { timeout: 3000 }).then(() => true, () => false);
+    const pendant = sansAttendre ? await page.locator('.search__results').innerText() : '';
+    await page.waitForTimeout(5500);
+    const apres = await page.locator('.search__results').innerText();
+    controle(
+      'interface : recherche, lieux de l\'IGN affichés sans attendre Photon, puis son absence dite',
+      sansAttendre && pendant.includes('Recherche en cours') && !apres.includes('Recherche en cours') && apres.includes('La recherche hors de France est indisponible pour le moment'),
+      `${pendant.replace(/\n/g, ' / ')} || ${apres.replace(/\n/g, ' / ')}`,
+    );
+    const detail = await page.locator('.search__detail').first().textContent().catch(() => '');
+    controle('interface : recherche, type d\'adresse traduit', detail === 'Commune', detail ?? '');
+    await contexte.unroute(/photon\.komoot\.io/, photonLent);
+    await page.tap('button[aria-label="Rechercher un lieu"]'); // referme la recherche
 
     // Un panneau qui s'ouvre ferme la recherche, dont les résultats le recouvriraient.
     await page.tap('button[aria-label="Rechercher un lieu"]');

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   autoBasemap,
   autoBasemapForView,
@@ -12,8 +12,109 @@ import {
 } from '../src/map/basemaps';
 import { buildStyle, COVERAGE_LAYER } from '../src/map/style';
 import { EMPTY_COLLECTION, trackToGeoJson, zoneToGeoJson } from '../src/map/trackGeojson';
-import { mergePlaces, parseIgnCompletion, parsePhoton, type Place } from '../src/search/geocode';
+import { mergePlaces, parseIgnCompletion, parsePhoton, searchPlaces, type Place, type SearchResult } from '../src/search/geocode';
 import type { Sample } from '../src/gpx/resample';
+
+// Délai maximal des services de recherche raccourci pour les essais.
+vi.mock('../src/config', async (original) => ({ ...(await original<typeof import('../src/config')>()), SEARCH_TIMEOUT_MS: 300 }));
+
+/** Réponse réelle de l'autocomplétion IGN pour « Briançon » (sonde du 14 novembre 2026, champs utiles). */
+const BRIANCON = {
+  status: 'OK',
+  results: [
+    { country: 'PositionOfInterest', kind: 'administratif', poiType: ['administratif', 'commune'], names: ['Briançon'], street: null, city: null, zipcode: '05100', fulltext: 'Briançon, 05100', x: 6.646, y: 44.895 },
+    { country: 'StreetAddress', kind: 'municipality', city: 'Briançon', zipcode: '05100', fulltext: 'Briançon, 05100 Briançon', x: 6.637, y: 44.896 },
+    { country: 'PositionOfInterest', kind: 'lieu-dit habité', poiType: ['lieu-dit habité', "zone d'habitation"], names: ['Briançon'], street: 'Briançon', city: 'Briançon', zipcode: '05100', fulltext: 'Briançon, 05100 Briançon', x: 6.63, y: 44.893 },
+    { country: 'StreetAddress', kind: 'locality', city: 'Authon', zipcode: '04200', fulltext: 'Briançon, 04200 Authon', x: 6.107, y: 44.248 },
+  ],
+};
+
+const OPTIONS = { lang: 'fr', center: [6.64321, 44.89876] as [number, number], bounds: [-12, 36, 18, 54.5] as [number, number, number, number], abroadFirst: false };
+const ZERMATT = { type: 'FeatureCollection', features: [{ properties: { name: 'Zermatt', country: 'Suisse', countrycode: 'CH', type: 'city' }, geometry: { coordinates: [7.749, 46.021] } }] };
+
+/** Faux réseau : une réponse (ou une panne) par service, après un délai. */
+function reseau(services: { ign: { delai: number; statut?: number; json?: unknown }; photon: { delai: number; statut?: number; json?: unknown } }): string[] {
+  const demandes: string[] = [];
+  vi.stubGlobal('fetch', (input: URL | string, init?: RequestInit) => {
+    const url = String(input);
+    demandes.push(url);
+    const service = url.includes('geopf') ? services.ign : services.photon;
+    return new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(new Response(JSON.stringify(service.json ?? {}), { status: service.statut ?? 200 })), service.delai);
+      init?.signal?.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(init.signal!.reason);
+      });
+    });
+  });
+  return demandes;
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('recherche : services lents, en panne ou annulés', () => {
+  it('montre les lieux de l\'IGN dès leur arrivée, sans attendre Photon, borné par un délai maximal (recherche-2)', async () => {
+    reseau({ ign: { delai: 20, json: BRIANCON }, photon: { delai: 60_000, json: ZERMATT } });
+    const partiels: SearchResult[] = [];
+    const debut = Date.now();
+    const fin = await searchPlaces('Briançon', OPTIONS, (r) => partiels.push(r));
+    expect(partiels).toHaveLength(1);
+    expect(partiels[0]).toMatchObject({ pending: true, failed: [] });
+    expect(partiels[0].places[0].label).toBe('Briançon');
+    // Photon n'a pas répondu dans le délai : la liste finale le dit, sans l'avoir attendu 60 s.
+    expect(Date.now() - debut).toBeLessThan(5000);
+    expect(fin).toMatchObject({ pending: false, failed: ['abroad'] });
+    expect(fin.places.map((p) => p.label)).toEqual(['Briançon', 'Briançon', 'Briançon, 04200 Authon']);
+  });
+
+  it('une recherche annulée échoue (AbortError) au lieu de rendre une liste vide (recherche-3)', async () => {
+    reseau({ ign: { delai: 50, json: BRIANCON }, photon: { delai: 50, json: ZERMATT } });
+    const controleur = new AbortController();
+    const recherche = searchPlaces('Cham', { ...OPTIONS, signal: controleur.signal });
+    controleur.abort();
+    await expect(recherche).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('IGN en panne : erreur si Photon ne trouve rien, sinon les lieux étrangers et la panne signalée (recherche-3)', async () => {
+    reseau({ ign: { delai: 10, statut: 503 }, photon: { delai: 10, json: { type: 'FeatureCollection', features: [] } } });
+    await expect(searchPlaces('Refuge du Glacier Blanc', OPTIONS)).rejects.toThrow(/IGN : HTTP 503/);
+    reseau({ ign: { delai: 10, statut: 429 }, photon: { delai: 10, json: ZERMATT } });
+    const resultat = await searchPlaces('Zermatt', OPTIONS);
+    expect(resultat).toMatchObject({ pending: false, failed: ['france'] });
+    expect(resultat.places.map((p) => p.label)).toEqual(['Zermatt']);
+  });
+
+  it('envoie le centre de la carte à l\'IGN, arrondi, et réessaie sans s\'il est refusé (recherche-4)', async () => {
+    const demandes = reseau({ ign: { delai: 5, json: BRIANCON }, photon: { delai: 5, json: ZERMATT } });
+    await searchPlaces('Saint-Jean', { ...OPTIONS, center: [-1.47391, 43.48263] });
+    const ign = new URL(demandes.find((u) => u.includes('geopf'))!);
+    expect(ign.searchParams.get('lonlat')).toBe('-1.47,43.48');
+    const photon = new URL(demandes.find((u) => u.includes('photon'))!);
+    expect([photon.searchParams.get('lon'), photon.searchParams.get('lat')]).toEqual(['-1.47', '43.48']);
+    // Refus de la longitude négative (motif publié par la Géoplateforme) : une seconde demande, sans lonlat.
+    const refus = reseau({ ign: { delai: 5, statut: 400 }, photon: { delai: 5, json: ZERMATT } });
+    await searchPlaces('Saint-Jean', { ...OPTIONS, center: [-1.47, 43.48] });
+    const essais = refus.filter((u) => u.includes('geopf')).map((u) => new URL(u).searchParams.get('lonlat'));
+    expect(essais).toEqual(['-1.47,43.48', null]);
+  });
+});
+
+describe('recherche : suggestions de l\'IGN (recherche-5)', () => {
+  it('traduit le type des adresses, garde la commune une seule fois, zoome selon le type', () => {
+    const places = parseIgnCompletion(BRIANCON);
+    // La commune (lieu « administratif, commune ») et son adresse « municipality » : une seule ligne, le lieu.
+    expect(places).toHaveLength(3);
+    expect(places[0]).toMatchObject({ label: 'Briançon', kindKey: 'search.kind.municipality', detail: '05100', zoom: 12.5 });
+    expect(places[1]).toMatchObject({ label: 'Briançon', detail: "lieu-dit habité, 05100 Briançon", zoom: 14.5 });
+    expect(places[1].kindKey).toBeUndefined();
+    // Adresse : aucun jeton anglais affiché, une clé traduite à la place.
+    expect(places[2]).toMatchObject({ label: 'Briançon, 04200 Authon', kindKey: 'search.kind.locality', detail: '', zoom: 14.5 });
+    const zoom = (kind: string) => parseIgnCompletion({ results: [{ country: 'StreetAddress', kind, fulltext: 'x', x: 1, y: 2 }] })[0].zoom;
+    expect([zoom('municipality'), zoom('locality'), zoom('street'), zoom('housenumber'), zoom('inconnu')]).toEqual([12.5, 14.5, 16, 17, 16]);
+    const departement = parseIgnCompletion({ results: [{ country: 'PositionOfInterest', kind: 'administratif', poiType: ['administratif', 'département'], names: ['Hautes-Alpes'], x: 6.2, y: 44.7 }] });
+    expect(departement[0]).toMatchObject({ kindKey: 'search.kind.department', zoom: 9 });
+  });
+});
 
 describe('recherche de lieux', () => {
   it('lit la réponse de l\'autocomplétion IGN', () => {

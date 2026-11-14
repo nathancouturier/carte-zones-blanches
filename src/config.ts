@@ -78,6 +78,12 @@ export const SAMPLING_CONCURRENCY = 6;
 export const SEARCH_MIN_CHARS = 3;
 export const SEARCH_DEBOUNCE_MS = 350;
 export const SEARCH_MAX_RESULTS = 6;
+/**
+ * Délai maximal de réponse de chaque service de recherche, en millisecondes.
+ * Au-delà, ses lieux manquent et la liste le dit ; les résultats de l'autre
+ * service, eux, s'affichent dès leur arrivée.
+ */
+export const SEARCH_TIMEOUT_MS = 5000;
 /** Géocodage de la Géoplateforme (IGN) : autocomplétion, France. */
 export const IGN_COMPLETION_URL = 'https://data.geopf.fr/geocodage/completion';
 /** Photon (komoot), basé sur OpenStreetMap : pour les lieux hors de France. */
