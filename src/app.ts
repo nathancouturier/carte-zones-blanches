@@ -2,6 +2,7 @@
 
 import { PMTiles } from 'pmtiles';
 import { DATA_BASE_URL, MAX_GPX_BYTES } from './config';
+import { createArchiveReader } from './coverage/archives';
 import { unpackCountry } from './coverage/codec';
 import { createTileDecoder } from './coverage/decode';
 import {
@@ -103,15 +104,7 @@ export class App {
       this.store.set({ dataStatus: 'missing' });
       return;
     }
-    const archives = new Map<string, PMTiles>();
-    const online: ArchiveReader = async (file, z, x, y) => {
-      let archive = archives.get(file);
-      if (!archive) {
-        archive = new PMTiles(`${DATA_BASE_URL}${file}`);
-        archives.set(file, archive);
-      }
-      return (await archive.getZxy(z, x, y))?.data;
-    };
+    const online = createArchiveReader((file) => new PMTiles(`${DATA_BASE_URL}${file}`));
     // Sans réseau, on sert les tuiles enregistrées par « Préparer le hors ligne ».
     const read: ArchiveReader = async (file, z, x, y) => {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
