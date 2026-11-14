@@ -94,52 +94,57 @@ for k, f in enumerate(vda):
 print("    GeoPackage :", os.path.getsize(gpkg) if os.path.exists(gpkg) else "absent", "octets")
 
 print("##### 3. Surfaces par valeur (EPSG:3035) et part du territoire, Vallée d'Aoste")
-ds = ogr.Open(gpkg); lyr = ds.GetLayer(0)
-src = lyr.GetSpatialRef(); laea = osr.SpatialReference(); laea.ImportFromEPSG(3035)
-src.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER); laea.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-tr = osr.CoordinateTransformation(src, laea)
-area = {}; cnt = {}; invalid = 0; parts = 0; pts = 0; geoms = []; comuni = set(); types = {}
-for ft in lyr:
-    g = ft.GetGeometryRef().Clone(); g.Transform(tr)
-    v = ft.GetField("n_infrastrutture_totali")
-    area[v] = area.get(v, 0.0) + g.GetArea(); cnt[v] = cnt.get(v, 0) + 1
-    invalid += 0 if g.IsValid() else 1
-    parts += g.GetGeometryCount(); comuni.add(ft.GetField("PRO_COM_T"))
-    types[g.GetGeometryName()] = types.get(g.GetGeometryName(), 0) + 1
-    pts += sum(ring.GetPointCount() for i in range(g.GetGeometryCount()) for ring in [g.GetGeometryRef(i).GetGeometryRef(j) for j in range(g.GetGeometryRef(i).GetGeometryCount())])
-    geoms.append(g)
-print("    entités par valeur :", dict(sorted(cnt.items())), "| communes distinctes :", len(comuni), "| types :", types)
-print("    géométries invalides :", invalid, "| polygones :", parts, "| sommets :", pts)
-print("    surface par valeur (km2) :", {k: round(a / 1e6, 1) for k, a in sorted(area.items())}, "| somme :", round(sum(area.values()) / 1e6, 1))
+def section3():
+    ds = ogr.Open(gpkg); lyr = ds.GetLayer(0)
+    src = lyr.GetSpatialRef(); laea = osr.SpatialReference(); laea.ImportFromEPSG(3035)
+    src.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER); laea.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    tr = osr.CoordinateTransformation(src, laea)
+    area = {}; cnt = {}; invalid = 0; parts = 0; pts = 0; geoms = []; comuni = set(); types = {}
+    for ft in lyr:
+        g = ft.GetGeometryRef().Clone(); g.Transform(tr)
+        v = ft.GetField("n_infrastrutture_totali")
+        area[v] = area.get(v, 0.0) + g.GetArea(); cnt[v] = cnt.get(v, 0) + 1
+        invalid += 0 if g.IsValid() else 1
+        parts += g.GetGeometryCount(); comuni.add(ft.GetField("PRO_COM_T"))
+        types[g.GetGeometryName()] = types.get(g.GetGeometryName(), 0) + 1
+        pts += sum(ring.GetPointCount() for i in range(g.GetGeometryCount()) for ring in [g.GetGeometryRef(i).GetGeometryRef(j) for j in range(g.GetGeometryRef(i).GetGeometryCount())])
+        geoms.append(g)
+    print("    entités par valeur :", dict(sorted(cnt.items())), "| communes distinctes :", len(comuni), "| types :", types)
+    print("    géométries invalides :", invalid, "| polygones :", parts, "| sommets :", pts)
+    print("    surface par valeur (km2) :", {k: round(a / 1e6, 1) for k, a in sorted(area.items())}, "| somme :", round(sum(area.values()) / 1e6, 1))
+    try:
+        t0 = time.time(); coll = ogr.Geometry(ogr.wkbGeometryCollection)
+        for g in geoms:
+            coll.AddGeometry(g.MakeValid() if not g.IsValid() else g)
+        u = coll.UnaryUnion()
+        print("    surface de l'union (km2) :", round(u.GetArea() / 1e6, 1), f"({time.time() - t0:.0f} s) : égale à la somme si les valeurs ne se chevauchent pas")
+    except Exception as e:
+        print("    union impossible :", str(e)[:200])
+    d, _ = jget(REST + "/Limiti/regioni/MapServer/0/query", {"where": "COD_REG=2", "outFields": "COD_REG,DEN_REG", "returnGeometry": "true", "outSR": 3035, "f": "json"}, out=f"{T}/it/reg2.json")
+    try:
+        rds = ogr.Open(f"{T}/it/reg2.json"); rg = rds.GetLayer(0).GetNextFeature().GetGeometryRef()
+        ra = rg.GetArea()
+        print("    surface de la région d'après Limiti/regioni (km2) :", round(ra / 1e6, 1), "| part couverte en 4G par au moins 1 infrastructure :", f"{100 * sum(area.values()) / ra:.1f} %")
+        for k, a in sorted(area.items()):
+            print(f"      valeur {k} : {100 * a / ra:.1f} % du territoire")
+    except Exception as e:
+        print("    région illisible :", str(e)[:200])
+    # points de contrôle : Aoste (ville), Courmayeur, sommet du Grand Paradis, haut val de Rhêmes
+    wgs = osr.SpatialReference(); wgs.ImportFromEPSG(4326); wgs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    tp = osr.CoordinateTransformation(wgs, laea)
+    for name, lon, lat in (("Aoste centre", 7.3206, 45.7370), ("Courmayeur", 6.9690, 45.7969), ("Grand Paradis sommet", 7.2664, 45.5172), ("haut val de Rhêmes (Thumel)", 7.1060, 45.5330), ("col du Grand-Saint-Bernard", 7.1700, 45.8690)):
+        x, y, _ = tp.TransformPoint(lon, lat); p = ogr.Geometry(ogr.wkbPoint); p.AddPoint_2D(x, y)
+        vals = []
+        lyr.ResetReading()
+        for ft, g in zip(lyr, geoms):
+            if g.Contains(p):
+                vals.append(ft.GetField("n_infrastrutture_totali"))
+        print(f"    {name} ({lon}, {lat}) : n_infrastrutture_totali = {vals or 'aucun polygone (0)'}")
+
 try:
-    t0 = time.time(); coll = ogr.Geometry(ogr.wkbGeometryCollection)
-    for g in geoms:
-        coll.AddGeometry(g.MakeValid() if not g.IsValid() else g)
-    u = coll.UnaryUnion()
-    print("    surface de l'union (km2) :", round(u.GetArea() / 1e6, 1), f"({time.time() - t0:.0f} s) : égale à la somme si les valeurs ne se chevauchent pas")
+    section3()
 except Exception as e:
-    print("    union impossible :", str(e)[:200])
-d, _ = jget(REST + "/Limiti/regioni/MapServer/0/query", {"where": "COD_REG=2", "outFields": "COD_REG,DEN_REG", "returnGeometry": "true", "outSR": 3035, "f": "json"}, out=f"{T}/it/reg2.json")
-try:
-    rds = ogr.Open(f"{T}/it/reg2.json"); rg = rds.GetLayer(0).GetNextFeature().GetGeometryRef()
-    ra = rg.GetArea()
-    print("    surface de la région d'après Limiti/regioni (km2) :", round(ra / 1e6, 1), "| part couverte en 4G par au moins 1 infrastructure :", f"{100 * sum(area.values()) / ra:.1f} %")
-    for k, a in sorted(area.items()):
-        print(f"      au moins... valeur {k} : {100 * a / ra:.1f} % du territoire")
-except Exception as e:
-    print("    région illisible :", str(e)[:200])
-# points de contrôle : Aoste (ville), Courmayeur, sommet du Grand Paradis, haut val de Rhêmes
-wgs = osr.SpatialReference(); wgs.ImportFromEPSG(4326); wgs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-tp = osr.CoordinateTransformation(wgs, laea)
-for name, lon, lat in (("Aoste centre", 7.3206, 45.7370), ("Courmayeur", 6.9690, 45.7969), ("Grand Paradis sommet", 7.2664, 45.5172), ("haut val de Rhêmes (Thumel)", 7.1060, 45.5330), ("col du Grand-Saint-Bernard", 7.1700, 45.8690)):
-    x, y, _ = tp.TransformPoint(lon, lat); p = ogr.Geometry(ogr.wkbPoint); p.AddPoint_2D(x, y)
-    hit = [ft_v for ft_v, g in zip([None] * 0, [])]
-    vals = []
-    lyr.ResetReading()
-    for ft, g in zip(lyr, geoms):
-        if g.Contains(p):
-            vals.append(ft.GetField("n_infrastrutture_totali"))
-    print(f"    {name} ({lon}, {lat}) : n_infrastrutture_totali = {vals or 'aucun polygone (0)'}")
+    import traceback; print('    ECHEC section 3 :', traceback.format_exc()[-600:])
 
 print("##### 4. Essai d'une page du Piémont (COD_REG=1), 250 entités")
 d, st = jget(L4G, {"where": "COD_REG=1", "outFields": "fid,n_infrastrutture_totali,COD_REG,PRO_COM_T", "returnGeometry": "true", "outSR": 3857, "geometryPrecision": 1,
