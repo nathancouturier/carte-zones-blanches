@@ -138,6 +138,24 @@ describe('traductions', () => {
     expect(term('it', 'report.zonesHeading_one')).toContain('Zona senza copertura');
     expect(term('de', 'report.zonesHeading_one')).toContain('Funkloch');
   });
+
+  it('dit « zone blanche » avec le terme du glossaire partout où le français le dit (glo-01)', () => {
+    // Singulier ou pluriel ; des tirets dans le nom du fichier exporté, « oe » pour « ö » en allemand.
+    const glossary: Record<string, RegExp> = {
+      es: /zonas?[ -]sin[ -]cobertura/i,
+      ca: /zon(?:a|es)[ -]sense[ -]cobertura/i,
+      it: /zon[ae][ -]senza[ -]copertura/i,
+      de: /funkl(?:o|ö|oe)ch/i,
+    };
+    const keys = Object.keys(french).filter((key) => /zones?[ -]blanches?/i.test(french[key]));
+    // Les noms des points du GPX enrichi en font partie.
+    expect(keys).toEqual(expect.arrayContaining(['app.title', 'report.zonesHeading_one', 'export.waypointStart', 'export.waypointEnd', 'export.fileSuffix']));
+    for (const key of keys) {
+      for (const [code, expected] of Object.entries(glossary)) {
+        expect(dictionaries.get(code)![key], `${code} : ${key}`).toMatch(expected);
+      }
+    }
+  });
 });
 
 describe('choix de la langue', () => {
