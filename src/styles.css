@@ -1079,11 +1079,6 @@ input[type="range"] {
   height: 44px;
 }
 
-/* Le bouton « Ma position » est dans la barre du haut : celui de MapLibre est masqué. */
-.maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) {
-  display: none;
-}
-
 @media (pointer: coarse) {
   /* Sur écran tactile on zoome avec deux doigts. */
   .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) {

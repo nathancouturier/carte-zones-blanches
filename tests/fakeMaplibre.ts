@@ -164,14 +164,6 @@ export const fakeMaplibreModule = {
   Marker: FakeMarker,
   NavigationControl: class {},
   ScaleControl: class {},
-  GeolocateControl: class {
-    on(): { unsubscribe: () => void } {
-      return { unsubscribe: () => undefined };
-    }
-    trigger(): boolean {
-      return false;
-    }
-  },
   setWorkerUrl: (): void => undefined,
   addProtocol: (): void => undefined,
 };

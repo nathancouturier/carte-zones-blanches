@@ -496,6 +496,20 @@ try {
     await page.tap('.topbar button[aria-label="Ma position"]');
     await page.waitForTimeout(2500);
     controle('interface : « Ma position » appuyé deux fois garde la position affichée', (await page.locator('.maplibregl-user-location-dot').count()) === 1);
+    // Le point suit la marche sans déplacer la carte ; un appui recentre la carte sur lui (carte-5).
+    const surEcran = () => page.evaluate(() => {
+      const r = document.querySelector('.maplibregl-user-location-dot')?.getBoundingClientRect();
+      return r ? `${Math.round(r.left)},${Math.round(r.top)}` : 'absent';
+    });
+    const avantPas = { vue: await page.evaluate(() => location.hash), point: await surEcran() };
+    await contexte.setGeolocation({ latitude: 44.9006, longitude: 6.4208, accuracy: 15 });
+    await page.waitForTimeout(1500);
+    const apresPas = { vue: await page.evaluate(() => location.hash), point: await surEcran() };
+    controle('interface : le point de « Ma position » suit la marche sans déplacer la carte', apresPas.vue === avantPas.vue && apresPas.point !== avantPas.point && apresPas.point !== 'absent', `${avantPas.vue} ${avantPas.point} puis ${apresPas.vue} ${apresPas.point}`);
+    await page.tap('.topbar button[aria-label="Ma position"]');
+    await page.waitForTimeout(2000);
+    const [, latPos, lonPos] = (await page.evaluate(() => location.hash)).slice(1).split('/').map(Number);
+    controle('interface : un appui sur « Ma position » recentre la carte sur le point', Math.abs(latPos - 44.9006) < 0.003 && Math.abs(lonPos - 6.4208) < 0.003, `${latPos}, ${lonPos}`);
 
     // Rapport : le tracé reste visible au-dessus du panneau, qui se réduit à son titre pour montrer la carte.
     await importer(page, gpx('test-alpes.gpx'));
@@ -635,6 +649,64 @@ try {
       controle(`style : ${cas}, aucune erreur JavaScript`, suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
       await contexte.close();
     }
+  }
+
+  // --- 2h. Téléphone, français : « Ma position » avec une géolocalisation simulée (carte-5) ----
+  // Un message par cause d'échec, suivi arrêté quand la page est cachée, et un cadrage commandé par
+  // le site (import d'un GPX) jamais annulé par la position qui arrive ensuite.
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#12/44.9/6.42', (c) =>
+      c.addInitScript(() => {
+        const suivis = new Map();
+        let numero = 0;
+        window.gps = {
+          erreur: (code) => [...suivis.values()].forEach((s) => s.erreur?.({ code, message: 'simulée', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 })),
+          position: (lat, lon, accuracy) => [...suivis.values()].forEach((s) => s.succes({ coords: { latitude: lat, longitude: lon, accuracy }, timestamp: Date.now() })),
+          actifs: () => suivis.size,
+        };
+        Object.defineProperty(navigator, 'geolocation', {
+          configurable: true,
+          value: {
+            watchPosition: (succes, erreur) => (suivis.set(++numero, { succes, erreur }), numero),
+            getCurrentPosition: () => undefined,
+            clearWatch: (id) => suivis.delete(id),
+          },
+        });
+      }),
+    );
+    const bouton = '.topbar button[aria-label="Ma position"]';
+    const messages = [];
+    for (const [code, attendu] of [[1, /^Localisation refusée/], [2, /^Position indisponible pour le moment/], [3, /^Le GPS cherche encore votre position/]]) {
+      await page.tap(bouton);
+      await page.waitForTimeout(300);
+      await page.evaluate((c) => window.gps.erreur(c), code);
+      await page.waitForTimeout(500);
+      const vu = await page.evaluate(() => document.querySelector('.toast')?.textContent ?? '');
+      messages.push(attendu.test(vu) ? 'ok' : vu || 'aucun message');
+    }
+    controle('position : un message par cause (refus, position indisponible, délai dépassé)', messages.every((m) => m === 'ok'), messages.join(' | '));
+    const actifs = () => page.evaluate(() => window.gps.actifs());
+    const visibilite = (etat) =>
+      page.evaluate((e) => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => e });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, etat);
+    const avant = await actifs();
+    await visibilite('hidden');
+    const cache = await actifs();
+    await visibilite('visible');
+    const retour = await actifs();
+    controle('position : suivi arrêté quand la page est cachée, repris à son retour', avant === 1 && cache === 0 && retour === 1, `${avant} suivi, ${cache} page cachée, ${retour} au retour`);
+    await page.tap(bouton); // le GPS cherche encore : la carte attend le point
+    await importer(page, TRACE_FRANCE);
+    const cadrage = await page.evaluate(() => location.hash);
+    await page.evaluate(() => window.gps.position(44.92, 6.3, 25));
+    await page.waitForTimeout(1500);
+    const ensuite = await page.evaluate(() => location.hash);
+    const point = await page.locator('.maplibregl-user-location-dot').count();
+    controle('position : le cadrage d\'un GPX importé n\'est pas annulé par la position arrivée ensuite', ensuite === cadrage && point === 1, `${cadrage} puis ${ensuite}, ${point} point`);
+    controle('position : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
   }
 
   // --- 3. Téléphone, espagnol : sources et changement de langue -----------------

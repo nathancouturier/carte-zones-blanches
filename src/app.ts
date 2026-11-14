@@ -105,11 +105,13 @@ export class App {
         'Map.Title': t('app.mapLabel'),
         'NavigationControl.ZoomIn': t('action.zoomIn'),
         'NavigationControl.ZoomOut': t('action.zoomOut'),
+        // Nom du point qui montre la position de l'utilisateur.
         'GeolocateControl.FindMyLocation': t('action.locate'),
-        'GeolocateControl.LocationNotAvailable': t('locate.error'),
       }),
       onMoveEnd: () => this.scheduleViewUpdate(),
-      onLocateError: () => this.hooks.toast(t('locate.error')),
+      // Un message par cause : refus d'autorisation, position indisponible, GPS qui cherche encore.
+      onLocateError: (problem) => this.hooks.toast(t(`locate.${problem}`)),
+      padding: () => this.hooks.padding(),
       onStyleFallback: (_basemap, reason) => this.hooks.toast(t(reason === 'refused' ? 'basemap.styleRefused' : 'basemap.fallback')),
     });
     // Le mode Auto revoit son choix quand le réseau va et vient (fonds enregistrés seulement, sans réseau).

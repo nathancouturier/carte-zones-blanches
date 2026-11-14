@@ -1,7 +1,6 @@
 // La carte MapLibre : fond, couche réseau, tracé GPX, position.
 
 import {
-  GeolocateControl,
   Map as MapLibreMap,
   Marker,
   NavigationControl,
@@ -13,6 +12,7 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { INITIAL_VIEW, MAX_BOUNDS } from '../config';
 import { COVERAGE_PROTOCOL } from '../coverage/protocol';
 import { BASEMAPS, type BasemapId } from './basemaps';
+import { accuracyBounds, Locator, metersPerPixel, type LocateProblem, type UserPosition } from './locator';
 import {
   buildStyle,
   COVERAGE_LAYER,
@@ -28,10 +28,12 @@ import { EMPTY_COLLECTION } from './trackGeojson';
 // Le worker de MapLibre est un fichier à part : on indique son adresse au bundler.
 setWorkerUrl(workerUrl);
 
-/** Délai maximal pour obtenir la position GPS, en millisecondes. */
-const LOCATE_TIMEOUT_MS = 15_000;
 /** Délai au-delà duquel un style sans réponse de MapLibre (rien à changer) est tenu pour accepté. */
 const STYLE_CHECK_MS = 2000;
+/** Zoom maximal du recentrage sur la position : le cercle de précision est cadré, jusqu'à ce zoom. */
+const LOCATE_MAX_ZOOM = 15;
+/** Marque des mouvements de la carte faits par « Ma position ». */
+const LOCATE_MOVE = { locateMove: true };
 
 export interface StyleInputs {
   basemap: BasemapId;
@@ -56,14 +58,21 @@ export interface MapViewOptions {
   /** Libellés des contrôles de la carte, dans la langue courante. */
   labels: () => Record<string, string>;
   onMoveEnd: () => void;
-  onLocateError: () => void;
+  /** La position manque : autorisation refusée, position indisponible, GPS encore en recherche. */
+  onLocateError: (problem: LocateProblem) => void;
+  /** Marges à laisser libres (panneau ouvert, barres) quand la carte se centre sur la position. */
+  padding?: () => Padding;
   /** Appelé quand un style vectoriel n'a pas pu être chargé (ou a été refusé) et qu'on affiche le fond de repli. */
   onStyleFallback: (basemap: BasemapId, reason: 'unreachable' | 'refused') => void;
 }
 
 export class MapView {
   readonly map: MapLibreMap;
-  private readonly geolocate: GeolocateControl;
+  private readonly locator: Locator;
+  /** Position affichée (point et cercle de précision), dessinée ici plutôt que par le contrôle de MapLibre. */
+  private position: UserPosition | null = null;
+  private positionDot: Marker | null = null;
+  private positionCircle: Marker | null = null;
   private styleSeq = 0;
   private track: GeoJSON.FeatureCollection = EMPTY_COLLECTION;
   private zone: GeoJSON.FeatureCollection = EMPTY_COLLECTION;
@@ -98,18 +107,28 @@ export class MapView {
     this.map.keyboard.disableRotation();
 
     this.map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-    // Chaque appui sur « Ma position » relit la position, l'affiche et centre la carte dessus.
-    // En mode suivi (trackUserLocation), un second appui coupait la localisation, et la carte
-    // revenait seule sur l'utilisateur après une recherche.
-    this.geolocate = new GeolocateControl({
-      positionOptions: { enableHighAccuracy: true, timeout: LOCATE_TIMEOUT_MS },
-      trackUserLocation: false,
-      showAccuracyCircle: true,
-    });
-    this.map.addControl(this.geolocate, 'top-right');
-    this.geolocate.on('error', () => options.onLocateError());
     this.map.addControl(new ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
     this.map.on('moveend', () => options.onMoveEnd());
+
+    // « Ma position » : le point suit la marche sans verrouiller la carte. Le contrôle de MapLibre
+    // ne le permet pas : en suivi, il déplace la carte à chaque point et un second appui coupe tout.
+    this.locator = new Locator({
+      geolocation: globalThis.navigator?.geolocation,
+      show: (position, stale) => this.showPosition(position, stale),
+      center: (position) => this.centerOnPosition(position),
+      onProblem: (problem) => options.onLocateError(problem),
+    });
+    // Un mouvement qui ne vient pas de « Ma position » (geste, import d'un GPX, zone du rapport,
+    // recherche) l'emporte : la position arrivée ensuite ne recentrera pas la carte.
+    this.map.on('movestart', (event) => {
+      const data = event as unknown as Record<string | number, unknown>;
+      // Redimensionnement (barre d'adresse du téléphone) : MapLibre passe les ResizeObserverEntry.
+      if (data.locateMove || data[0] !== undefined) return;
+      this.locator.cancelCenter();
+    });
+    this.map.on('zoom', () => this.sizeAccuracyCircle());
+    // Page cachée : le suivi s'arrête (batterie) ; il reprend à son retour.
+    globalThis.document?.addEventListener?.('visibilitychange', () => this.locator.setVisible(document.visibilityState !== 'hidden'));
     // Une tuile de fond manquante ne doit pas remplir la console d'erreurs bloquantes.
     // Les erreurs de la couche réseau, elles, sont signalées (la source le dit, pas le message).
     this.map.on('error', (event) => {
@@ -269,21 +288,64 @@ export class MapView {
   }
 
   /**
-   * Lit la position, l'affiche et centre la carte dessus. La promesse se termine
-   * quand la position est connue ou se révèle indisponible.
+   * « Ma position » : suit la position et centre la carte dessus. La promesse se termine
+   * quand c'est fait, ou quand on a dit pourquoi la position manque.
    */
   locate(): Promise<void> {
-    return new Promise((resolve) => {
-      const done = (): void => {
-        clearTimeout(timer);
-        for (const subscription of subscriptions) subscription.unsubscribe();
-        resolve();
-      };
-      const subscriptions = [this.geolocate.on('geolocate', done), this.geolocate.on('error', done), this.geolocate.on('outofmaxbounds', done)];
-      // Filet de sécurité : sans réponse à la demande d'autorisation, certains navigateurs ne disent rien.
-      const timer = setTimeout(done, LOCATE_TIMEOUT_MS + 5000);
-      if (!this.geolocate.trigger()) done();
-    });
+    return this.locator.locate();
+  }
+
+  /** Point de la position et cercle de précision ; grisés quand le suivi est arrêté. */
+  private showPosition(position: UserPosition | null, stale: boolean): void {
+    this.position = position;
+    if (!position) {
+      this.positionDot?.remove();
+      this.positionCircle?.remove();
+      this.positionDot = this.positionCircle = null;
+      return;
+    }
+    if (!this.positionDot || !this.positionCircle) {
+      // Le cercle d'abord, le point par-dessus. Classes de MapLibre : même apparence que son contrôle.
+      const circle = document.createElement('div');
+      circle.className = 'maplibregl-user-location-accuracy-circle';
+      this.positionCircle = new Marker({ element: circle, pitchAlignment: 'map' }).setLngLat([position.lon, position.lat]).addTo(this.map);
+      const dot = document.createElement('div');
+      dot.className = 'maplibregl-user-location-dot';
+      dot.setAttribute('role', 'img');
+      this.positionDot = new Marker({ element: dot }).setLngLat([position.lon, position.lat]).addTo(this.map);
+      this.labelPosition();
+    }
+    this.positionCircle.setLngLat([position.lon, position.lat]);
+    this.positionDot.setLngLat([position.lon, position.lat]);
+    this.positionDot.getElement().classList.toggle('maplibregl-user-location-dot-stale', stale);
+    this.sizeAccuracyCircle();
+  }
+
+  private sizeAccuracyCircle(): void {
+    if (!this.position || !this.positionCircle) return;
+    const diameter = `${Math.ceil((2 * this.position.accuracy) / metersPerPixel(this.position.lat, this.map.getZoom()))}px`;
+    const style = this.positionCircle.getElement().style;
+    style.width = diameter;
+    style.height = diameter;
+  }
+
+  private labelPosition(): void {
+    const label = this.options.labels()['GeolocateControl.FindMyLocation'];
+    if (label) this.positionDot?.getElement().setAttribute('aria-label', label);
+  }
+
+  /** Cadre le cercle de précision dans la partie libre de la carte (marges non gardées par fitBounds). */
+  private centerOnPosition(position: UserPosition): void {
+    const [west, south, east, north] = accuracyBounds(position);
+    const padding = this.options.padding?.() ?? { top: 0, right: 0, bottom: 0, left: 0 };
+    this.map.fitBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      { padding, maxZoom: LOCATE_MAX_ZOOM, duration: 700 },
+      LOCATE_MOVE,
+    );
   }
 
   /** Points répartis dans la vue (dont le centre en premier), pour savoir quels pays sont à l'écran. */
@@ -321,7 +383,7 @@ export class MapView {
     };
     set('.maplibregl-ctrl-zoom-in', 'NavigationControl.ZoomIn');
     set('.maplibregl-ctrl-zoom-out', 'NavigationControl.ZoomOut');
-    set('.maplibregl-ctrl-geolocate', 'GeolocateControl.FindMyLocation');
+    this.labelPosition();
     // Le canevas n'a pas d'infobulle : seul son nom accessible change.
     if (labels['Map.Title']) this.map.getCanvas().setAttribute('aria-label', labels['Map.Title']);
   }

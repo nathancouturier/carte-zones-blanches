@@ -1,7 +1,7 @@
 // La carte (MapView) sur une fausse carte MapLibre : cadrages, style de fond, position.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FakeElement, FakeMap, type FakeStyle } from './fakeMaplibre';
+import { FakeElement, FakeMap, FakeMarker, type FakeStyle } from './fakeMaplibre';
 
 vi.mock('maplibre-gl', async () => (await import('./fakeMaplibre')).fakeMaplibreModule);
 vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?url', () => ({ default: 'worker.mjs' }));
@@ -59,6 +59,50 @@ const fond = (style: FakeStyle | undefined): string => {
   return style && 'plan_ign' in style.sources ? 'Plan IGN vectoriel' : 'autre';
 };
 const attendre = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe('Ma position sur la carte (carte-5)', () => {
+  /** Géolocalisation du navigateur simulée : positions envoyées à la demande. */
+  function gps() {
+    const rappels: PositionCallback[] = [];
+    vi.stubGlobal('navigator', { geolocation: { watchPosition: (succes: PositionCallback) => rappels.push(succes), clearWatch: () => undefined } });
+    return (lat: number, lon: number, accuracy = 30) => rappels.forEach((r) => r({ coords: { latitude: lat, longitude: lon, accuracy } } as GeolocationPosition));
+  }
+  const reperes = () => [...FakeMarker.live].map((m) => m.element.className);
+  const marges = { top: 84, right: 56, bottom: 500, left: 40 };
+
+  it('dessine le point et le cercle de précision, centre la carte une fois, puis le point suit sans la déplacer', async () => {
+    FakeMarker.live.clear();
+    const envoyer = gps();
+    const { view, map } = creerCarte({ padding: () => marges });
+    const appui = view.locate();
+    envoyer(44.9, 6.42, 30);
+    await appui;
+    expect(reperes()).toEqual(['maplibregl-user-location-accuracy-circle', 'maplibregl-user-location-dot']);
+    expect(map.moves).toHaveLength(1);
+    // Le cercle de précision est cadré dans la partie libre ; fitBounds ne garde pas cette marge.
+    expect(map.moves[0]).toMatchObject({ kind: 'fitBounds', options: { padding: marges, maxZoom: 15 } });
+    envoyer(44.901, 6.421, 30);
+    envoyer(44.902, 6.422, 12);
+    expect(map.moves).toHaveLength(1);
+    const point = [...FakeMarker.live].find((m) => m.element.className.includes('dot'))!;
+    expect(point.lngLat).toEqual([6.422, 44.902]);
+    const cercle = [...FakeMarker.live].find((m) => m.element.className.includes('circle'))!;
+    expect(cercle.element.style.width).toMatch(/^\d+px$/);
+  });
+
+  it('un cadrage du site pendant l\'attente du GPS n\'est pas annulé par la position qui arrive', async () => {
+    FakeMarker.live.clear();
+    const envoyer = gps();
+    const { view, map } = creerCarte({ padding: () => marges });
+    const appui = view.locate();
+    view.fitBounds([6.4, 44.8, 6.5, 44.95], marges); // import d'un GPX pendant que le GPS cherche
+    envoyer(44.9, 6.42);
+    await appui;
+    expect(map.moves.map((m) => m.kind)).toEqual(['fitBounds']);
+    expect(map.moves[0].options).toMatchObject({ maxZoom: 15, duration: 600 }); // celui du tracé
+    expect(reperes()).toContain('maplibregl-user-location-dot');
+  });
+});
 
 describe('style du fond (carte-2)', () => {
   it('style lent : la couche réseau et le tracé s\'affichent tout de suite sur le Plan IGN en images, puis le délai passé, on le dit', async () => {

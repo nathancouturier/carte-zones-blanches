@@ -89,7 +89,30 @@ describe('traductions', () => {
     const missing = [...used].filter((key) => !(key in french) && !(`${key}_other` in french));
     expect(missing).toEqual([]);
     // Clés composées à l'exécution.
-    for (const key of ['service.data', 'service.voice', 'gpx.error.invalid', 'gpx.error.empty', 'sources.method.official_operator', 'sources.method.official_aggregated', 'sources.method.estimated', 'sources.levels.four', 'sources.levels.three', 'sources.levels.binary', 'level.none', 'level.limited', 'level.good', 'level.veryGood']) {
+    for (const key of [
+      'service.data',
+      'service.voice',
+      'gpx.error.invalid',
+      'gpx.error.empty',
+      'sources.method.official_operator',
+      'sources.method.official_aggregated',
+      'sources.method.estimated',
+      'sources.levels.four',
+      'sources.levels.three',
+      'sources.levels.binary',
+      'level.none',
+      'level.limited',
+      'level.good',
+      'level.veryGood',
+      'locate.denied',
+      'locate.unavailable',
+      'locate.timeout',
+      'search.kind.municipality',
+      'search.kind.locality',
+      'search.kind.street',
+      'search.kind.housenumber',
+      'search.kind.department',
+    ]) {
       expect(key in french, key).toBe(true);
     }
   });
