@@ -45,7 +45,9 @@ countries:
       # France métropolitaine, Corse comprise : les départements dont le code a 2 caractères.
       metropole_only: true
       # Mention du contour, reprise dans le manifest et affichée dans le panneau Sources.
-      credit: {text: "Contours administratifs (Etalab), d'après ADMIN EXPRESS de l'IGN"}
+      # Le jeu « Contours administratifs » de data.gouv.fr est déclaré sous licence ODbL (identifiant odc-odbl) ;
+      # ses départements sont calculés à partir d'ADMIN EXPRESS de l'IGN (lisez-moi du projet).
+      credit: {text: "Contours administratifs, data.gouv.fr (licence ODbL), d'après ADMIN EXPRESS de l'IGN", url: "https://www.data.gouv.fr/datasets/contours-administratifs"}
     slots:
       - {id: orange, name: Orange, arcep: OF}
       - {id: sfr, name: SFR, arcep: SFR0}
@@ -65,7 +67,8 @@ countries:
       where: "icc = 'CH'"
       expect: 1
       delete_after: true
-      credit: {text: "© swisstopo, swissBOUNDARIES3D", url: "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices"}
+      # « ©swisstopo », sans espace : forme courte exacte de la liste des mentions admises par les conditions.
+      credit: {text: "©swisstopo, swissBOUNDARIES3D", url: "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices"}
     # La source suisse ne dit pas quel opérateur couvre, seulement combien : les emplacements portent des seuils.
     operators: [Swisscom, Sunrise, Salt]
     slots:
@@ -194,8 +197,10 @@ sources:
     name: "Arcep, Mon réseau mobile : couvertures théoriques"
     attribution: Arcep
     url: https://www.data.gouv.fr/datasets/mon-reseau-mobile
+    # data.gouv.fr déclare ce jeu sous « Licence Ouverte / Open Licence » (identifiant fr-lo). L'adresse de cette
+    # licence renvoie aujourd'hui au texte de la version 2.0, présenté sur la page ci-dessous.
     licence: Licence Ouverte / Open Licence (Etalab)
-    licence_url: https://www.etalab.gouv.fr/licence-ouverte-open-licence
+    licence_url: https://www.data.gouv.fr/pages/legal/licences/etalab-2-0
     listing_url: https://data.arcep.fr/mobile/couvertures_theoriques/last/Metropole/00_Metropole/
     # Nom des fichiers : {trimestre}_couv_Metropole_{OP}_{TECHNO}_{USAGE}.gpkg.7z
     services:
