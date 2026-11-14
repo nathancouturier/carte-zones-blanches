@@ -199,6 +199,7 @@
   "offline.basemapNotAllowed": "El fondo «{name}» no se puede guardar por adelantado: su proveedor no lo permite. Elige otro fondo antes de preparar la ruta.",
   "offline.failed_one": "No se ha podido guardar {count} elemento del fondo.",
   "offline.failed_other": "No se han podido guardar {count} elementos del fondo.",
+  "offline.outdated": "Los datos de cobertura se han actualizado desde que se guardó esta ruta el {date}: actualiza los datos guardados antes de salir.",
   "offline.clear": "Borrar los datos sin conexión",
   "offline.cleared": "Datos sin conexión borrados",
   "offline.error": "No se ha podido guardar. Comprueba tu conexión y el espacio disponible.",

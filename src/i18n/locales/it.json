@@ -199,6 +199,7 @@
   "offline.basemapNotAllowed": "Lo sfondo «{name}» non può essere salvato in anticipo: il fornitore non lo consente. Scegli un altro sfondo prima di preparare il percorso.",
   "offline.failed_one": "Non è stato possibile salvare {count} elemento dello sfondo.",
   "offline.failed_other": "Non è stato possibile salvare {count} elementi dello sfondo.",
+  "offline.outdated": "I dati di copertura sono stati aggiornati dopo il salvataggio del {date}: aggiorna i dati salvati prima di partire.",
   "offline.clear": "Elimina i dati offline",
   "offline.cleared": "Dati offline eliminati",
   "offline.error": "Salvataggio non riuscito. Controlla la connessione e lo spazio disponibile.",

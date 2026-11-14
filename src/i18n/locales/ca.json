@@ -199,6 +199,7 @@
   "offline.basemapNotAllowed": "El fons «{name}» no es pot desar per endavant: el proveïdor no ho permet. Tria un altre fons abans de preparar la ruta.",
   "offline.failed_one": "No s'ha pogut desar {count} element del fons.",
   "offline.failed_other": "No s'han pogut desar {count} elements del fons.",
+  "offline.outdated": "Les dades de cobertura s'han actualitzat des que es va desar aquesta ruta el {date}: actualitza les dades desades abans de sortir.",
   "offline.clear": "Esborra les dades sense connexió",
   "offline.cleared": "Dades sense connexió esborrades",
   "offline.error": "No s'ha pogut desar. Comprova la connexió i l'espai disponible.",

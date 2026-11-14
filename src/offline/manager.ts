@@ -4,13 +4,17 @@
 //   1. rien pour le site lui-même : le Service Worker en a enregistré la coque
 //      entière à son installation (public/sw.js) ; on vérifie seulement qu'elle
 //      est complète, sans quoi rien ne s'ouvrirait sans réseau ;
-//   2. les tuiles de couverture du couloir du tracé (lues dans les archives PMTiles) ;
+//   2. les tuiles de couverture du couloir du tracé (lues dans les archives PMTiles),
+//      rangées sous le nom de leur archive : celles d'une autre édition des données
+//      ne sont jamais relues avec ce manifest ;
 //   3. les tuiles du fond de carte affiché, si son fournisseur l'autorise, dans la
 //      limite qu'il tolère (voir src/map/basemaps.ts et docs/sources.md) ;
 //   4. le GPX lui-même et le manifest des données, pour les retrouver sans réseau.
 // Tout reste dans le navigateur (Cache API). Rien n'est envoyé.
 
 import { NETWORK_TIMEOUT_MS } from '../config';
+import { archiveForTile, type Manifest } from '../coverage/manifest';
+import type { ArchiveReader } from '../coverage/store';
 import type { Sample } from '../gpx/resample';
 import type { BasemapPack, PreloadPolicy } from '../map/basemaps';
 import { corridorTiles, planCorridor, tileUrl, type TileId } from './corridor';
@@ -41,6 +45,10 @@ export interface OfflineInfo {
   name: string;
   /** Date de préparation (ISO). */
   date: string;
+  /** Édition des données enregistrées : noms des archives du manifest de la préparation. */
+  archives: string[];
+  /** Date de ces données (manifest.generated). */
+  generated: string;
   /** Identifiant du fond préchargé, ou null si aucun. */
   basemap: string | null;
   coverageTiles: number;
@@ -56,11 +64,10 @@ export interface PrepareOptions {
   trackName: string;
   gpxText: string;
   fileName: string;
-  /** Manifest des données utilisé par la page, en JSON : il accompagne les tuiles de couverture enregistrées. */
-  manifestJson: string;
-  /** Lit les octets d'une tuile de couverture, undefined si elle n'existe pas. */
-  readCoverageTile: (z: number, x: number, y: number) => Promise<ArrayBuffer | undefined>;
-  coverageMaxZoom: number;
+  /** Manifest des données utilisé par la page : sa copie accompagne les tuiles de couverture enregistrées. */
+  manifest: Manifest;
+  /** Lecture des archives PMTiles en ligne. */
+  readArchive: ArchiveReader;
   basemap: BasemapPack | null;
   onProgress: (done: number, total: number) => void;
   signal?: AbortSignal;
@@ -70,9 +77,9 @@ export function offlineSupported(): boolean {
   return typeof caches !== 'undefined' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
 }
 
-/** Adresse sous laquelle une tuile de couverture est enregistrée. */
-export function coverageTileKey(base: string, z: number, x: number, y: number): string {
-  return new URL(`${base}hors-ligne/couverture/${z}/${x}/${y}`, location.href).href;
+/** Adresse sous laquelle une tuile de couverture est enregistrée : le nom de l'archive en fait partie. */
+export function coverageTileKey(base: string, file: string, z: number, x: number, y: number): string {
+  return new URL(`${base}hors-ligne/couverture/${encodeURIComponent(file)}/${z}/${x}/${y}`, location.href).href;
 }
 
 function trackKey(base: string): string {
@@ -84,7 +91,7 @@ function manifestKey(base: string): string {
   return new URL(`${base}data/manifest.json`, location.href).href;
 }
 
-/** Erreur de préparation dont la cause est expliquée à l'utilisateur (clé de traduction offline.error.<code>). */
+/** Erreur de préparation dont la cause est expliquée à l'utilisateur. */
 export class OfflineError extends Error {
   constructor(readonly code: 'shell') {
     super(`Hors ligne : ${code}`);
@@ -117,7 +124,8 @@ export function basemapCorridor(samples: readonly Sample[], policy: PreloadPolic
 /** Enregistre tout ce qu'il faut pour suivre le tracé sans réseau. */
 export async function prepareOffline(base: string, options: PrepareOptions): Promise<OfflineInfo> {
   const cache = await caches.open(OFFLINE_CACHE);
-  const coverage = coverageCorridor(options.samples, options.coverageMaxZoom);
+  const { manifest } = options;
+  const coverage = coverageCorridor(options.samples, manifest.tiles.maxzoom);
   const plan = options.basemap ? basemapCorridor(options.samples, options.basemap.policy) : { tiles: [], maxZoom: 0, reduced: false };
   const template = options.basemap?.tileTemplates[0];
   const basemapUrls = template ? plan.tiles.map((tile) => tileUrl(template, tile)) : [];
@@ -130,13 +138,20 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
   // 1. La coque du site, enregistrée par le Service Worker : sans elle, rien ne s'ouvrirait sans réseau.
   if (!(await waitForShell(base))) throw new OfflineError('shell');
 
-  // 2. Tuiles de couverture : une entrée par tuile, vide si la tuile n'existe pas.
+  // 2. Tuiles de couverture : une entrée par tuile, vide si la tuile n'existe pas, sous le nom de son archive.
   await pool(
     coverage,
     async (tile) => {
-      const bytes = await options.readCoverageTile(tile.z, tile.x, tile.y);
-      const headers = { 'content-type': 'application/octet-stream', 'x-czb-vide': bytes ? '0' : '1' };
-      await cache.put(coverageTileKey(base, tile.z, tile.x, tile.y), new Response(bytes ?? new ArrayBuffer(0), { headers }));
+      const file = archiveForTile(manifest, tile.z, tile.x, tile.y)?.file;
+      if (file) {
+        const key = coverageTileKey(base, file, tile.z, tile.x, tile.y);
+        // Déjà enregistrée (mise à jour, reprise) : même archive, donc mêmes octets.
+        if (!(await cache.match(key, IGNORE_VARY))) {
+          const bytes = await options.readArchive(file, tile.z, tile.x, tile.y);
+          const headers = { 'content-type': 'application/octet-stream', 'x-czb-vide': bytes ? '0' : '1' };
+          await cache.put(key, new Response(bytes ?? new ArrayBuffer(0), { headers }));
+        }
+      }
       step();
     },
     options.signal,
@@ -173,12 +188,14 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
     trackKey(base),
     new Response(options.gpxText, { headers: { 'content-type': 'application/gpx+xml', 'x-czb-nom': encodeURIComponent(options.fileName) } }),
   );
-  await cache.put(manifestKey(base), new Response(options.manifestJson, { headers: { 'content-type': 'application/json', [LOCAL_COPY_HEADER]: '1' } }));
+  await cache.put(manifestKey(base), new Response(JSON.stringify(manifest), { headers: { 'content-type': 'application/json', [LOCAL_COPY_HEADER]: '1' } }));
   step();
 
   const info: OfflineInfo = {
     name: options.trackName,
     date: new Date().toISOString(),
+    archives: manifest.archives.map((archive) => archive.file),
+    generated: manifest.generated,
     basemap: options.basemap?.policy.allowed ? options.basemap.id : null,
     coverageTiles: coverage.length,
     basemapTiles: storedTiles,
@@ -236,24 +253,50 @@ export function offlineInfo(): OfflineInfo | null {
     const raw = localStorage.getItem(INFO_KEY);
     if (!raw) return null;
     const info = JSON.parse(raw) as OfflineInfo;
-    return typeof info?.name === 'string' && typeof info?.date === 'string' ? info : null;
+    if (typeof info?.name !== 'string' || typeof info?.date !== 'string') return null;
+    // Enregistrement d'une version précédente du site, sans édition des données : il est à refaire.
+    if (!Array.isArray(info.archives)) info.archives = [];
+    if (typeof info.generated !== 'string') info.generated = '';
+    return info;
   } catch {
     return null;
   }
 }
 
+/** Vrai si l'enregistrement a été fait avec une autre édition des données que ce manifest. */
+export function offlineOutdated(info: OfflineInfo, manifest: Pick<Manifest, 'archives'>): boolean {
+  const files = manifest.archives.map((archive) => archive.file);
+  return files.length !== info.archives.length || files.some((file) => !info.archives.includes(file));
+}
+
 /** Octets d'une tuile de couverture enregistrée : undefined si elle n'a pas été enregistrée, null si elle est vide. */
-export async function storedCoverageTile(base: string, z: number, x: number, y: number): Promise<ArrayBuffer | null | undefined> {
+export async function storedCoverageTile(base: string, file: string, z: number, x: number, y: number): Promise<ArrayBuffer | null | undefined> {
   if (typeof caches === 'undefined') return undefined;
   try {
     const cache = await caches.open(OFFLINE_CACHE);
-    const response = await cache.match(coverageTileKey(base, z, x, y), IGNORE_VARY);
+    const response = await cache.match(coverageTileKey(base, file, z, x, y), IGNORE_VARY);
     if (!response) return undefined;
     if (response.headers.get('x-czb-vide') === '1') return null;
     return await response.arrayBuffer();
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Lecteur des tuiles de couverture : la tuile enregistrée pour le hors ligne si elle
+ * existe (même archive, donc mêmes octets), sinon l'archive en ligne. Sans réseau ou
+ * par réseau faible, un tracé préparé ne dépend donc pas du réseau. « stored » dit
+ * si des tuiles de cette archive ont été enregistrées (évite des lectures inutiles).
+ */
+export function withStoredTiles(base: string, online: ArchiveReader, stored: (file: string) => boolean): ArchiveReader {
+  return async (file, z, x, y) => {
+    if (COVERAGE_ZOOMS.includes(z) && stored(file)) {
+      const tile = await storedCoverageTile(base, file, z, x, y);
+      if (tile !== undefined) return tile ?? undefined;
+    }
+    return online(file, z, x, y);
+  };
 }
 
 /** Le tracé enregistré pour le hors ligne, ou null. */

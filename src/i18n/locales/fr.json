@@ -199,6 +199,7 @@
   "offline.basemapNotAllowed": "Le fond « {name} » ne peut pas être enregistré à l'avance : son fournisseur ne le permet pas. Choisissez un autre fond avant de préparer le tracé.",
   "offline.failed_one": "{count} élément du fond n'a pas pu être enregistré.",
   "offline.failed_other": "{count} éléments du fond n'ont pas pu être enregistrés.",
+  "offline.outdated": "Les données de couverture ont été mises à jour depuis cet enregistrement du {date} : mettez-le à jour avant de partir.",
   "offline.clear": "Supprimer les données hors ligne",
   "offline.cleared": "Données hors ligne supprimées",
   "offline.error": "L'enregistrement a échoué. Vérifiez votre connexion et l'espace disponible.",

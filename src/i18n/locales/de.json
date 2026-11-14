@@ -199,6 +199,7 @@
   "offline.basemapNotAllowed": "Die Karte „{name}“ kann nicht im Voraus gespeichert werden: Der Anbieter erlaubt es nicht. Wähle eine andere Karte, bevor du die Route vorbereitest.",
   "offline.failed_one": "{count} Element der Karte konnte nicht gespeichert werden.",
   "offline.failed_other": "{count} Elemente der Karte konnten nicht gespeichert werden.",
+  "offline.outdated": "Die Abdeckungsdaten wurden seit dem Speichern am {date} aktualisiert: Aktualisiere die gespeicherten Daten vor dem Aufbruch.",
   "offline.clear": "Offline-Daten löschen",
   "offline.cleared": "Offline-Daten gelöscht",
   "offline.error": "Das Speichern ist fehlgeschlagen. Prüfe deine Verbindung und den freien Speicherplatz.",

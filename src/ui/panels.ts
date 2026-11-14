@@ -29,7 +29,7 @@ import {
 } from '../i18n';
 import { BASEMAP_ORDER, BASEMAPS, HILLSHADE, type BasemapChoice } from '../map/basemaps';
 import { OUTSIDE_COLOR } from '../map/style';
-import { offlineSupported } from '../offline/manager';
+import { offlineOutdated, offlineSupported } from '../offline/manager';
 import { h, icon, ICONS } from './dom';
 import { elevationProfile } from './profile';
 
@@ -585,6 +585,8 @@ function offlineSection(app: App): Node_ {
         ),
       );
       if (info.failed > 0) parts.push(note(t('offline.failed', { count: info.failed }), 'warning'));
+      // Données publiées depuis : l'enregistrement garde les siennes (et leur manifest), à mettre à jour.
+      if (app.state.manifest && offlineOutdated(info, app.state.manifest)) parts.push(note(t('offline.outdated', { date: formatDataDate(info.date.slice(0, 10)) }), 'warning'));
     }
     parts.push(
       h(

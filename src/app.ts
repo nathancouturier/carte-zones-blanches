@@ -19,7 +19,6 @@ import {
   type ServiceId,
 } from './coverage/manifest';
 import { registerCoverageProtocol, type CoverageRenderState } from './coverage/protocol';
-import { archiveForTile } from './coverage/manifest';
 import { TileStore, type ArchiveReader } from './coverage/store';
 import { sampleCoverage } from './gpx/analyze';
 import { enrichedFileName, enrichGpx } from './gpx/export';
@@ -28,7 +27,7 @@ import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/repo
 import { resample } from './gpx/resample';
 import { getLanguage, setLanguage, t } from './i18n';
 import { autoBasemap, basemapPack, BASEMAPS, type BasemapChoice, type BasemapId } from './map/basemaps';
-import { clearOffline, OfflineError, offlineSupported, prepareOffline, storedCoverageTile, storedTrack } from './offline/manager';
+import { clearOffline, LOCAL_COPY_HEADER, OfflineError, offlineSupported, prepareOffline, storedTrack, withStoredTiles } from './offline/manager';
 import { MapView, type Padding } from './map/mapView';
 import { samplesBounds, trackToGeoJson, zoneToGeoJson, EMPTY_COLLECTION } from './map/trackGeojson';
 import {
@@ -95,9 +94,12 @@ export class App {
 
   private async loadManifest(): Promise<void> {
     let manifest: Manifest;
+    let localCopy = false;
     try {
       const response = await fetch(`${DATA_BASE_URL}manifest.json`, { cache: 'no-cache' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // Copie enregistrée avec le tracé préparé, servie par le Service Worker faute de réseau assez rapide.
+      localCopy = response.headers.get(LOCAL_COPY_HEADER) === '1';
       manifest = parseManifest(await response.json());
     } catch (error) {
       console.warn('Données de couverture indisponibles :', error);
@@ -105,20 +107,8 @@ export class App {
       return;
     }
     const online = createArchiveReader((file) => new PMTiles(`${DATA_BASE_URL}${file}`));
-    // Sans réseau, on sert les tuiles enregistrées par « Préparer le hors ligne ».
-    const read: ArchiveReader = async (file, z, x, y) => {
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        const stored = await storedCoverageTile(import.meta.env.BASE_URL, z, x, y);
-        if (stored !== undefined) return stored ?? undefined;
-      }
-      try {
-        return await online(file, z, x, y);
-      } catch (error) {
-        const stored = await storedCoverageTile(import.meta.env.BASE_URL, z, x, y);
-        if (stored === undefined) throw error;
-        return stored ?? undefined;
-      }
-    };
+    // Les tuiles enregistrées par « Préparer le hors ligne » d'abord : elles ne dépendent pas du réseau.
+    const read = withStoredTiles(import.meta.env.BASE_URL, online, (file) => this.state.offline.info?.archives.includes(file) === true);
     this.readArchive = online;
     const decoder = createTileDecoder((reason) => console.warn(`Décodage des tuiles en JavaScript : ${reason}`));
     this.tileStore = new TileStore(manifest, read, decoder);
@@ -127,8 +117,8 @@ export class App {
     this.rebuildTables();
     await this.applyStyle();
     this.scheduleViewUpdate();
-    // Sans réseau, on recharge tout seul le tracé préparé pour le hors ligne.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false && !this.state.track) void this.restoreOfflineTrack();
+    // Sans réseau (ou presque), on recharge tout seul le tracé préparé pour le hors ligne.
+    if ((localCopy || (typeof navigator !== 'undefined' && navigator.onLine === false)) && !this.state.track) void this.restoreOfflineTrack();
   }
 
   /** Écarte les réglages mémorisés qui ne correspondent plus aux données. */
@@ -439,12 +429,8 @@ export class App {
         trackName: track.parsed.name ?? track.fileName,
         gpxText: track.xml,
         fileName: track.fileName,
-        manifestJson: JSON.stringify(manifest),
-        coverageMaxZoom: manifest.tiles.maxzoom,
-        readCoverageTile: async (z, x, y) => {
-          const archive = archiveForTile(manifest, z, x, y);
-          return archive ? readArchive(archive.file, z, x, y) : undefined;
-        },
+        manifest,
+        readArchive,
         basemap: basemapPack(activeBasemap, this.mapView.currentVectorStyle()),
         onProgress: (done, total) => {
           if (!abort.signal.aborted) this.store.set({ offline: { ...this.state.offline, progress: total > 0 ? done / total : 1 } });

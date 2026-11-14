@@ -8,77 +8,13 @@ import vm from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { shellComplete } from '../src/offline/manager';
 import { injectShell, shellList, type ShellList } from '../src/offline/shell';
+import { keyOf, makeCaches, type FakeCaches } from './fakeCaches';
 
 const ORIGIN = 'https://exemple.github.io';
 const BASE = `${ORIGIN}/carte-zones-blanches/`;
 const SOURCE = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
 /** Délai d'attente du réseau donné au Service Worker dans ces tests, en millisecondes. */
 const DELAI = 40;
-
-interface Entry {
-  body: ArrayBuffer;
-  status: number;
-  headers: [string, string][];
-}
-
-const keyOf = (r: unknown): string => String(typeof r === 'string' ? r : (r as { url: string }).url).split('#')[0];
-
-/** Cache API factice, partagée par toutes les versions du Service Worker. */
-function makeCaches(network: (request: unknown) => Promise<Response>) {
-  const store = new Map<string, Map<string, Entry>>();
-  const toResponse = (e: Entry): Response => {
-    const r = new Response(e.body.slice(0), { status: e.status, headers: e.headers });
-    Object.defineProperty(r, 'type', { value: 'basic' });
-    return r;
-  };
-  const entry = async (res: Response): Promise<Entry> => ({ body: await res.arrayBuffer(), status: res.status, headers: [...res.headers] });
-  class FakeCache {
-    constructor(private readonly map: Map<string, Entry>) {}
-    async put(req: unknown, res: Response): Promise<void> {
-      this.map.set(keyOf(req), await entry(res));
-    }
-    async addAll(requests: unknown[]): Promise<void> {
-      // Comme le vrai addAll : tout ou rien.
-      const responses = await Promise.all(requests.map((r) => network(r)));
-      if (responses.some((r) => !r.ok)) throw new TypeError('addAll : réponse en erreur');
-      const entries = await Promise.all(responses.map(entry));
-      requests.forEach((r, i) => this.map.set(keyOf(r), entries[i]));
-    }
-    async match(req: unknown): Promise<Response | undefined> {
-      const e = this.map.get(keyOf(req));
-      return e ? toResponse(e) : undefined;
-    }
-    async keys(): Promise<{ url: string }[]> {
-      return [...this.map.keys()].map((url) => ({ url }));
-    }
-    async delete(req: unknown): Promise<boolean> {
-      return this.map.delete(keyOf(req));
-    }
-  }
-  return {
-    store,
-    async open(name: string) {
-      if (!store.has(name)) store.set(name, new Map());
-      return new FakeCache(store.get(name)!);
-    },
-    async match(req: unknown) {
-      for (const m of store.values()) {
-        const e = m.get(keyOf(req));
-        if (e) return toResponse(e);
-      }
-      return undefined;
-    },
-    async has(name: string) {
-      return store.has(name);
-    },
-    async delete(name: string) {
-      return store.delete(name);
-    },
-    async keys() {
-      return [...store.keys()];
-    },
-  };
-}
 
 interface Deployment {
   files: Map<string, string>;
@@ -122,7 +58,7 @@ function makeServer() {
   return { network, state, deploy: (d: Deployment) => (files = d.files) };
 }
 
-type Caches = ReturnType<typeof makeCaches>;
+type Caches = FakeCaches;
 
 /** Une version du Service Worker : celle que la construction de « deployment » a écrite. */
 function serviceWorker(caches: Caches, network: (req: unknown) => Promise<Response>, deployment: Deployment) {
