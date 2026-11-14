@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { packMeta, SOURCE_ESTIMATED, SOURCE_OFFICIAL_OPERATOR } from '../src/coverage/codec';
-import { CLASS_OUTSIDE, estimatedFlags } from '../src/gpx/analyze';
+import { CLASS_OUTSIDE, CLASS_UNKNOWN, estimatedFlags } from '../src/gpx/analyze';
 import type { Sample } from '../src/gpx/resample';
 import { DEFAULT_LANG, setLanguage } from '../src/i18n';
 import { profileColumns, profileKeyIndex, profilePointText, profileSummary } from '../src/ui/profile';
@@ -74,6 +74,10 @@ describe('profil altimétrique : portions estimées, clavier, lecteurs d\'écran
     const columns = profileColumns(track(6), new Uint8Array([3, 3, 0, 0, 3, 3]), 300, new Uint8Array([0, 0, 1, 1, 0, 0]));
     expect(columns.map((c) => c.estimated)).toEqual([false, false, true, true, false]);
     expect(profileColumns(track(6), null).every((c) => !c.estimated)).toBe(true);
+    // Sans niveau pour le service choisi (appels et SMS en Andorre), rien n'est estimé : pas de hachures,
+    // comme sur la carte et dans le rapport (sources-24).
+    const sansNiveau = new Uint8Array([3, CLASS_UNKNOWN, CLASS_UNKNOWN, CLASS_UNKNOWN, 3, 3]);
+    expect(profileColumns(track(6), sansNiveau, 300, new Uint8Array([0, 1, 1, 1, 0, 0])).map((c) => c.estimated)).toEqual([false, false, false, false, false]);
   });
 
   it('dit, pour un point, le km, l\'altitude, la couverture et si elle est estimée', () => {

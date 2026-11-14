@@ -83,15 +83,17 @@ export function profileColumns(
     // La colonne va jusqu'au premier point situé au-delà de sa limite, pour que les colonnes se touchent.
     // Comme sur la carte, chaque intervalle prend la couleur de son point de départ : un point n'est donc
     // compté que dans une seule colonne (sauf le tout dernier, rattaché à la dernière).
+    // Seul un point qui a un niveau pour le service choisi peut être dit estimé : là où la source estimée
+    // ne dit rien de ce service (appels et SMS en Andorre), pas de hachures, comme sur la carte.
     while (i < n - 1 && samples[i].dist < limit) {
       const here = classes ? classes[i] : -1;
       if (severity(here) < severity(cls)) cls = here;
-      if (estimated?.[i]) partlyEstimated = true;
+      if (estimated?.[i] && LEVEL_KEYS[here]) partlyEstimated = true;
       i++;
     }
     if (i === first) continue;
     if (i === n - 1 && classes && severity(classes[i]) < severity(cls)) cls = classes[i];
-    if (i === n - 1 && estimated?.[i]) partlyEstimated = true;
+    if (i === n - 1 && estimated?.[i] && classes && LEVEL_KEYS[classes[i]]) partlyEstimated = true;
     columns.push({
       first,
       last: i,
