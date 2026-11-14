@@ -409,6 +409,12 @@ try {
     const hauteur = await page.evaluate(() => document.querySelector('.panel').getBoundingClientRect().height);
     const reduits = await reperes();
     controle('interface : rapport réduit à son titre, tracé visible au-dessus', hauteur < 100 && reduits.length === 2 && reduits.every(Boolean), `panneau de ${Math.round(hauteur)} px`);
+    // La carte se voit : ses mentions aussi, au-dessus du panneau réduit (ni dessous, ni dépassant à moitié).
+    const piedReduit = await page.evaluate(() => ({
+      bas: Math.round(document.querySelector('.attribution').getBoundingClientRect().bottom),
+      panneau: Math.round(document.querySelector('.panel').getBoundingClientRect().top),
+    }));
+    controle('interface : pied de carte au-dessus du rapport réduit', piedReduit.bas <= piedReduit.panneau, `bas du pied de carte à ${piedReduit.bas} px, haut du panneau à ${piedReduit.panneau} px`);
     await capture(page, '7b-telephone-fr-rapport-reduit');
 
     // Recherche : Entrée juste après avoir complété « Bri » en « Brides » choisit Brides-les-Bains, pas Briançon.

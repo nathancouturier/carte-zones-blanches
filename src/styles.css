@@ -390,6 +390,13 @@ a,
   .panel--collapsed .panel__body {
     display: none;
   }
+
+  /* La carte se voit, ses mentions aussi : le pied de carte passe au-dessus du panneau réduit
+     (titre de 60 px : boutons de 44 px et 8 px de marge en haut et en bas), au lieu d'être
+     caché dessous ou d'en dépasser à moitié. */
+  .panel--collapsed:not([hidden]) ~ .attribution {
+    bottom: calc(var(--safe-bottom) + var(--bar-height) + 16px + 60px + 8px);
+  }
 }
 
 /* --- Contenu des panneaux -------------------------------------------------- */
