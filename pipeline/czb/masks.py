@@ -7,7 +7,9 @@ long des frontières :
 - là où deux contours se recouvrent, le pays le plus haut dans config.yaml garde le pixel ;
 - les petits interstices fermés entre deux contours sont donnés au pays le moins
   prioritaire qui les touche (fonction fill_gaps), sinon un tracé qui passe la
-  frontière traverserait quelques mètres « hors zone ».
+  frontière traverserait quelques mètres « hors zone ». Un interstice est bordé par
+  au moins deux entités de contour (deux pays, ou deux régions d'un même pays) : un
+  trou bordé par une seule entité est une enclave, il reste vide.
 """
 
 from __future__ import annotations
@@ -24,7 +26,8 @@ from .net import download, gunzip
 from .raster import geometry_windows, make_valid, transformer_to_mercator
 
 #: Les trous fermés plus grands que ce seuil (en hectares au sol) sont de vraies enclaves ou des lacs : ils restent vides.
-#: Mesuré sur les contours réels : le plus grand interstice fait 28,5 ha, la plus petite enclave 264 ha.
+#: Mesuré sur les contours réels : le plus grand interstice fait 28,5 ha, la plus petite enclave 264 ha, en dehors de deux
+#: morceaux de Lombardie de 18 et 19 ha enclavés dans le Piémont, que fill_gaps laisse vides parce qu'une seule entité les borde.
 GAP_MAX_HA = 100.0
 GAP_TOUCH_M = 0.01
 
@@ -249,11 +252,24 @@ def country_unions(geoms: dict[str, list[ogr.Geometry]], order: list[str]) -> di
     return {iso: _union(geoms[iso]) for iso in order if geoms.get(iso)}
 
 
-def fill_gaps(geoms: dict[str, list[ogr.Geometry]], order: list[str], max_ha: float = GAP_MAX_HA, unions: dict[str, ogr.Geometry] | None = None) -> dict[str, list[ogr.Geometry]]:
-    """Trouve les trous fermés de moins de max_ha (surface au sol) dans l'union des masques.
+def _touches(prepared: tuple[tuple[float, float, float, float], Any], envelope: tuple[float, float, float, float], probe: ogr.Geometry) -> bool:
+    """Vrai si la géométrie préparée (avec son enveloppe) touche le trou épaissi « probe », d'enveloppe « envelope »."""
+    (m0, m1, n0, n1), prep = prepared
+    x0, x1, y0, y1 = envelope
+    if x1 + GAP_TOUCH_M < m0 or x0 - GAP_TOUCH_M > m1 or y1 + GAP_TOUCH_M < n0 or y0 - GAP_TOUCH_M > n1:
+        return False
+    return bool(prep.Intersects(probe))
 
-    geoms : polygones en EPSG:3857 par pays ; order : pays par priorité décroissante.
-    Chaque trou va au pays le moins prioritaire qui le touche : le contour du pays
+
+def fill_gaps(geoms: dict[str, list[ogr.Geometry]], order: list[str], max_ha: float = GAP_MAX_HA, unions: dict[str, ogr.Geometry] | None = None) -> dict[str, list[ogr.Geometry]]:
+    """Trouve les interstices : trous fermés de moins de max_ha (surface au sol) dans l'union des masques.
+
+    geoms : polygones en EPSG:3857 par pays, une géométrie par entité du contour (département, région,
+    communauté) ; order : pays par priorité décroissante.
+    Un interstice est bordé par au moins deux entités : deux pays, ou deux entités d'un même pays. Un trou bordé
+    par une seule entité est un anneau intérieur de son contour, c'est-à-dire une enclave (par exemple un morceau
+    de Lombardie dans le Piémont, hors du périmètre) : il reste vide, quelle que soit sa taille.
+    Chaque interstice va au pays le moins prioritaire qui le touche : le contour du pays
     prioritaire fait foi, c'est donc l'autre qui s'étend jusqu'à lui.
     Renvoie les trous par pays, sans modifier geoms.
     """
@@ -262,12 +278,15 @@ def fill_gaps(geoms: dict[str, list[ogr.Geometry]], order: list[str], max_ha: fl
     if not per_country:
         return holes
     prepared = {iso: (g.GetEnvelope(), g.CreatePreparedGeometry()) for iso, g in per_country.items()}
+    # Entités de chaque pays, préparées à la première demande (seulement pour un trou qu'un seul pays borde).
+    entities: dict[str, list[tuple[tuple[float, float, float, float], Any]]] = {}
     everything = _union(list(per_country.values()))
     for poly in _polygons(everything):
         for i in range(1, poly.GetGeometryCount()):
             hole = ogr.Geometry(ogr.wkbPolygon)
             hole.AddGeometry(poly.GetGeometryRef(i).Clone())
-            x0, x1, y0, y1 = hole.GetEnvelope()
+            envelope = hole.GetEnvelope()
+            x0, x1, y0, y1 = envelope
             # Surface au sol : en Mercator, les longueurs sont dilatées de 1 / cos(latitude).
             lat = 2 * math.atan(math.exp((y0 + y1) / 2 / EARTH_RADIUS)) - math.pi / 2
             if hole.GetArea() * math.cos(lat) ** 2 / 1e4 >= max_ha:
@@ -275,15 +294,16 @@ def fill_gaps(geoms: dict[str, list[ogr.Geometry]], order: list[str], max_ha: fl
             # Le bord d'un trou est calculé par l'union : il peut être à un milliardième de mètre du contour
             # d'origine. On teste donc le contact avec le trou épaissi d'un centimètre.
             probe = hole.Buffer(GAP_TOUCH_M)
-            for iso in reversed(order):
-                if iso not in prepared:
-                    continue
-                (m0, m1, n0, n1), prep = prepared[iso]
-                if x1 + GAP_TOUCH_M < m0 or x0 - GAP_TOUCH_M > m1 or y1 + GAP_TOUCH_M < n0 or y0 - GAP_TOUCH_M > n1:
-                    continue
-                if prep.Intersects(probe):
-                    holes[iso].append(hole)
-                    break
+            touching = [iso for iso in reversed(order) if iso in prepared and _touches(prepared[iso], envelope, probe)]
+            if not touching:
+                continue
+            if len(touching) == 1:
+                iso = touching[0]
+                if iso not in entities:
+                    entities[iso] = [(g.GetEnvelope(), (g if g.IsValid() else make_valid(g)).CreatePreparedGeometry()) for g in geoms.get(iso, [])]
+                if sum(1 for entity in entities[iso] if _touches(entity, envelope, probe)) < 2:
+                    continue  # une seule entité autour : une enclave, pas un interstice
+            holes[touching[0]].append(hole)
     return holes
 
 

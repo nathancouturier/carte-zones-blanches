@@ -36,9 +36,9 @@ def _srs(epsg: int) -> osr.SpatialReference:
     return srs
 
 
-def _polygon(points: list[tuple[float, float]], hole: list[tuple[float, float]] | None = None) -> ogr.Geometry:
+def _polygon(points: list[tuple[float, float]], *holes: list[tuple[float, float]]) -> ogr.Geometry:
     poly = ogr.Geometry(ogr.wkbPolygon)
-    for ring_points in [points] + ([hole] if hole else []):
+    for ring_points in [points, *holes]:
         ring = ogr.Geometry(ogr.wkbLinearRing)
         for x, y in ring_points + [ring_points[0]]:
             ring.AddPoint_2D(x, y)
@@ -55,10 +55,12 @@ def _y(row: float) -> float:
 
 
 def west_country() -> ogr.Geometry:
-    """Pays prioritaire, à l'ouest, avec une enclave de 2 km de côté qui doit rester vide."""
+    """Pays prioritaire, à l'ouest, avec deux enclaves qui doivent rester vides : l'une de 2 km de côté (400 ha),
+    l'autre de 300 m de côté (9 ha) : petite, mais bordée par ce seul pays, ce n'est pas un interstice."""
     outer = [(_x(10), _y(110)), (_x(BORDER_COL), _y(110)), (_x(BORDER_COL), _y(10)), (_x(10), _y(10))]
     enclave = [(_x(40), _y(70)), (_x(40), _y(50)), (_x(60), _y(50)), (_x(60), _y(70))]
-    return _polygon(outer, enclave)
+    small = [(_x(75), _y(91)), (_x(75), _y(88)), (_x(78), _y(88)), (_x(78), _y(91))]
+    return _polygon(outer, enclave, small)
 
 
 def east_country() -> ogr.Geometry:
@@ -209,20 +211,49 @@ def _to_mercator(geom: ogr.Geometry) -> ogr.Geometry:
     return out
 
 
+def _ground_ha(geom: ogr.Geometry) -> float:
+    x0, x1, y0, y1 = geom.GetEnvelope()
+    lat = 2 * math.atan(math.exp((y0 + y1) / 2 / 6378137.0)) - math.pi / 2
+    return geom.GetArea() * math.cos(lat) ** 2 / 1e4
+
+
 def test_fill_gaps_gives_small_holes_to_the_lower_priority_country():
     geoms = {"CH": [_to_mercator(west_country())], "IT": [_to_mercator(east_country())]}
     holes = fill_gaps(geoms, ["CH", "IT"])
-    # L'interstice de 60 ha va au pays le moins prioritaire ; l'enclave de 400 ha reste vide.
+    # L'interstice de 60 ha va au pays le moins prioritaire ; les enclaves de 400 et 9 ha restent vides.
     assert len(holes["IT"]) == 1 and holes["CH"] == []
-    x0, x1, y0, y1 = holes["IT"][0].GetEnvelope()
-    lat = 2 * math.atan(math.exp((y0 + y1) / 2 / 6378137.0)) - math.pi / 2
-    ground_ha = holes["IT"][0].GetArea() * math.cos(lat) ** 2 / 1e4
-    assert 55 < ground_ha < 65
-    # Avec un seuil plus bas, l'interstice n'est plus comblé ; avec un seuil très haut, l'enclave l'est aussi.
+    assert 55 < _ground_ha(holes["IT"][0]) < 65
+    # Avec un seuil plus bas, l'interstice n'est plus comblé. Avec un seuil très haut, les enclaves restent vides :
+    # une seule entité les borde.
     assert fill_gaps(geoms, ["CH", "IT"], max_ha=50)["IT"] == []
-    assert len(fill_gaps(geoms, ["CH", "IT"], max_ha=1000)["CH"]) == 1
+    high = fill_gaps(geoms, ["CH", "IT"], max_ha=1000)
+    assert high["CH"] == [] and len(high["IT"]) == 1
     # L'ordre de priorité décide du bénéficiaire.
     assert len(fill_gaps(geoms, ["IT", "CH"])["CH"]) == 1
+
+
+def test_fill_gaps_needs_two_mask_entities():
+    """Un trou bordé par une seule entité de contour reste vide, même petit (zone-03 : deux morceaux de Lombardie
+    enclavés dans le Piémont). Entre deux entités d'un même pays (deux régions, deux communautés), il est comblé."""
+    outer = [(_x(10), _y(110)), (_x(110), _y(110)), (_x(110), _y(10)), (_x(10), _y(10))]
+    # Une région percée d'un trou de 400 m de côté (16 ha) : l'enclave d'une région hors du périmètre.
+    region = _polygon(outer, [(_x(48), _y(52)), (_x(48), _y(48)), (_x(52), _y(48)), (_x(52), _y(52))])
+    assert fill_gaps({"IT": [_to_mercator(region)]}, ["IT"]) == {"IT": []}
+    # Deux régions voisines qui laissent entre elles le même trou, à cheval sur leur limite : c'est un interstice.
+    west = _polygon([(_x(10), _y(110)), (_x(50), _y(110)), (_x(50), _y(52)), (_x(48), _y(52)), (_x(48), _y(48)), (_x(50), _y(48)), (_x(50), _y(10)), (_x(10), _y(10))])
+    east = _polygon([(_x(50), _y(110)), (_x(110), _y(110)), (_x(110), _y(10)), (_x(50), _y(10)), (_x(50), _y(48)), (_x(52), _y(48)), (_x(52), _y(52)), (_x(50), _y(52))])
+    two = {"ES": [_to_mercator(west), _to_mercator(east)]}
+    holes = fill_gaps(two, ["ES"])
+    assert len(holes["ES"]) == 1 and 15 < _ground_ha(holes["ES"][0]) < 17
+    assert fill_gaps(two, ["ES"], max_ha=10) == {"ES": []}  # le seuil de taille vaut toujours
+    # Les deux mêmes régions en une seule entité (un multipolygone) : une seule entité borde le trou, il reste vide.
+    single = ogr.Geometry(ogr.wkbMultiPolygon)
+    single.AddGeometry(west)
+    single.AddGeometry(east)
+    assert fill_gaps({"ES": [_to_mercator(single)]}, ["ES"]) == {"ES": []}
+    # Un pays voisin qui touche le trou suffit : deux pays, deux entités.
+    holes = fill_gaps({"FR": [_to_mercator(region)], "ES": [_to_mercator(_polygon([(_x(50), _y(52)), (_x(50), _y(48)), (_x(52), _y(48)), (_x(52), _y(52))]))]}, ["FR", "ES"])
+    assert holes["FR"] == [] and len(holes["ES"]) == 1 and 7 < _ground_ha(holes["ES"][0]) < 9
 
 
 def test_mask_area_guard(border: dict, tmp_path: Path):
@@ -236,8 +267,8 @@ def test_mask_area_guard(border: dict, tmp_path: Path):
     cfg["scopes"]["ouest"] = {"countries": ["CH"]}
     ctx = BuildContext(cfg=cfg, scope_name="ouest", services=["data"], workdir=tmp_path, outdir=tmp_path / "out", grid=grid_from_config(cfg))
     geoms = load_mask_geometries(ctx)
-    # Le pays de l'ouest : 10 km sur 10 km, moins une enclave de 2 km de côté.
-    assert abs(ground_area_km2(geoms["CH"]) - 96.0) < 0.5
+    # Le pays de l'ouest : 10 km sur 10 km, moins une enclave de 2 km de côté et une autre de 300 m.
+    assert abs(ground_area_km2(geoms["CH"]) - 95.91) < 0.5
     cfg["countries"]["CH"]["mask"]["expect_area_km2"] = [90, 100]
     assert len(load_mask_geometries(ctx)["CH"]) == 1
     cfg["countries"]["CH"]["mask"]["expect_area_km2"] = [150, 200]
@@ -404,6 +435,9 @@ def test_border_gap_is_filled_and_extrapolated(built: dict):
         # L'enclave du pays prioritaire reste hors zone, la zone sans couverture reste sans couverture.
         assert pixel(_x(50), _y(60))[3] == 0
         assert pixel(_x(30), _y(25)) == (0, 0, (1 << 4) | 2, 255)
+        # La petite enclave (9 ha) n'est pas un interstice : une seule entité la borde, elle reste hors zone.
+        assert pixel(_x(76.5), _y(89.5))[3] == 0
+        assert pixel(_x(73), _y(89.5)) == covered_ch and pixel(_x(80), _y(89.5)) == covered_ch
     finally:
         reader.close()
     assert verify(built["out"]) == 0
