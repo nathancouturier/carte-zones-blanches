@@ -606,15 +606,19 @@ describe('rapport en texte', () => {
     const andorra = textOf(synthetic(repeat(2, 30), { country: 5, sourceType: 2 }), 'voice');
     expect(andorra).toContain('Aucune donnée pour ce service sur ce parcours.');
     expect(andorra).toContain('Sans données pour ce service : 0,6 km');
-    expect(andorra).not.toContain('hors de la zone couverte');
-    // Tout le tracé hors de la zone couverte par les données.
+    expect(andorra).not.toMatch(/hors zone/i);
+    // Tout le tracé hors de la zone couverte par les données : « hors zone » (gpx-07).
     const outside = textOf(synthetic(repeat('out' as const, 30)), 'data');
-    expect(outside).toContain('Le tracé est entièrement hors de la zone couverte par les données.');
+    expect(outside).toContain('Le tracé est entièrement hors zone (hors des données de couverture).');
     expect(outside).not.toContain('Aucune donnée pour ce service');
+    // Une partie seulement : la longueur hors zone est dite, exclue des pourcentages.
+    const partly = textOf(synthetic([...repeat(2, 20), ...repeat('out' as const, 20)]), 'data');
+    expect(partly).toContain('Bonne couverture : 100 % (0,4 km)');
+    expect(partly).toContain('Hors zone (hors des données de couverture) : 0,4 km, exclus des pourcentages.');
     // Points tous confondus : le tracé ne mesure rien.
     const same = textOf(synthetic([3]), 'data');
     expect(same).toContain('Le tracé a une longueur nulle : tous ses points sont au même endroit.');
-    expect(same).not.toContain('hors de la zone couverte');
+    expect(same).not.toMatch(/hors zone/i);
   });
 
   it('donne une longueur cohérente avec les bornes affichées', () => {

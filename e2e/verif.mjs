@@ -872,13 +872,41 @@ try {
       await importer(page, fichier);
       const texte = await page.locator('.report-text').inputValue();
       controle(`étranger : ${nom} traverse la France et l'${pays}`, texte.includes(`Pays traversés : France, ${pays}`), (texte.match(/Pays traversés[^\n]*/) ?? [''])[0]);
-      controle(`étranger : ${nom}, la couverture est lue des deux côtés`, new RegExp(`Opérateur : [^\\n]*\\(France\\)[^\\n]*\\(${pays}\\)`).test(texte) && !texte.includes('Hors de la zone couverte par les données'), (texte.match(/Opérateur[^\n]*/) ?? [''])[0]);
+      controle(`étranger : ${nom}, la couverture est lue des deux côtés`, new RegExp(`Opérateur : [^\\n]*\\(France\\)[^\\n]*\\(${pays}\\)`).test(texte) && !texte.includes('Hors zone'), (texte.match(/Opérateur[^\n]*/) ?? [''])[0]);
       controle(`étranger : ${nom}, source qui dit seulement couvert ou non`, texte.includes(`${pays} : les données indiquent seulement si un lieu est couvert ou non.`));
       if (zoneAttendue) controle(`étranger : ${nom}, zone blanche côté ${pays}`, zoneAttendue.test(texte), (texte.match(zoneAttendue) ?? [''])[0]);
       controle(`étranger : ${nom}, aucune erreur JavaScript`, suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
       await capture(page, `10-ordinateur-fr-${nom.replace('.gpx', '')}`);
       await contexte.close();
     }
+  }
+
+  // --- 4b. Ordinateur, français : un tracé qui sort des données (Strasbourg, puis Kehl en Allemagne) ---
+  // La partie allemande est « hors zone » dans le rapport (panneau et texte) et dans le profil (gpx-07).
+  if (paysPublies.includes('FR') && ouest <= 7.75 && 7.75 <= est && sud <= 48.57 && 48.57 <= nord) {
+    const rhin = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="verif" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Passerelle des Deux Rives</name><trkseg>
+<trkpt lat="48.5734" lon="7.7521"><ele>142</ele></trkpt><trkpt lat="48.5680" lon="7.7800"><ele>139</ele></trkpt>
+<trkpt lat="48.5684" lon="7.7990"><ele>137</ele></trkpt><trkpt lat="48.5700" lon="7.8150"><ele>138</ele></trkpt><trkpt lat="48.5740" lon="7.8300"><ele>139</ele></trkpt>
+</trkseg></trk></gpx>`);
+    const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '');
+    await importer(page, { name: 'rhin.gpx', mimeType: 'application/gpx+xml', buffer: rhin });
+    const texte = await page.locator('.report-text').inputValue();
+    const panneau = await page.evaluate(() => document.querySelector('.panel[data-panel="report"] .panel__body')?.textContent ?? '');
+    const horsZone = /Hors zone \(hors des données de couverture\) : \d+,\d km, exclus des pourcentages\./;
+    controle('hors zone : la partie hors des données est dite « hors zone », dans le texte et le panneau du rapport', horsZone.test(texte) && horsZone.test(panneau.replace(/\s/g, ' ')), (texte.match(/Hors zone[^\n]*/) ?? ['rien'])[0]);
+    const profil = page.locator('.profile__svg');
+    let lecture = '';
+    if (await profil.count()) {
+      await profil.scrollIntoViewIfNeeded();
+      const boite = await profil.boundingBox();
+      await page.mouse.move(boite.x + boite.width - 3, boite.y + boite.height / 2);
+      await page.waitForTimeout(400);
+      lecture = (await page.locator('.profile__readout').textContent()) ?? '';
+    }
+    controle('hors zone : le profil dit « hors zone » au bout du tracé', /hors zone \(hors des données de couverture\)$/.test(lecture), lecture || 'pas de profil');
+    controle('hors zone : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
   }
 } finally {
   await navigateur.close();

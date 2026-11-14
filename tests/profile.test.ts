@@ -82,6 +82,8 @@ describe('profil altimétrique : portions estimées, clavier, lecteurs d\'écran
     expect(profilePointText(sample, 0, true).replace(/\s/g, ' ')).toBe('km 12,4, altitude 1 850 m, Pas de couverture, estimée');
     expect(profilePointText({ ...sample, ele: null }, 3, false)).toBe('km\u00a012,4, altitude inconnue, Très bonne couverture');
     expect(profilePointText(sample, -1, false).replace(/\s/g, ' ')).toBe('km 12,4, altitude 1 850 m');
+    // Hors de la zone couverte par les données : « hors zone », comme dans le rapport (gpx-07).
+    expect(profilePointText(sample, CLASS_OUTSIDE, false).replace(/\s/g, ' ')).toBe('km 12,4, altitude 1 850 m, hors zone (hors des données de couverture)');
   });
 
   it('se parcourt au clavier : flèches, pages, Début et Fin', () => {
