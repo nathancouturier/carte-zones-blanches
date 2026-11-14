@@ -30,6 +30,16 @@ const GPX_SECOURS = `<?xml version="1.0" encoding="UTF-8"?>
 <trkpt lat="44.9170" lon="6.4160"><ele>1874</ele></trkpt><trkpt lat="44.9380" lon="6.4000"><ele>2542</ele></trkpt>
 </trkseg></trk></gpx>`;
 
+// GPX « difficile », lu comme un GPX ordinaire : encodé en ISO-8859-1, précédé d'un saut de ligne,
+// éléments préfixés (gpx:trk), un point (0, 0) dû à une perte du signal et une altitude manquante.
+const GPX_DIFFICILE = Buffer.from(`
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<gpx:gpx version="1.1" creator="verif" xmlns:gpx="http://www.topografix.com/GPX/1/1"><gpx:trk><gpx:name>Tour du Râteau</gpx:name><gpx:trkseg>
+<gpx:trkpt lat="44.8460" lon="6.4890"><gpx:ele>1160</gpx:ele></gpx:trkpt><gpx:trkpt lat="44.8760" lon="6.4420"><gpx:ele>1450</gpx:ele></gpx:trkpt>
+<gpx:trkpt lat="0" lon="0"><gpx:ele>0</gpx:ele></gpx:trkpt>
+<gpx:trkpt lat="44.9170" lon="6.4160"/><gpx:trkpt lat="44.9380" lon="6.4000"><gpx:ele>2542</gpx:ele></gpx:trkpt>
+</gpx:trkseg></gpx:trk></gpx:gpx>`, 'latin1');
+
 function gpx(nom) {
   const chemin = fileURLToPath(new URL(`../samples/${nom}`, import.meta.url));
   if (existsSync(chemin)) return { name: nom, mimeType: 'application/gpx+xml', buffer: readFileSync(chemin) };
@@ -168,6 +178,27 @@ try {
     } else {
       console.log('INFO  le service Appels et SMS n\'est pas publié dans cette release');
     }
+
+    // GPX « difficile » : accents, point aberrant écarté, dénivelé malgré une altitude manquante, export en UTF-8.
+    // S'il était refusé, le message apparaîtrait dans le panneau GPX : on l'attend aussi, pour échouer proprement.
+    await page.setInputFiles('input[type=file]', { name: 'difficile.gpx', mimeType: 'application/gpx+xml', buffer: GPX_DIFFICILE });
+    await page.waitForSelector('.panel[data-panel="report"] .stats, .panel[data-panel="gpx"] .note--warning', { timeout: 60000 }).catch(() => null);
+    await page.waitForTimeout(1500);
+    const lu = await page.evaluate(() => ({
+      nom: document.querySelector('.panel[data-panel="report"] .track-name')?.textContent ?? '',
+      faits: document.querySelector('.panel[data-panel="report"] .facts')?.textContent ?? '',
+      notes: [...document.querySelectorAll('.panel .note')].map((n) => n.textContent).join(' | '),
+    }));
+    controle('fr : GPX en ISO-8859-1, préfixé, précédé d\'un saut de ligne, lu avec ses accents', lu.nom === 'Tour du Râteau', lu.nom || lu.notes);
+    controle('fr : point (0, 0) écarté et signalé', /point aberrant/.test(lu.notes) && /Distance\s*12,6\s*km/.test(lu.faits), `${lu.faits.slice(0, 18)} | ${lu.notes}`);
+    controle('fr : dénivelé annoncé malgré une altitude manquante', /Dénivelé/.test(lu.faits), lu.faits.slice(0, 60));
+    await capture(page, '5c-ordinateur-fr-gpx-difficile');
+    const [enrichi] = await Promise.all([
+      page.waitForEvent('download', { timeout: 15000 }).catch(() => null),
+      page.click('[data-focus="gpx-enrichi"]', { timeout: 5000 }).catch(() => null),
+    ]);
+    const exporte = enrichi ? readFileSync(await enrichi.path()).toString('utf-8') : '';
+    controle('fr : GPX enrichi écrit et déclaré en UTF-8', exporte.startsWith('<?xml version="1.0" encoding="UTF-8"?>') && exporte.includes('Tour du Râteau'), exporte.slice(0, 50));
     controle('fr : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
