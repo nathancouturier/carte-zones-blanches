@@ -11,6 +11,7 @@
 import {
   ELEVATION_THRESHOLD_M,
   SAMPLING_CONCURRENCY,
+  SEGMENT_JOIN_MAX_M,
   WHITE_ZONE_MERGE_GAP_M,
   WHITE_ZONE_MIN_LENGTH_M,
 } from '../config';
@@ -176,20 +177,22 @@ export interface WhiteZone {
 export interface ZoneOptions {
   minLength?: number;
   mergeGap?: number;
+  joinGap?: number;
 }
 
-/** Vrai si le parcours est interrompu entre les points i et i+1 (segments éloignés l'un de l'autre). */
-function isBreak(samples: readonly Sample[], i: number, mergeGap: number): boolean {
+/** Vrai si le parcours est interrompu entre les points i et i+1 (segments éloignés de plus de « joinGap » mètres). */
+function isBreak(samples: readonly Sample[], i: number, joinGap: number): boolean {
   const a = samples[i];
   const b = samples[i + 1];
   if (a.seg === b.seg) return false;
-  return distance(a.lon, a.lat, b.lon, b.lat) > mergeGap;
+  return distance(a.lon, a.lat, b.lon, b.lat) > joinGap;
 }
 
 /**
  * Regroupe les points sans couverture en zones blanches.
  * - Deux zones séparées par moins de « mergeGap » mètres de couverture sont fusionnées.
  * - Une zone de moins de « minLength » mètres est ignorée.
+ * - Une zone ne franchit pas une interruption du parcours (segments à plus de « joinGap » mètres).
  */
 export function findWhiteZones(
   samples: readonly Sample[],
@@ -199,6 +202,7 @@ export function findWhiteZones(
 ): WhiteZone[] {
   const minLength = options.minLength ?? WHITE_ZONE_MIN_LENGTH_M;
   const mergeGap = options.mergeGap ?? WHITE_ZONE_MERGE_GAP_M;
+  const joinGap = options.joinGap ?? SEGMENT_JOIN_MAX_M;
   const n = samples.length;
   const { lo, hi } = sampleSpans(samples);
 
@@ -208,7 +212,7 @@ export function findWhiteZones(
   for (let i = 0; i < n; i++) {
     const white = classes[i] === LEVEL_NONE;
     if (white && start === -1) start = i;
-    const endsHere = start !== -1 && (!white || i === n - 1 || isBreak(samples, i, mergeGap));
+    const endsHere = start !== -1 && (!white || i === n - 1 || isBreak(samples, i, joinGap));
     if (endsHere) {
       runs.push({ first: start, last: white ? i : i - 1 });
       start = -1;
@@ -222,7 +226,7 @@ export function findWhiteZones(
     if (previous) {
       const gap = lo[run.first] - hi[previous.last];
       let broken = false;
-      for (let i = previous.last; i < run.first && !broken; i++) broken = isBreak(samples, i, mergeGap);
+      for (let i = previous.last; i < run.first && !broken; i++) broken = isBreak(samples, i, joinGap);
       if (!broken && gap < mergeGap) {
         previous.last = run.last;
         continue;

@@ -254,6 +254,25 @@ describe('regroupement en zones blanches', () => {
     expect(zones.map((z) => [z.first, z.last])).toEqual([[0, 7], [8, 15]]);
   });
 
+  it('prolonge une zone d\'un segment au suivant quand ils se touchent, quel que soit le seuil de fusion', () => {
+    // Deux segments de 80 m sans réseau, à 11 m l'un de l'autre (pause du GPS) : une seule zone de 160 m.
+    const a = synthetic(repeat(0, 5));
+    const b = synthetic(repeat(0, 5));
+    const join = a.samples[4].lon + 0.00014; // environ 11 m plus à l'est
+    const samples = [...a.samples, ...b.samples.map((s, i) => ({ ...s, seg: 1, dist: 80 + i * 20, lon: join + i * 0.00025 }))];
+    expect(distance(a.samples[4].lon, 45, join, 45)).toBeCloseTo(11, 0);
+    const raw: RawCoverage = {
+      data: new Uint8Array([...a.raw.data, ...b.raw.data]),
+      voice: new Uint8Array(10),
+      meta: new Uint8Array([...a.raw.meta, ...b.raw.meta]),
+      inside: new Uint8Array([...a.raw.inside, ...b.raw.inside]),
+    };
+    for (const mergeGap of [50, 10, 0]) {
+      const zones = findWhiteZones(samples, classify(raw, tables, 'data'), raw, { mergeGap });
+      expect(zones.map((z) => z.length), `fusion à ${mergeGap} m`).toEqual([160]);
+    }
+  });
+
   it('marque les zones estimées et liste les pays', () => {
     const { samples, raw } = synthetic(repeat(0, 10), { country: 5, sourceType: 2 });
     const zones = findWhiteZones(samples, classify(raw, tables, 'data'), raw);

@@ -18,6 +18,12 @@ export const RESAMPLE_STEP_M = 20;
 export const WHITE_ZONE_MIN_LENGTH_M = 100;
 /** Deux zones blanches séparées par moins de cette distance de couverture sont fusionnées, en mètres. */
 export const WHITE_ZONE_MERGE_GAP_M = 50;
+/**
+ * Deux segments du GPX qui se suivent à moins de cette distance (pause du GPS,
+ * trace coupée en deux) forment un parcours continu : une zone blanche peut
+ * passer de l'un à l'autre. Au-delà, le parcours est interrompu. En mètres.
+ */
+export const SEGMENT_JOIN_MAX_M = 50;
 /** Seuil du calcul du dénivelé : les variations plus petites sont ignorées (bruit du GPS), en mètres. */
 export const ELEVATION_THRESHOLD_M = 5;
 /** Taille maximale d'un fichier GPX accepté, en octets. */
