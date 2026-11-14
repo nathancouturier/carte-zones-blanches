@@ -15,10 +15,12 @@ import {
   getLanguage,
   initLanguage,
   langFromUrl,
+  localized,
   setLanguage,
   t,
   tParts,
 } from '../src/i18n';
+import { injectNoscript, noscriptLines } from '../src/i18n/noscript';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -190,6 +192,28 @@ describe('choix de la langue', () => {
       expect(t('search.credits'), code).toContain('OpenStreetMap');
       expect(t('sources.searchOsm'), code).toContain('OpenStreetMap');
     }
+  });
+
+  it('dit les textes des données dans la langue choisie, sinon en français (lang-06)', () => {
+    const traductions = { es: 'Límites administrativos', de: 'Verwaltungsgrenzen' };
+    setLanguage('es');
+    expect(localized('Contours administratifs', traductions)).toBe('Límites administrativos');
+    setLanguage('it');
+    expect(localized('Contours administratifs', traductions)).toBe('Contours administratifs');
+    expect(localized('Contours administratifs')).toBe('Contours administratifs');
+    setLanguage('fr');
+    expect(localized('Contours administratifs', traductions)).toBe('Contours administratifs');
+  });
+
+  it('écrit le message sans JavaScript dans chaque langue, chacun avec son attribut lang (lang-06)', () => {
+    const lines = noscriptLines(join(root, 'src/i18n/locales'));
+    expect(lines.map((line) => line.lang)).toEqual(['fr', 'ca', 'de', 'es', 'it']);
+    for (const { lang, text } of lines) expect(text, lang).toBe(_dictionaries().get(lang)!['app.noscript']);
+    const html = injectNoscript(readFileSync(join(root, 'index.html'), 'utf-8'), [...lines, { lang: 'xx', text: 'a < b & c' }]);
+    expect(html).toContain('<noscript><p lang="fr">Cette carte a besoin de JavaScript.</p><p lang="ca">');
+    expect(html).toContain('<p lang="de">Diese Karte braucht JavaScript.</p>');
+    expect(html).toContain('<p lang="xx">a &lt; b &amp; c</p></noscript>');
+    expect(() => injectNoscript('<html></html>', lines)).toThrow(/noscript/);
   });
 
   it('ignore une langue inconnue', () => {

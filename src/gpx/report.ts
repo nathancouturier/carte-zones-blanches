@@ -9,7 +9,7 @@ import {
   formatPercent,
   t,
 } from '../i18n';
-import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD } from '../coverage/codec';
+import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD, SOURCE_ESTIMATED } from '../coverage/codec';
 import {
   ALL_OPERATORS,
   buildLevelTables,
@@ -242,10 +242,15 @@ export function reportText(
     lines.push(t('report.binaryNote', { countries: report.binaryCountries.map((c) => countryName(c.iso)).join(', ') }));
   }
   lines.push(t('sources.disclaimer'));
+  // Mentions des sources telles qu'elles les demandent ; devant celle d'une source estimée,
+  // le site dit « estimation » dans la langue choisie.
   const sources = report.countries.flatMap((country) =>
     country.sources
       .filter((s) => s.services.includes(settings.service))
-      .map((s) => `${s.attribution} (${countryName(country.iso)}, ${formatDataDate(s.date)})`),
+      .map((s) => {
+        const mention = s.type === SOURCE_ESTIMATED ? t('report.estimatedSource', { attribution: s.attribution }) : s.attribution;
+        return `${mention} (${countryName(country.iso)}, ${formatDataDate(s.date)})`;
+      }),
   );
   if (sources.length > 0) lines.push(t('report.sourcesLine', { sources: sources.join(t('report.sourcesSeparator')) }));
   return plain(lines.join('\n'));

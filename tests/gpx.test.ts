@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEVEL_NONE, packMeta, packSlots } from '../src/coverage/codec';
-import { buildLevelTables } from '../src/coverage/manifest';
+import { buildLevelTables, parseManifest } from '../src/coverage/manifest';
 import {
   CLASS_OUTSIDE,
   CLASS_UNKNOWN,
@@ -558,6 +558,28 @@ describe('rapport en texte', () => {
       const text = reportText(analysis, report, manifest, settings, null);
       expect(text).toContain('Quellen: Arcep (Frankreich, Q2 2026); OFCOM (Schweiz, März 2026)');
       expect(text).not.toMatch(/ [;:]/);
+    } finally {
+      setLanguage('fr');
+    }
+  });
+
+  it('dit « estimation » dans la langue choisie devant la mention d\'une source estimée (lang-06)', () => {
+    // Andorre, source estimée : la mention vient du manifest, le mot « estimation » du site.
+    const { samples, raw } = synthetic(repeat(2, 30), { country: 5, sourceType: 2 });
+    const textIn = (data: typeof manifest, lang: string): string => {
+      setLanguage(lang);
+      const analysis = analyzeTrack(samples, raw);
+      return reportText(analysis, buildReport(analysis, data, settings), data, settings, null);
+    };
+    // Manifest publié avant les traductions : « Estimation : » écrit devant la mention, en français.
+    const old = JSON.parse(JSON.stringify(manifest));
+    old.countries[2].sources[0].attribution = 'Estimation : OpenCellID (CC BY-SA 4.0), Copernicus DEM';
+    try {
+      expect(textIn(manifest, 'fr')).toContain('Sources : estimation : OpenCelliD (Andorre, novembre 2026)');
+      expect(textIn(manifest, 'de')).toContain('Quellen: Schätzung: OpenCelliD (Andorra, November 2026)');
+      const before = textIn(parseManifest(old), 'es');
+      expect(before).toContain('Fuentes: estimación: OpenCellID (CC BY-SA 4.0), Copernicus DEM (Andorra, noviembre de 2026)');
+      expect(before).not.toContain('Estimation');
     } finally {
       setLanguage('fr');
     }

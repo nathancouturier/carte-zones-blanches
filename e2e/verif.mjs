@@ -751,8 +751,9 @@ try {
       await page.evaluate(() => (location.hash = '#12/43.74/7.42'));
       await page.waitForTimeout(3500);
       const monaco = await pied();
-      const credite = monaco.texte.includes('Cell tower data from OpenCellID, licensed under CC BY-SA 4.0') && monaco.liens.includes('https://opencellid.org') && monaco.liens.includes('https://creativecommons.org/licenses/by-sa/4.0/');
-      controle('mentions : Monaco à l\'écran à côté du centre, crédit d\'OpenCellID avec ses liens', credite, monaco.texte);
+      // Le site dit « estimation » dans la langue choisie devant le crédit, en anglais, d'OpenCellID (lang-06).
+      const credite = monaco.texte.includes('estimation (Cell tower data from OpenCellID, licensed under CC BY-SA 4.0)') && monaco.liens.includes('https://opencellid.org') && monaco.liens.includes('https://creativecommons.org/licenses/by-sa/4.0/');
+      controle('mentions : Monaco à l\'écran à côté du centre, « estimation » et crédit d\'OpenCellID avec ses liens', credite, monaco.texte);
     }
     controle('mentions : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
@@ -805,6 +806,51 @@ try {
     const ouverts = await page.evaluate(() => [...document.querySelectorAll('.panel__body details[open] > summary')].map((s) => s.dataset.focus).join(' '));
     controle('sources : sections ouvertes pour les pays à l\'écran seulement', ouverts.includes('sources-CH') && !ouverts.includes('sources-ES') && !ouverts.includes('sources-FR'), ouverts);
     controle('es : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 3b. Téléphone, espagnol : textes du manifest traduits (manifest simulé avec les champs facultatifs) --
+  // Noms des sources, licences et contours dans la langue choisie quand le manifest les traduit (lang-06).
+  {
+    const traduit = (cle, id) => `${cle} de prueba ${id}`;
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '?lang=es#9/42.6/0.9', async (c) => {
+      await c.route(/\/data\/manifest\.json(\?|$)/, async (route) => {
+        const reponse = await route.fetch();
+        const donnees = await reponse.json();
+        for (const pays of donnees.countries) {
+          if (pays.boundary) pays.boundary.textI18n = { es: traduit('Límites', pays.iso) };
+          for (const source of pays.sources) Object.assign(source, { nameI18n: { es: traduit('Nombre', source.id) }, licenceI18n: { es: traduit('Licencia', source.id) } });
+        }
+        await route.fulfill({ response: reponse, json: donnees });
+      });
+    });
+    await page.click('button[aria-label="Ajustes"]');
+    await page.click('[data-focus="sources"]');
+    await page.waitForSelector('.disclaimer--strong');
+    const panneau = await page.evaluate(() => document.querySelector('.panel__body')?.textContent ?? '');
+    const publies = manifest?.countries ?? [];
+    const attendus = publies.flatMap((pays) => [...(pays.boundary ? [traduit('Límites', pays.iso)] : []), ...pays.sources.flatMap((s) => [traduit('Nombre', s.id), traduit('Licencia', s.id)])]);
+    const absents = attendus.filter((texte) => !panneau.includes(texte));
+    const francais = publies.flatMap((pays) => pays.sources.map((s) => s.name)).filter((nom) => panneau.includes(nom));
+    controle('es : noms des sources, licences et contours traduits par le manifest', attendus.length > 0 && absents.length === 0 && francais.length === 0, [...absents, ...francais].join(' | ') || `${attendus.length} textes`);
+    controle('es : textes traduits, aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 3c. Sans JavaScript : le message, une phrase par langue, devant la carte vide -----
+  {
+    const contexte = await navigateur.newContext({ ...telephone, javaScriptEnabled: false });
+    const page = await contexte.newPage();
+    await page.goto(SITE, { waitUntil: 'load' });
+    const lisibles = await page.evaluate(() =>
+      [...document.querySelectorAll('noscript p')]
+        .filter((p) => {
+          const r = p.getBoundingClientRect();
+          return r.width > 0 && p.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+        })
+        .map((p) => p.lang),
+    );
+    controle('sans JavaScript : le message est lisible dans chaque langue', lisibles.join() === 'fr,ca,de,es,it', lisibles.join() || 'aucun message lisible');
     await contexte.close();
   }
 

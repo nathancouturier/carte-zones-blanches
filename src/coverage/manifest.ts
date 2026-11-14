@@ -36,17 +36,36 @@ export interface ManifestSlot {
   minOperators?: number;
 }
 
+/**
+ * Traductions facultatives d'un texte du manifest, par code de langue (« es », « de »...).
+ * Le texte d'origine, en français, reste dans le champ principal.
+ */
+export type TextTranslations = Readonly<Record<string, string>>;
+
+/** Antennes connues d'une source estimée, telles que le pipeline les a comptées. */
+export interface EstimationInputs {
+  /** Sites d'antennes (cellules regroupées par emplacement et par opérateur). */
+  sites: number;
+  /** Cellules 4G et 5G lues dans OpenCellID. */
+  cells?: number;
+}
+
 export interface ManifestSource {
   /** Valeur des bits 4 et 5 du canal B pour les pixels issus de cette source. */
   type: number;
   /** Identifiant du module du pipeline (par exemple « fr_arcep »). */
   id: string;
-  /** Nom de la source, tel qu'il doit être cité. */
+  /** Nom de la source, tel qu'il doit être cité (en français). */
   name: string;
+  /** Nom de la source dans les autres langues (facultatif). */
+  nameI18n?: TextTranslations;
   url?: string;
   /** Date des données : AAAA-Tn (trimestre), AAAA-MM ou AAAA-MM-JJ. */
   date: string;
+  /** Licence, en français. */
   licence: string;
+  /** Licence dans les autres langues (facultatif). */
+  licenceI18n?: TextTranslations;
   licenceUrl?: string;
   /** Mention que la licence demande d'afficher telle quelle (non traduite). */
   licenceNotice?: string;
@@ -54,7 +73,10 @@ export interface ManifestSource {
   licenceLogo?: string;
   /** Adresse vers laquelle le logo de licence renvoie (https). */
   licenceLogoUrl?: string;
-  /** Mention courte pour le pied de carte. */
+  /**
+   * Mention courte pour le pied de carte et le rapport, telle que la source la demande
+   * (non traduite). Pour une source estimée, le site dit lui-même « estimation » devant.
+   */
   attribution: string;
   /** Services fournis par cette source. */
   services: ServiceId[];
@@ -71,6 +93,8 @@ export interface ManifestSource {
   technology?: Partial<Record<ServiceId, string>>;
   /** Résolution approximative de la source, en mètres. */
   resolutionM?: number;
+  /** Source estimée : antennes connues dans le pays (facultatif). */
+  estimation?: EstimationInputs;
 }
 
 export interface ManifestCountry {
@@ -84,8 +108,11 @@ export interface ManifestCountry {
   slots: ManifestSlot[];
   /** Noms des opérateurs du pays, quand la source ne les distingue pas. */
   operators?: string[];
-  /** Mention du contour du pays (source et licence), à afficher telle quelle, avec un lien éventuel (https). */
-  boundary?: { text: string; url?: string };
+  /**
+   * Mention du contour du pays (source et licence), en français, avec un lien éventuel
+   * (https) et ses traductions facultatives.
+   */
+  boundary?: { text: string; url?: string; textI18n?: TextTranslations };
   sources: ManifestSource[];
 }
 
@@ -165,6 +192,33 @@ function int(value: unknown, where: string, min: number, max: number): number {
   }
   return value;
 }
+
+/**
+ * Traductions facultatives d'un texte, par code de langue. Les données publiées avant elles
+ * n'en ont pas : une entrée mal formée est ignorée, elle ne rend pas les données illisibles.
+ */
+function translations(value: unknown): TextTranslations | undefined {
+  if (!isObject(value)) return undefined;
+  const kept = Object.entries(value).filter(
+    (entry): entry is [string, string] => /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(entry[0]) && typeof entry[1] === 'string' && entry[1].trim() !== '',
+  );
+  return kept.length > 0 ? Object.fromEntries(kept) : undefined;
+}
+
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+/** Antennes connues d'une source estimée (facultatif) : il faut au moins le nombre de sites. */
+function estimationInputs(value: unknown): EstimationInputs | undefined {
+  if (!isObject(value) || !isCount(value.sites)) return undefined;
+  return isCount(value.cells) ? { sites: value.sites, cells: value.cells } : { sites: value.sites };
+}
+
+/**
+ * Les manifests publiés jusqu'en novembre 2026 écrivent « Estimation : » devant la mention
+ * d'une source estimée. Le site le dit désormais lui-même, dans la langue choisie : on
+ * l'enlève pour ne pas l'afficher deux fois, ni en français dans une autre langue.
+ */
+const OLD_ESTIMATION_PREFIX = /^Estimation\s*:\s*/;
 
 /** Vérifie la structure du manifest et renvoie un objet typé. Lève une erreur claire sinon. */
 export function parseManifest(raw: unknown): Manifest {
@@ -251,17 +305,24 @@ export function parseManifest(raw: unknown): Manifest {
       }
       if (typeof s.perOperator !== 'boolean') fail(`${where}.perOperator doit être un booléen`);
       if (s.perOperator && slots.length === 0) fail(`${where} est par opérateur mais le pays ne déclare aucun emplacement`);
+      const attribution = str(s.attribution, `${where}.attribution`);
       const source: ManifestSource = {
         type,
         id: str(s.id, `${where}.id`),
         name: str(s.name, `${where}.name`),
         date: str(s.date, `${where}.date`),
         licence: str(s.licence, `${where}.licence`),
-        attribution: str(s.attribution, `${where}.attribution`),
+        attribution: type === SOURCE_ESTIMATED ? attribution.replace(OLD_ESTIMATION_PREFIX, '') || attribution : attribution,
         services: s.services as ServiceId[],
         levels,
         perOperator: s.perOperator,
       };
+      const nameI18n = translations(s.nameI18n);
+      if (nameI18n) source.nameI18n = nameI18n;
+      const licenceI18n = translations(s.licenceI18n);
+      if (licenceI18n) source.licenceI18n = licenceI18n;
+      const estimation = estimationInputs(s.estimation);
+      if (estimation) source.estimation = estimation;
       if (levelMap) source.levelMap = levelMap;
       const url = httpsUrl(s.url);
       if (url) source.url = url;
@@ -288,8 +349,12 @@ export function parseManifest(raw: unknown): Manifest {
     }
     // Facultatif : une mention mal formée est ignorée, elle ne rend pas les données illisibles.
     if (isObject(c.boundary) && typeof c.boundary.text === 'string' && c.boundary.text !== '') {
+      const boundary: NonNullable<ManifestCountry['boundary']> = { text: c.boundary.text };
       const url = httpsUrl(c.boundary.url);
-      country.boundary = url ? { text: c.boundary.text, url } : { text: c.boundary.text };
+      if (url) boundary.url = url;
+      const textI18n = translations(c.boundary.textI18n);
+      if (textI18n) boundary.textI18n = textI18n;
+      country.boundary = boundary;
     }
     return country;
   });

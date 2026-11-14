@@ -378,7 +378,8 @@ export class Ui {
       }
     }
     const coverageNodes: Child[] = coverage.map((text, i) => (i > 0 ? `, ${text}` : text));
-    if (estimated) coverageNodes.push(coverage.length > 0 ? ', ' : null, creditNodes(ESTIMATED_CREDIT));
+    // Le site dit « estimation » dans la langue choisie, devant le crédit d'OpenCellID.
+    if (estimated) coverageNodes.push(coverage.length > 0 ? ', ' : null, tParts<Child>('attribution.estimated', { credit: creditNodes(ESTIMATED_CREDIT) }));
     const text: Child[] = [tParts<Child>('attribution.basemap', { names: basemaps })];
     // Une ligne par groupe : la mention d'OpenTopoMap contient elle-même une barre « | ».
     if (coverageNodes.length > 0) text.push(h('br'), tParts<Child>('attribution.coverage', { names: coverageNodes }));

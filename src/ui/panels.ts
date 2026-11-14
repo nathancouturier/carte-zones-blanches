@@ -26,6 +26,7 @@ import {
   formatNumber,
   formatPercent,
   getLanguage,
+  localized,
   t,
   tParts,
 } from '../i18n';
@@ -733,7 +734,8 @@ export function sourcesPanel(app: App): Node_[] {
             h(
               'dl',
               { class: 'facts facts--stacked' },
-              h('div', null, h('dt', null, t('sources.source')), h('dd', null, maybeLink(source.name, source.url))),
+              // Nom, licence et contour : dans la langue choisie quand le manifest les traduit, sinon en français.
+              h('div', null, h('dt', null, t('sources.source')), h('dd', null, maybeLink(localized(source.name, source.nameI18n), source.url))),
               h('div', null, h('dt', null, t('sources.date')), h('dd', null, formatDataDate(source.date))),
               h(
                 'div',
@@ -758,7 +760,7 @@ export function sourcesPanel(app: App): Node_[] {
                 h(
                   'dd',
                   null,
-                  maybeLink(source.licence, source.licenceUrl),
+                  maybeLink(localized(source.licence, source.licenceI18n), source.licenceUrl),
                   // Mention et logo que la licence demande d'afficher tels quels (dans la langue de la source).
                   source.licenceNotice ? [h('br'), h('small', { lang: 'mul' }, source.licenceNotice)] : null,
                   source.licenceLogo ? [h('br'), licenceLogo(source)] : null,
@@ -769,7 +771,9 @@ export function sourcesPanel(app: App): Node_[] {
             ),
           ),
           // Contour qui dit quels pixels appartiennent au pays : sa mention, telle que le manifest la donne.
-          country.boundary ? h('p', { class: 'hint' }, tParts<Node_>('sources.boundary', { boundary: maybeLink(country.boundary.text, country.boundary.url) })) : null,
+          country.boundary
+            ? h('p', { class: 'hint' }, tParts<Node_>('sources.boundary', { boundary: maybeLink(localized(country.boundary.text, country.boundary.textI18n), country.boundary.url) }))
+            : null,
           operatorNames(country).length > 0 ? h('p', { class: 'hint' }, t('sources.operators', { operators: operatorNames(country).join(', ') })) : null,
           country.euRoaming ? null : h('p', { class: 'hint' }, t('report.roamingWarning', { country: countryName(country.iso) })),
         ),

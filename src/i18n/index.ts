@@ -192,6 +192,14 @@ export function hasKey(key: string): boolean {
   return lookup(key) !== undefined;
 }
 
+/**
+ * Texte venu des données (nom d'une source, licence, contour d'un pays) dans la langue
+ * choisie : sa traduction si les données la donnent, sinon le texte d'origine, en français.
+ */
+export function localized(text: string, translations?: Readonly<Record<string, string>>): string {
+  return translations?.[current] ?? text;
+}
+
 // ---------------------------------------------------------------------------
 // Nombres et distances
 // ---------------------------------------------------------------------------

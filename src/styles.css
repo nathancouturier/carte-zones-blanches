@@ -113,6 +113,22 @@ a,
   background: var(--c-surface);
 }
 
+/* Sans JavaScript : le message, une phrase par langue, passe devant la carte restée vide. */
+noscript {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  background: var(--c-surface);
+}
+
+noscript p {
+  margin: 0;
+}
+
 /* --- Barre du haut ------------------------------------------------------- */
 
 .topbar {
