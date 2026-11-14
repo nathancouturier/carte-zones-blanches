@@ -46,7 +46,7 @@
   "level.good": "Bonne couverture",
   "level.veryGood": "Très bonne couverture",
   "legend.estimated": "Zone estimée (hachures)",
-  "legend.estimatedGood": "Zone estimée avec une bonne ou très bonne couverture (hachures grises)",
+  "legend.estimatedGood": "Zone estimée avec une bonne ou très bonne couverture (fins traits gris)",
   "network.title": "Réseau mobile",
   "network.loading": "Chargement des données de couverture",
   "network.noData": "Les données de couverture ne sont pas disponibles pour le moment.",

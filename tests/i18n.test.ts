@@ -156,6 +156,16 @@ describe('traductions', () => {
       }
     }
   });
+
+  it('ne nomme pas les traits gris des zones estimées comme les hachures des tuiles illisibles (sources-24)', () => {
+    // Deux motifs gris bien distincts sur la carte : la légende de l'un ne reprend pas les mots du bandeau de l'autre.
+    const hachures: Record<string, RegExp> = { fr: /hachur/i, es: /rayad/i, ca: /ratll/i, it: /tratteggi/i, de: /schraffiert/i };
+    for (const [code, mot] of Object.entries(hachures)) {
+      const dict = dictionaries.get(code)!;
+      expect(dict['network.tilesUnavailable'], code).toMatch(mot);
+      expect(dict['legend.estimatedGood'], code).not.toMatch(mot);
+    }
+  });
 });
 
 describe('choix de la langue', () => {

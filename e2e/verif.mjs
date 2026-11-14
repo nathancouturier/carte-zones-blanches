@@ -783,7 +783,8 @@ try {
       await page.waitForTimeout(500);
       const toutAffiche = (await page.locator('.legend li').allTextContents()).join(' | ');
       await page.click('input[data-focus="show-all"]');
-      const gris = 'Zone estimée avec une bonne ou très bonne couverture (hachures grises)';
+      // « Fins traits gris » : rien à voir avec les « zones hachurées en gris » des données indisponibles.
+      const gris = 'Zone estimée avec une bonne ou très bonne couverture (fins traits gris)';
       controle('mentions : la légende dit les traits gris des zones estimées bien couvertes', parDefaut.includes(gris) && !toutAffiche.includes(gris), parDefaut);
     }
     controle('mentions : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));

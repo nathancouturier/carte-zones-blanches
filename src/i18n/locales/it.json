@@ -46,7 +46,7 @@
   "level.good": "Buona copertura",
   "level.veryGood": "Ottima copertura",
   "legend.estimated": "Zona stimata (tratteggio)",
-  "legend.estimatedGood": "Zona stimata con buona o ottima copertura (tratteggio grigio)",
+  "legend.estimatedGood": "Zona stimata con buona o ottima copertura (sottili linee grigie)",
   "network.title": "Rete mobile",
   "network.loading": "Caricamento dei dati di copertura",
   "network.noData": "I dati di copertura non sono disponibili per il momento.",

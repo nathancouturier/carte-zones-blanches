@@ -46,7 +46,7 @@
   "level.good": "Gute Abdeckung",
   "level.veryGood": "Sehr gute Abdeckung",
   "legend.estimated": "Geschätzte Abdeckung (schraffiert)",
-  "legend.estimatedGood": "Geschätzte gute oder sehr gute Abdeckung (grau schraffiert)",
+  "legend.estimatedGood": "Geschätzte gute oder sehr gute Abdeckung (feine graue Linien)",
   "network.title": "Mobilfunknetz",
   "network.loading": "Abdeckungsdaten werden geladen",
   "network.noData": "Die Abdeckungsdaten sind im Moment nicht verfügbar.",
