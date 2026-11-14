@@ -85,18 +85,23 @@ describe('recherche : services lents, en panne ou annulés', () => {
     expect(resultat.places.map((p) => p.label)).toEqual(['Zermatt']);
   });
 
-  it('envoie le centre de la carte à l\'IGN, arrondi, et réessaie sans s\'il est refusé (recherche-4)', async () => {
+  it('envoie le centre de la carte arrondi au dixième de degré, et réessaie sans s\'il est refusé (recherche-4)', async () => {
+    // Environ 10 km : assez pour classer les lieux proches, sans dévoiler la position de l'utilisateur.
     const demandes = reseau({ ign: { delai: 5, json: BRIANCON }, photon: { delai: 5, json: ZERMATT } });
     await searchPlaces('Saint-Jean', { ...OPTIONS, center: [-1.47391, 43.48263] });
     const ign = new URL(demandes.find((u) => u.includes('geopf'))!);
-    expect(ign.searchParams.get('lonlat')).toBe('-1.47,43.48');
+    expect(ign.searchParams.get('lonlat')).toBe('-1.5,43.5');
     const photon = new URL(demandes.find((u) => u.includes('photon'))!);
-    expect([photon.searchParams.get('lon'), photon.searchParams.get('lat')]).toEqual(['-1.47', '43.48']);
+    expect([photon.searchParams.get('lon'), photon.searchParams.get('lat')]).toEqual(['-1.5', '43.5']);
+    // Près du méridien de Greenwich : « 0.0 », pas « -0.0 ».
+    const meridien = reseau({ ign: { delai: 5, json: BRIANCON }, photon: { delai: 5, json: ZERMATT } });
+    await searchPlaces('Saint-Jean', { ...OPTIONS, center: [-0.04, 45.0] });
+    expect(new URL(meridien.find((u) => u.includes('photon'))!).searchParams.get('lon')).toBe('0.0');
     // Refus de la longitude négative (motif publié par la Géoplateforme) : une seconde demande, sans lonlat.
     const refus = reseau({ ign: { delai: 5, statut: 400 }, photon: { delai: 5, json: ZERMATT } });
     await searchPlaces('Saint-Jean', { ...OPTIONS, center: [-1.47, 43.48] });
     const essais = refus.filter((u) => u.includes('geopf')).map((u) => new URL(u).searchParams.get('lonlat'));
-    expect(essais).toEqual(['-1.47,43.48', null]);
+    expect(essais).toEqual(['-1.5,43.5', null]);
   });
 });
 
