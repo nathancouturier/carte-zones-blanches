@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from ..context import BuildContext
 from ..grid import mercator_to_lonlat
 from ..net import download, extract_7z, fetch_text
+from ..witness import draw_country_pixels
 from .base import Source
 
 if TYPE_CHECKING:  # numpy et GDAL ne sont chargés que pour construire, pas pour lire l'état des sources
@@ -65,8 +66,8 @@ def parse_listing(page: str) -> list[dict[str, Any]]:
 class FrArcep(Source):
     id = "fr_arcep"
 
-    def __init__(self, cfg: dict[str, Any]):
-        super().__init__(cfg)
+    def __init__(self, cfg: dict[str, Any], source_id: str | None = None):
+        super().__init__(cfg, source_id)
         self._listing: list[dict[str, Any]] | None = None
 
     # -- version en ligne ---------------------------------------------------
@@ -222,10 +223,7 @@ class FrArcep(Source):
         attempts = 0
         while len(candidates) < wanted and attempts < 400:
             attempts += 1
-            cols = rng.integers(0, canvas.width, size=wanted * 4)
-            rows = rng.integers(0, canvas.height, size=wanted * 4)
-            inside = (np.asarray(layers.B[rows, cols]) & 0x0F) == self.country_code
-            for col, row in zip(cols[inside].tolist(), rows[inside].tolist()):
+            for col, row in zip(*draw_country_pixels(ctx, self.country_code, rng, wanted * 4)):
                 x, y = canvas.pixel_center(col, row)
                 sx, sy, _ = from_merc.TransformPoint(x, y)
                 points = []
@@ -276,7 +274,7 @@ class FrArcep(Source):
             lon, lat = mercator_to_lonlat(w["x"], w["y"])
             out.append(
                 {
-                    "source": self.id,
+                    "source": self.source_id,
                     "country": self.country_iso,
                     "service": service,
                     "slot": slot,

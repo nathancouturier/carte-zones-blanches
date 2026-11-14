@@ -174,16 +174,149 @@ def test_lower_zooms_are_nearest_neighbour(built: Path):
         reader.close()
 
 
+def test_whole_pyramid_copies_centre_pixels_of_zoom_12(built: Path):
+    """Du zoom 11 au zoom 0, chaque pixel est la copie du pixel central du carré qu'il représente au zoom 12 (jamais de moyenne, de maximum ni de mélange)."""
+    manifest = json.loads((built / "manifest.json").read_text(encoding="utf-8"))
+    report = json.loads((built / "rapport-construction.json").read_text(encoding="utf-8"))
+    g = report["grid"]
+    reader = TileReader(built, manifest)
+    try:
+        width, height = (g["tx1"] - g["tx0"] + 1) * 256, (g["ty1"] - g["ty0"] + 1) * 256
+        full = np.zeros((height, width, 4), dtype=np.uint8)
+        for ty in range(g["ty0"], g["ty1"] + 1):
+            for tx in range(g["tx0"], g["tx1"] + 1):
+                tile = reader.tile(12, tx, ty)
+                if tile is not None:
+                    full[(ty - g["ty0"]) * 256 : (ty - g["ty0"] + 1) * 256, (tx - g["tx0"]) * 256 : (tx - g["tx0"] + 1) * 256] = tile
+        x_origin, y_origin = g["tx0"] * 256, g["ty0"] * 256
+        compared = 0
+        for z in range(11, -1, -1):
+            factor = 1 << (12 - z)
+            for ty in range(g["ty0"] >> (12 - z), (g["ty1"] >> (12 - z)) + 1):
+                for tx in range(g["tx0"] >> (12 - z), (g["tx1"] >> (12 - z)) + 1):
+                    expected = np.zeros((256, 256, 4), dtype=np.uint8)
+                    # Pixel central, au zoom 12, de chaque pixel de la tuile : hors de la grille, il est hors zone.
+                    xs = (tx * 256 + np.arange(256)) * factor + factor // 2 - x_origin
+                    ys = (ty * 256 + np.arange(256)) * factor + factor // 2 - y_origin
+                    ok_x, ok_y = (xs >= 0) & (xs < width), (ys >= 0) & (ys < height)
+                    expected[np.ix_(ok_y, ok_x)] = full[np.ix_(ys[ok_y], xs[ok_x])]
+                    tile = reader.tile(z, tx, ty)
+                    if tile is None:
+                        assert not expected[..., 3].any(), f"tuile {z}/{tx}/{ty} absente"
+                    else:
+                        assert np.array_equal(tile, expected), f"tuile {z}/{tx}/{ty}"
+                        compared += 1
+        assert compared >= 12
+    finally:
+        reader.close()
+
+
 def test_split_archives(synthetic: dict):
-    """Avec une limite minuscule, les tuiles sont réparties en plusieurs archives par blocs."""
-    out = _build(synthetic, "decoupe", overrides={"limits": {"target_archive_mb": 0.004, "archive_max_mb": 5}, "grid": {"block_zoom": 10}})
+    """Avec une limite basse, les tuiles sont réparties en plusieurs archives, chacune faite de plusieurs blocs."""
+    out = _build(synthetic, "decoupe", overrides={"limits": {"target_archive_mb": 0.03, "archive_max_mb": 5}, "grid": {"block_zoom": 11}})
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     archives = manifest["archives"]
     assert len(archives) >= 3
-    assert manifest["tiles"]["blockZoom"] == 10
-    assert archives[0]["maxzoom"] == 9 and "blocks" not in archives[0]
+    assert manifest["tiles"]["blockZoom"] == 11
+    assert archives[0]["maxzoom"] == 10 and "blocks" not in archives[0]
     blocks = [b for a in archives[1:] for b in a["blocks"]]
     assert len(blocks) == len(set(blocks)), "un bloc ne doit appartenir qu'à une archive"
-    assert all(a["minzoom"] == 10 and a["maxzoom"] == 12 for a in archives[1:])
+    assert any(len(a["blocks"]) > 1 for a in archives[1:]), "le regroupement de plusieurs blocs dans une archive doit être exercé"
+    assert all(a["minzoom"] == 11 and a["maxzoom"] == 12 for a in archives[1:])
+    # Chaque tuile de la construction en une seule archive se retrouve, identique, à travers le découpage.
+    single = _build(synthetic, "simple-data")
+    single_manifest = json.loads((single / "manifest.json").read_text(encoding="utf-8"))
+    report = json.loads((out / "rapport-construction.json").read_text(encoding="utf-8"))
+    g = report["grid"]
+    a, b = TileReader(single, single_manifest), TileReader(out, manifest)
+    try:
+        found = 0
+        for z in (12, 11, 10, 7):
+            shift = 12 - z
+            for x in range(g["tx0"] >> shift, (g["tx1"] >> shift) + 1):
+                for y in range(g["ty0"] >> shift, (g["ty1"] >> shift) + 1):
+                    one, other = a.tile(z, x, y), b.tile(z, x, y)
+                    assert (one is None) == (other is None), f"tuile {z}/{x}/{y}"
+                    if one is not None:
+                        assert np.array_equal(one, other), f"tuile {z}/{x}/{y}"
+                        found += 1
+        assert found >= 12
+    finally:
+        a.close()
+        b.close()
     # Le test de cohérence passe aussi en lisant à travers le découpage.
     assert verify(out) == 0
+
+
+def test_limits_are_not_truncated(synthetic: dict):
+    """Une limite inférieure à 1 Mo ne doit pas être arrondie à zéro."""
+    cfg = json.loads(json.dumps(synthetic["base"]))
+    cfg["limits"].update({"archive_max_mb": 0.9, "target_archive_mb": 0.5})
+    config = synthetic["root"] / "config-limites.yaml"
+    config.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+    out = synthetic["root"] / "out-limites"
+    assert cli.main(["--config", str(config), "build", "--scope", "hautes-alpes", "--services", "data", "--work", str(synthetic["root"] / "work-limites"), "--out", str(out), "--date", "2026-11-13"]) == 0
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest["archives"]) == 1  # 0,1 Mo de tuiles tiennent sous une cible de 0,5 Mo
+
+
+def test_verify_requires_points_for_every_source(built: Path, tmp_path: Path):
+    """Sans point témoin pour un opérateur annoncé par le manifest, le test de cohérence échoue."""
+    import shutil
+
+    copy = tmp_path / "out"
+    shutil.copytree(built, copy)
+    expected = json.loads((copy / "temoins-attendus.json").read_text(encoding="utf-8"))
+    assert {(e["source"], e["service"], e["operator"]) for e in expected} == {("fr_arcep", s, o) for s in ("data", "voice") for o in ("orange", "sfr", "bouygues", "free")}
+    assert all(e["minimum"] == 20 for e in expected)
+    witnesses = json.loads((copy / "temoins.json").read_text(encoding="utf-8"))
+    kept = [w for w in witnesses if not (w["service"] == "voice" and w["operator"] == "free")]
+    (copy / "temoins.json").write_text(json.dumps(kept), encoding="utf-8")
+    assert verify(copy) == 1
+
+
+def test_warp_is_exact_on_a_noisy_raster(tmp_path: Path):
+    """Chaque pixel de la grille reçoit le carré de la source qui contient son centre, sans approximation."""
+    from czb.grid import Canvas
+    from czb.raster import transformer_from_mercator, warp_to_window
+
+    rng = np.random.default_rng(1)
+    rows, cols = 300, 420
+    values = rng.integers(0, 4, size=(rows, cols), dtype=np.uint8)
+    x0, y0 = 2_560_000.0, 1_220_000.0  # LV95, carrés de 100 m
+    gt = (x0, 100.0, 0.0, y0, 0.0, -100.0)
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(2056)
+    srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    to_merc = osr.CoordinateTransformation(srs, _srs(3857))
+    mx, my, _ = to_merc.TransformPoint(x0 + cols * 50, y0 - rows * 50)
+    grid = Grid(12, 256)
+    tx, ty = grid.tile_of_mercator(mx, my)
+    canvas = Canvas(grid, tx - 2, ty - 2, tx + 2, ty + 2)
+    win = (0, 0, canvas.width, canvas.height)
+    warped = warp_to_window(values, gt, srs.ExportToWkt(), canvas, win, 255)
+    from_merc = transformer_from_mercator(srs)
+    points = [canvas.pixel_center(col, row) for row in range(0, canvas.height, 3) for col in range(0, canvas.width, 3)]
+    transformed = from_merc.TransformPoints(points)
+    wrong = checked = 0
+    index = 0
+    for row in range(0, canvas.height, 3):
+        for col in range(0, canvas.width, 3):
+            sx, sy, _ = transformed[index]
+            index += 1
+            fc, fr = (sx - x0) / 100.0, (y0 - sy) / 100.0
+            if min(fc % 1, 1 - fc % 1, fr % 1, 1 - fr % 1) < 1e-4:
+                continue  # centre à moins d'un centimètre d'un bord de carré : indécidable
+            c, r = int(np.floor(fc)), int(np.floor(fr))
+            expected = int(values[r, c]) if 0 <= c < cols and 0 <= r < rows else 255
+            checked += 1
+            wrong += int(warped[row, col]) != expected
+    assert checked > 100_000
+    assert wrong == 0
+
+
+def _srs(epsg: int) -> osr.SpatialReference:
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(epsg)
+    srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    return srs

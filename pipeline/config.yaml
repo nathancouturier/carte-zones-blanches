@@ -20,6 +20,12 @@ verification:
   points_per_file: 60
   seed: 20261113
 
+# Ce que le site en ligne utilise. Le workflow « Données » ne publie que cette combinaison :
+# tout autre périmètre est un essai, construit et vérifié mais jamais publié.
+production:
+  scope: complet
+  services: [data, voice]
+
 # ---------------------------------------------------------------------------
 # Emprise : pays couverts, dans l'ordre de priorité aux frontières (le premier
 # pays qui revendique un pixel le garde).
@@ -43,8 +49,125 @@ countries:
       - {id: free, name: Free, arcep: FREE}
     sources: [fr_arcep]
 
+  CH:
+    code: 2
+    eu_roaming: false
+    # Contour : swisstopo, swissBOUNDARIES3D (état au 1er janvier 2026). Adresse à mettre à jour une fois par an.
+    mask:
+      type: vector_file
+      url: https://data.geo.admin.ch/ch.swisstopo.swissboundaries3d/swissboundaries3d_2026-01/swissboundaries3d_2026-01_2056_5728.gpkg.zip
+      layer: tlm_landesgebiet
+      where: "icc = 'CH'"
+      expect: 1
+      delete_after: true
+    # La source suisse ne dit pas quel opérateur couvre, seulement combien : les emplacements portent des seuils.
+    operators: [Swisscom, Sunrise, Salt]
+    slots:
+      - {id: ch_1, min_operators: 1}
+      - {id: ch_3, min_operators: 3}
+    sources: [ch_bakom]
+
+  IT:
+    code: 3
+    eu_roaming: true
+    # Contour : ISTAT, limites administratives non généralisées au 1er janvier 2026 (Piemonte, Valle d'Aosta, Liguria).
+    mask:
+      type: vector_file
+      url: https://www.istat.it/storage/cartografia/confini_amministrativi/non_generalizzati/2026/Limiti01012026.zip
+      member: Reg01012026/Reg01012026_WGS84.shp
+      where: "COD_REG IN (1, 2, 7)"
+      expect: 3
+      delete_after: true
+    # La source italienne donne un nombre de réseaux 4G par carré (1 à 4), sans les nommer.
+    slots:
+      - {id: it_1, min_operators: 1}
+      - {id: it_2, min_operators: 2}
+      - {id: it_3, min_operators: 3}
+      - {id: it_4, min_operators: 4}
+    sources: [it_agcom]
+
+  ES:
+    code: 4
+    eu_roaming: true
+    # Contour : IGN España, unités administratives (Aragón, Cataluña, Navarra, País Vasco), une requête par communauté.
+    mask:
+      type: vector_file
+      expect: 4
+      urls:
+        - {url: "https://api-features.ign.es/collections/administrativeunit/items?f=json&nationalcode=34020000000", filename: es-34020000000.geojson}
+        - {url: "https://api-features.ign.es/collections/administrativeunit/items?f=json&nationalcode=34090000000", filename: es-34090000000.geojson}
+        - {url: "https://api-features.ign.es/collections/administrativeunit/items?f=json&nationalcode=34150000000", filename: es-34150000000.geojson}
+        - {url: "https://api-features.ign.es/collections/administrativeunit/items?f=json&nationalcode=34160000000", filename: es-34160000000.geojson}
+    # « cif » : identifiant fiscal de l'opérateur dans le champ COBERTURA de la carte du ministère.
+    slots:
+      - {id: movistar, name: Movistar, cif: A78923125}
+      - {id: orange_es, name: Orange, cif: A82009812}
+      - {id: vodafone, name: Vodafone, cif: A80907397}
+      - {id: xfera, name: Xfera Móviles, cif: A82528548}
+    sources: [es_mtd]
+
+  AD:
+    code: 5
+    eu_roaming: false
+    # Contour : OpenStreetMap (relation 9407), extrait quotidien de Geofabrik.
+    mask:
+      type: vector_file
+      url: https://download.geofabrik.de/europe/andorra-latest.osm.pbf
+      layer: multipolygons
+      where: "osm_id = '9407'"
+      expect: 1
+    # Pas de carte officielle : estimation, tous réseaux du pays confondus.
+    slots:
+      - {id: ad_1, min_operators: 1}
+    sources: [ad_estimation]
+
+  MC:
+    code: 6
+    eu_roaming: false
+    # Contour : OpenStreetMap, terre ferme de Monaco (relation 36990, sans les eaux territoriales).
+    mask:
+      type: osm_land_area
+      url: https://download.geofabrik.de/europe/monaco-latest.osm.pbf
+      relation: 36990
+    slots:
+      - {id: mc_1, min_operators: 1}
+    sources: [mc_estimation]
+
 # ---------------------------------------------------------------------------
-# Sources de données. Un module Python par source dans czb/sources/.
+# Estimation, pour les pays sans carte officielle : réglages communs.
+# Antennes : OpenCellID (clé gratuite dans le secret OPENCELLID_TOKEN) ; relief : Copernicus DEM GLO-30.
+# La règle à trois niveaux a été calée sur la France, où la vérité officielle existe (docs/sources.md).
+# ---------------------------------------------------------------------------
+estimation: &estimation
+  module: estimation_opencellid
+  type: 2
+  name: "Estimation : antennes OpenCellID et relief Copernicus DEM"
+  attribution: "Estimation : OpenCellID (CC BY-SA 4.0), Copernicus DEM"
+  url: https://opencellid.org
+  licence: CC BY-SA 4.0 (zones estimées, dérivées d'OpenCellID)
+  licence_url: https://creativecommons.org/licenses/by-sa/4.0/
+  licence_notice: "Cell tower data from OpenCellID, licensed under CC BY-SA 4.0. Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30."
+  # Page qui donne les liens de téléchargement une fois la clé envoyée.
+  downloads_page: https://opencellid.org/downloads.php
+  dem_url: "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM.tif"
+  services:
+    data: {techno: 4G et 5G, radios: [LTE, NR]}
+  levels_kind: three          # pas de couverture, limitée, bonne : jamais « très bonne »
+  antenna_height_m: 30
+  mobile_height_m: 1.5
+  curvature: 0.75             # réfraction atmosphérique usuelle en radio (rayon terrestre de 4/3)
+  near_miss_m: 30             # « presque visible » : il manque moins de 30 m pour voir l'antenne
+  site_merge_m: 300           # deux points à moins de 300 m forment un seul site
+  station_spread_max_m: 2000  # au-delà, des cellules de même identifiant de station ne sont pas réunies
+  min_samples: 1
+  # Distances maximales (km) au site visible, presque visible ou quelconque le plus proche.
+  good: {visible_km: 5, near_km: 1, any_km: 0.5}
+  limited: {visible_km: 15, near_km: 7.5, any_km: 2}
+  resolution_m: 30
+
+# ---------------------------------------------------------------------------
+# Sources de données. Un module Python par type de source dans czb/sources/.
+# Une source désigne son module par « module », ou à défaut par son propre nom.
 # ---------------------------------------------------------------------------
 sources:
   fr_arcep:
@@ -66,6 +189,92 @@ sources:
     levels_kind: four
     resolution_m: 50
 
+  ch_bakom:
+    country: CH
+    type: 1
+    name: "OFCOM, atlas de la large bande : disponibilité des réseaux mobiles 4G"
+    attribution: OFCOM
+    url: https://www.bakom.admin.ch/en/broadband-atlas
+    licence: Utilisation libre, source à citer (géodonnées de la Confédération)
+    licence_url: https://www.geo.admin.ch/en/general-terms-of-use-fsdi
+    stac_url: "https://data.geo.admin.ch/api/stac/v0.9/collections/{collection}/items"
+    services:
+      data: {techno: 4G, collection: ch.bakom.mobilnetz-4g}
+    # Valeurs du GeoTIFF : 0 = pas de couverture, 2 = couvert par moins de 3 opérateurs, 3 = couvert par les 3.
+    # On en tire le nombre MINIMAL d'opérateurs : 0, 1 ou 3.
+    values: {0: 0, 2: 1, 3: 3}
+    covered_level: 2      # la source dit « couvert » ou non, sans niveau de qualité
+    levels_kind: binary
+    per_operator: true    # les emplacements (seuils) se choisissent un par un
+    resolution_m: 100
+
+  it_agcom:
+    country: IT
+    type: 1
+    name: "AGCOM, Broadband Map : couverture mobile 4G (nombre de réseaux par carré de 100 m)"
+    attribution: BroadbandMap di Agcom (CC BY 4.0)
+    url: https://www.agcom.it/broadband-map
+    licence: Creative Commons Attribuzione 4.0 Internazionale (CC BY 4.0)
+    licence_url: https://www.agcom.it/termini-e-condizioni
+    # La licence demande d'afficher ce logo dans toute œuvre dérivée (fichier public/licences/).
+    licence_logo: licences/agcom-bbmap.jpg
+    licence_notice: "BroadbandMap di Agcom - Autorità per le garanzie nelle comunicazioni è distribuito con Licenza Creative Commons Attribuzione 4.0 Internazionale."
+    service_url: https://geo3.agcom.it/MapET-SFS/rest/services/Grid100/mobile_4G/MapServer
+    query_url: https://geo3.agcom.it/MapET-SFS/rest/services/Grid100/mobile_4G/MapServer/0/query
+    date_url: https://geo3.agcom.it/MapET-SFS/rest/services/Grid100/data_pubblicazione/FeatureServer/0/query
+    date_field: commento
+    oid_field: fid
+    region_field: COD_REG
+    regions: [1, 2, 7]    # Piemonte, Valle d'Aosta, Liguria
+    page_size: 250
+    pause_s: 1
+    services:
+      data: {techno: 4G}
+    count_field: n_infrastrutture_totali
+    values: {1: 1, 2: 2, 3: 3, 4: 4}
+    covered_level: 2
+    levels_kind: binary
+    per_operator: true
+    resolution_m: 100
+
+  es_mtd:
+    country: ES
+    type: 0
+    name: "Ministerio para la Transformación Digital y de la Función Pública, Mapa de Servicios de Banda Ancha Móvil 2024 (4G)"
+    attribution: "Origen de los datos: Ministerio para la Transformación Digital y de la Función Pública"
+    url: https://digital.gob.es/telecomunicaciones-infraestructuras-digitales/areas-interes/banda-ancha/informacion-cobertura/mapas-servicios-banda-ancha
+    licence: Condiciones generales de reutilización (réutilisation libre, source et date à citer)
+    licence_url: https://digital.gob.es/nota-legal
+    item_url: https://www.arcgis.com/sharing/rest/content/items/ef9f55c81f304e5185fcdd7cecf98e7f
+    layer_url: https://services-eu1.arcgis.com/3LqdsBPalJaUFvo1/arcgis/rest/services/InfoCob4G_2024/FeatureServer/0
+    oid_field: OBJECTID
+    region_field: CCOM
+    regions: ["02", "09", "15", "16"]   # Aragón, Cataluña, Navarra, País Vasco
+    operator_field: COBERTURA
+    operator_separator: ";"
+    page_size: 2000
+    pause_s: 0.5
+    # Grille d'origine de la source : pas et origine du service d'images du ministère (EPSG:4258).
+    grid_step_deg: 0.000346111018645788
+    grid_origin: [-180, 90]
+    services:
+      data: {techno: 4G}
+    covered_level: 2      # présence d'un réseau 4G, sans niveau de qualité
+    levels_kind: binary
+    # Date des données, écrite dans le texte de la carte (« cobertura referida a 30 de junio de 2024 »).
+    data_date: "2024-06-30"
+    resolution_m: 38
+
+  ad_estimation:
+    <<: *estimation
+    country: AD
+    mcc: [213]
+
+  mc_estimation:
+    <<: *estimation
+    country: MC
+    mcc: [212]
+
 # ---------------------------------------------------------------------------
 # Périmètres de construction (option --scope).
 # ---------------------------------------------------------------------------
@@ -76,5 +285,19 @@ scopes:
     departements: ["05"]
   france:
     countries: [FR]
+  # Un pays à la fois, pour mettre au point une source.
+  suisse:
+    countries: [CH]
+  italie:
+    countries: [IT]
+  espagne:
+    countries: [ES]
+  andorre-monaco:
+    countries: [AD, MC]
+  # Les départements frontaliers et tous les pays voisins : essai d'ensemble plus rapide que « complet ».
+  frontieres:
+    countries: [FR, CH, IT, ES, AD, MC]
+    departements: ["01", "04", "05", "06", "09", "25", "31", "39", "64", "65", "66", "68", "73", "74", "90"]
+  # Tout : c'est ce que le workflow « Données » construit chaque mois.
   complet:
-    countries: [FR]
+    countries: [FR, CH, IT, ES, AD, MC]

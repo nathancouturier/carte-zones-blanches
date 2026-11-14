@@ -55,16 +55,26 @@ class BuildContext:
     source_info: dict[str, dict[str, Any]] = field(default_factory=dict)
     timings: dict[str, float] = field(default_factory=dict)
     stats: dict[str, Any] = field(default_factory=dict)
+    #: sources qui ne peuvent pas être traitées dans cet environnement, avec la raison (clé d'accès absente)
+    unavailable: dict[str, str] = field(default_factory=dict)
+    #: fenêtres de la grille qui contiennent des pixels d'interstices de frontière comblés
+    gap_windows: list[tuple[int, int, int, int]] = field(default_factory=list)
+    #: fenêtre englobante de chaque pays sur la grille (col0, row0, largeur, hauteur), calculée à la demande
+    country_windows: dict[int, tuple[int, int, int, int] | None] = field(default_factory=dict)
 
     @property
     def scope(self) -> dict[str, Any]:
         return self.cfg["scopes"][self.scope_name]
 
+    def country_sources(self, iso: str) -> list[str]:
+        """Sources du pays qui peuvent être traitées, dans l'ordre de config.yaml."""
+        return [s for s in self.cfg["countries"][iso]["sources"] if s not in self.unavailable]
+
     @property
     def countries(self) -> list[str]:
-        """Pays du périmètre, dans l'ordre de priorité de config.yaml."""
+        """Pays du périmètre qui ont au moins une source disponible, dans l'ordre de priorité de config.yaml."""
         wanted = set(self.scope["countries"])
-        return [iso for iso in self.cfg["countries"] if iso in wanted]
+        return [iso for iso in self.cfg["countries"] if iso in wanted and self.country_sources(iso)]
 
 
 class Timer:

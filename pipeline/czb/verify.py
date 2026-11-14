@@ -91,6 +91,16 @@ def verify(outdir: Path) -> int:
     if not witnesses:
         print("ÉCHEC : aucun point témoin")
         return 1
+    expected_path = outdir / "temoins-attendus.json"
+    if expected_path.exists():
+        counts: dict[tuple[str, str, int], int] = {}
+        for w in witnesses:
+            key = (w["source"], w["service"], int(w["slot"]))
+            counts[key] = counts.get(key, 0) + 1
+        for item in json.loads(expected_path.read_text(encoding="utf-8")):
+            got = counts.get((item["source"], item["service"], int(item["slot"])), 0)
+            if got < int(item["minimum"]):
+                errors.append(f"trop peu de points témoins pour {item['source']} {item['service']} {item['operator']} : {got}, {item['minimum']} attendus au moins")
     if errors:
         print(f"ÉCHEC : {len(errors)} écart(s)")
         for line in errors[:50]:

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from ..context import BuildContext
 from ..grid import mercator_to_lonlat
 from ..net import download, fetch_text
+from ..witness import draw_country_pixels
 from .base import Source
 
 if TYPE_CHECKING:
@@ -40,8 +41,8 @@ NO_DATA = 255
 class ChBakom(Source):
     id = "ch_bakom"
 
-    def __init__(self, cfg: dict[str, Any]):
-        super().__init__(cfg)
+    def __init__(self, cfg: dict[str, Any], source_id: str | None = None):
+        super().__init__(cfg, source_id)
         self._items: dict[str, dict[str, Any]] = {}
 
     # -- version en ligne ---------------------------------------------------
@@ -164,7 +165,7 @@ class ChBakom(Source):
                 warped[warped == NO_DATA] = 0
                 layers.merge_level(service, slot_index, win, warped, self.country_code)
             self._collect_witnesses(ctx, witnesses, level, service, slot_index, slot)
-        ctx.stats.setdefault("pixels_sans_donnee", {})[f"{self.id}:{service}"] = missing
+        ctx.stats.setdefault("pixels_sans_donnee", {})[f"{self.source_id}:{service}"] = missing
         if missing:
             print(f"    {missing:,} pixels du pays sans donnée dans la source (comptés comme non couverts)".replace(",", " "), flush=True)
 
@@ -185,10 +186,7 @@ class ChBakom(Source):
         attempts = 0
         while len(out) < wanted and attempts < 400:
             attempts += 1
-            cols = rng.integers(0, canvas.width, size=wanted * 4)
-            rows = rng.integers(0, canvas.height, size=wanted * 4)
-            inside = (np.asarray(layers.B[rows, cols]) & 0x0F) == self.country_code
-            for col, row in zip(cols[inside].tolist(), rows[inside].tolist()):
+            for col, row in zip(*draw_country_pixels(ctx, self.country_code, rng, wanted * 4)):
                 x, y = canvas.pixel_center(col, row)
                 sx, sy, _ = from_merc.TransformPoint(x, y)
                 fc = (sx - gt[0]) / gt[1]
@@ -225,7 +223,7 @@ class ChBakom(Source):
             lon, lat = mercator_to_lonlat(cand["x"], cand["y"])
             ctx.witnesses.append(
                 {
-                    "source": self.id,
+                    "source": self.source_id,
                     "country": self.country_iso,
                     "service": service,
                     "slot": slot_index,

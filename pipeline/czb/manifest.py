@@ -27,7 +27,7 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
     for iso in ctx.countries:
         country = ctx.cfg["countries"][iso]
         sources = []
-        for source_id in country["sources"]:
+        for source_id in ctx.country_sources(iso):
             scfg = ctx.cfg["sources"][source_id]
             info = ctx.source_info.get(source_id)
             if info is None:
@@ -51,6 +51,11 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
             }
             if info.get("data_date"):
                 entry["dataDate"] = info["data_date"]
+            # Mentions que certaines licences demandent d'afficher telles quelles (logo de l'AGCOM, formule d'OpenCellID).
+            if scfg.get("licence_notice"):
+                entry["licenceNotice"] = scfg["licence_notice"]
+            if scfg.get("licence_logo"):
+                entry["licenceLogo"] = scfg["licence_logo"]
             if scfg.get("resolution_m"):
                 entry["resolutionM"] = scfg["resolution_m"]
             sources.append({k: v for k, v in entry.items() if v is not None})
@@ -88,6 +93,10 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
         "archives": archives,
         "countries": countries,
     }
+    # Pays du périmètre laissés de côté faute de source disponible (clé d'accès absente) : le site peut le dire.
+    missing = [iso for iso in ctx.scope["countries"] if iso not in ctx.countries]
+    if missing:
+        manifest["missing"] = [{"iso": iso, "code": int(ctx.cfg["countries"][iso]["code"])} for iso in ctx.cfg["countries"] if iso in missing]
     if any("blocks" in a for a in archives):
         manifest["tiles"]["blockZoom"] = min(int(grid_cfg["block_zoom"]), int(grid_cfg["max_zoom"]))
     return manifest

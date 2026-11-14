@@ -47,8 +47,8 @@ def _write_archive(ctx: BuildContext, path: Path, tiles: Any, min_zoom: int, max
 def write_archives(ctx: BuildContext, store: TileStore, date_tag: str) -> list[dict[str, Any]]:
     """Écrit une archive unique si elle tient sous la limite, sinon un aperçu et des archives par blocs."""
     limits = ctx.cfg["limits"]
-    max_bytes = int(limits["archive_max_mb"]) * 1_000_000
-    target_bytes = int(limits["target_archive_mb"]) * 1_000_000
+    max_bytes = int(float(limits["archive_max_mb"]) * 1_000_000)
+    target_bytes = int(float(limits["target_archive_mb"]) * 1_000_000)
     grid_cfg = ctx.cfg["grid"]
     min_zoom, max_zoom = int(grid_cfg["min_zoom"]), int(grid_cfg["max_zoom"])
     block_zoom = min(int(grid_cfg["block_zoom"]), max_zoom)
@@ -111,6 +111,6 @@ def write_archives(ctx: BuildContext, store: TileStore, date_tag: str) -> list[d
         if size > max_bytes:
             raise RuntimeError(f"{archive['file']} dépasse la limite de {limits['archive_max_mb']} Mo")
     site_total = sum(a["bytes"] for a in archives)
-    if site_total > int(limits["site_max_mb"]) * 1_000_000:
+    if site_total > int(float(limits["site_max_mb"]) * 1_000_000):
         raise RuntimeError(f"les données pèsent {site_total / 1e6:.0f} Mo, plus que la limite du site ({limits['site_max_mb']} Mo)")
     return archives

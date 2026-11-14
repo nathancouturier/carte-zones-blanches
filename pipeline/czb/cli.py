@@ -2,6 +2,8 @@
 
   python -m czb.cli state                      état des sources en ligne (détection des nouvelles versions)
   python -m czb.cli changed --repo o/r          compare cet état à celui de la dernière release de données
+  python -m czb.cli production                 périmètre et services du site en ligne (config.yaml)
+  python -m czb.cli fetch-cache --repo o/r      récupère les copies de travail de la dernière release
   python -m czb.cli build --scope hautes-alpes construit les archives PMTiles et le manifest
   python -m czb.cli verify --out out           test de cohérence source contre pixels
 """
@@ -20,6 +22,7 @@ from typing import Any
 from . import __version__
 from .context import BuildContext, Timer, grid_from_config, load_config
 from .sources import create_source
+from .sources.base import SourceUnavailable
 
 
 def remote_state(cfg: dict[str, Any], scope_name: str, services: list[str]) -> dict[str, Any]:
@@ -30,9 +33,25 @@ def remote_state(cfg: dict[str, Any], scope_name: str, services: list[str]) -> d
             continue
         for source_id in cfg["countries"][iso]["sources"]:
             source = create_source(source_id, cfg)
+            ok, reason = source.available()
+            if not ok:
+                # Le jour où la source devient disponible (clé d'accès créée), l'état change et la reconstruction se déclenche.
+                state[source_id] = {"indisponible": reason}
+                continue
             wanted = [s for s in services if s in cfg["sources"][source_id]["services"]]
             state[source_id] = source.remote_state(wanted) if wanted else {}
     return {"pipeline": __version__, "scope": scope_name, "services": services, "sources": state}
+
+
+def unavailable_sources(cfg: dict[str, Any], scope_name: str) -> dict[str, str]:
+    """Sources du périmètre qui ne peuvent pas être traitées ici, avec la raison."""
+    out: dict[str, str] = {}
+    for iso in cfg["scopes"][scope_name]["countries"]:
+        for source_id in cfg["countries"][iso]["sources"]:
+            ok, reason = create_source(source_id, cfg).available()
+            if not ok:
+                out[source_id] = reason
+    return out
 
 
 def cmd_state(args: argparse.Namespace) -> int:
@@ -66,6 +85,35 @@ def cmd_changed(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_production(args: argparse.Namespace) -> int:
+    """Affiche le périmètre et les services du site en ligne (section « production » de config.yaml)."""
+    from .release_state import write_github_output
+
+    cfg = load_config(args.config)
+    production = cfg.get("production") or {}
+    scope = production.get("scope", "complet")
+    services = ",".join(production.get("services", ["data"]))
+    if scope not in cfg["scopes"]:
+        print(f"config.yaml : production.scope « {scope} » n'est pas un périmètre connu")
+        return 1
+    print(f"scope={scope}\nservices={services}")
+    write_github_output({"prod_scope": scope, "prod_services": services})
+    return 0
+
+
+def cmd_fetch_cache(args: argparse.Namespace) -> int:
+    """Récupère les copies de travail de la dernière release de données (voir czb/cache.py)."""
+    from .release_state import fetch_cache
+
+    try:
+        names = fetch_cache(args.repo, Path(args.work) / "cache")
+    except Exception as exc:  # une copie de travail est un confort : sans elle, la source est relue en entier
+        print(f"copies de travail non récupérées ({exc}) : les sources seront relues en entier")
+        return 0
+    print(f"copies de travail récupérées : {', '.join(names) if names else 'aucune'}")
+    return 0
+
+
 def cmd_build(args: argparse.Namespace) -> int:
     # Imports tardifs : GDAL n'est nécessaire que pour construire.
     from .archives import write_archives
@@ -85,6 +133,25 @@ def cmd_build(args: argparse.Namespace) -> int:
     t_start = time.time()
     generated = args.date or dt.date.today().isoformat()
 
+    ctx.unavailable = unavailable_sources(cfg, args.scope)
+    # Une instance par source pour toute la construction : la préparation et le traitement se parlent.
+    sources = {source_id: create_source(source_id, cfg) for iso in ctx.scope["countries"] for source_id in cfg["countries"][iso]["sources"]}
+    with Timer(ctx, "préparation des sources"):
+        for source_id, source in sources.items():
+            if source_id in ctx.unavailable:
+                continue
+            try:
+                source.prepare(ctx)
+            except SourceUnavailable as exc:
+                ctx.unavailable[source_id] = str(exc)
+    for source_id, reason in ctx.unavailable.items():
+        print(f"ATTENTION : source {source_id} laissée de côté ({reason})", flush=True)
+    if [iso for iso in ctx.scope["countries"] if iso not in ctx.countries]:
+        print(f"ATTENTION : pays sans source disponible, absents de cette construction : {', '.join(iso for iso in ctx.scope['countries'] if iso not in ctx.countries)}", flush=True)
+    if not ctx.countries:
+        print("ERREUR : aucun pays du périmètre n'a de source disponible")
+        return 1
+
     with Timer(ctx, "état des sources"):
         state = remote_state(cfg, args.scope, services)
         (outdir / "etat-sources.json").write_text(json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
@@ -98,10 +165,29 @@ def cmd_build(args: argparse.Namespace) -> int:
         rasterize_masks(ctx, geoms)
         del geoms
 
-    for iso in ctx.countries:
-        for source_id in cfg["countries"][iso]["sources"]:
-            with Timer(ctx, f"source {source_id}"):
-                ctx.source_info[source_id] = create_source(source_id, cfg).process(ctx)
+    for iso in list(ctx.countries):
+        for source_id in ctx.country_sources(iso):
+            try:
+                with Timer(ctx, f"source {source_id}"):
+                    ctx.source_info[source_id] = sources[source_id].process(ctx)
+            except SourceUnavailable as exc:
+                # La source se révèle inutilisable en cours de route (pas de donnée pour ce pays, quota atteint) :
+                # la construction continue sans elle.
+                ctx.unavailable[source_id] = str(exc)
+                ctx.witnesses = [w for w in ctx.witnesses if w["source"] != source_id]
+                print(f"ATTENTION : source {source_id} laissée de côté ({exc})", flush=True)
+                if not ctx.country_sources(iso):
+                    freed = ctx.layers.release_country(int(cfg["countries"][iso]["code"]))
+                    print(f"ATTENTION : {iso} n'a plus de source, le pays est retiré de cette construction ({freed} pixels)", flush=True)
+    skipped = [iso for iso in ctx.scope["countries"] if iso not in ctx.countries]
+    if not ctx.countries:
+        print("ERREUR : plus aucun pays du périmètre n'a de source utilisable")
+        ctx.layers.cleanup()
+        return 1
+    if ctx.gap_windows:
+        with Timer(ctx, "interstices de frontière"):
+            ctx.stats["interstices"] = ctx.layers.extrapolate_marked(ctx.gap_windows)
+            print(f"   {ctx.stats['interstices']}", flush=True)
     ctx.layers.flush()
 
     store = TileStore(workdir / "tuiles.sqlite", min(int(cfg["grid"]["block_zoom"]), int(cfg["grid"]["max_zoom"])))
@@ -121,6 +207,18 @@ def cmd_build(args: argparse.Namespace) -> int:
     manifest = build_manifest(ctx, archives, generated)
     (outdir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (outdir / "temoins.json").write_text(json.dumps(ctx.witnesses, ensure_ascii=False) + "\n", encoding="utf-8")
+    # Ce que le test de cohérence doit trouver : un minimum de points pour chaque source, service et emplacement
+    # annoncés par le manifest. Sans cela, une source sans aucun point témoin passerait le test.
+    verification = cfg["verification"]
+    minimum = min(int(verification.get("min_points", 20)), int(verification["points_per_file"]))
+    expected = []
+    for country in manifest["countries"]:
+        slots = cfg["countries"][country["iso"]]["slots"]
+        for source in country["sources"]:
+            for service in source["services"]:
+                for index, slot in enumerate(slots):
+                    expected.append({"source": source["id"], "country": country["iso"], "service": service, "slot": index, "operator": slot["id"], "minimum": minimum})
+    (outdir / "temoins-attendus.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     ctx.layers.cleanup()
 
     total = sum(a["bytes"] for a in archives)
@@ -133,6 +231,8 @@ def cmd_build(args: argparse.Namespace) -> int:
         "archives": [{"file": a["file"], "mb": round(a["bytes"] / 1e6, 2)} for a in archives],
         "total_mb": round(total / 1e6, 2),
         "witnesses": len(ctx.witnesses),
+        "unavailable_sources": ctx.unavailable,
+        "skipped_countries": skipped,
         "timings_s": ctx.timings,
         "total_s": round(time.time() - t_start, 1),
         "stats": ctx.stats,
@@ -166,6 +266,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--repo", required=True, help="dépôt GitHub, sous la forme propriétaire/nom")
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_changed)
+
+    p = sub.add_parser("production", help="affiche le périmètre et les services du site en ligne")
+    p.set_defaults(func=cmd_production)
+
+    p = sub.add_parser("fetch-cache", help="récupère les copies de travail de la dernière release de données")
+    p.add_argument("--repo", required=True, help="dépôt GitHub, sous la forme propriétaire/nom")
+    p.add_argument("--work", default="work")
+    p.set_defaults(func=cmd_fetch_cache)
 
     p = sub.add_parser("build", help="construit les archives PMTiles et le manifest")
     p.add_argument("--scope", default="complet")

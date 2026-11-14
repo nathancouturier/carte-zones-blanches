@@ -48,8 +48,8 @@ def transformer_from_mercator(target_srs: osr.SpatialReference) -> osr.Coordinat
 
 
 def _memory_vector() -> ogr.DataSource:
-    # « Memory » jusqu'à GDAL 3.10, « MEM » ensuite.
-    for name in ("Memory", "MEM"):
+    # « MEM » depuis GDAL 3.11 (« Memory » y est déprécié), « Memory » avant.
+    for name in ("MEM", "Memory"):
         driver = ogr.GetDriverByName(name)
         if driver is None:
             continue
@@ -60,6 +60,47 @@ def _memory_vector() -> ogr.DataSource:
         if ds is not None:
             return ds
     raise RuntimeError("aucun pilote vecteur en mémoire disponible dans GDAL")
+
+
+def make_valid(geom: ogr.Geometry) -> ogr.Geometry | None:
+    """Répare une géométrie en gardant toute la surface de ses parties.
+
+    La méthode « STRUCTURE » réunit les parties qui se recouvrent, comme le fait la rastérisation.
+    La méthode par défaut de GEOS (« LINEWORK ») changerait leur partie commune en trou.
+    """
+    return geom.MakeValid(["METHOD=STRUCTURE"])
+
+
+def polygonal(geom: ogr.Geometry) -> ogr.Geometry | None:
+    """Rend une géométrie valide et n'en garde que les polygones (ou None s'il n'en reste pas).
+
+    Les polygones tirés d'une grille (carrés qui se touchent par un coin) sont souvent invalides pour GEOS.
+    MakeValid peut laisser des lignes ou des points : on les écarte, ils n'ont pas de surface.
+    """
+    if geom is None or geom.IsEmpty():
+        return None
+    if geom.IsValid() and geom.GetGeometryName() in ("POLYGON", "MULTIPOLYGON"):
+        return geom
+    valid = geom if geom.IsValid() else make_valid(geom)
+    if valid is None:
+        return None
+    parts: list[ogr.Geometry] = []
+
+    def collect(g: ogr.Geometry) -> None:
+        name = g.GetGeometryName()
+        if name == "POLYGON":
+            parts.append(g)
+        elif name in ("MULTIPOLYGON", "GEOMETRYCOLLECTION"):
+            for i in range(g.GetGeometryCount()):
+                collect(g.GetGeometryRef(i))
+
+    collect(valid)
+    if not parts:
+        return None
+    multi = ogr.Geometry(ogr.wkbMultiPolygon)
+    for part in parts:
+        multi.AddGeometry(part)
+    return multi
 
 
 def split_window(win: Window, max_side: int = MAX_CHUNK) -> Iterator[Window]:
@@ -126,5 +167,7 @@ def warp_to_window(
     out_band = target.GetRasterBand(1)
     out_band.SetNoDataValue(nodata)
     out_band.Fill(nodata)
-    gdal.Warp(target, source, resampleAlg="near")
+    # errorThreshold=0 : chaque centre de pixel est reprojeté exactement (par défaut GDAL interpole la
+    # reprojection, ce qui peut décaler le pixel source choisi près d'un bord de maille).
+    gdal.Warp(target, source, resampleAlg="near", errorThreshold=0)
     return target.GetRasterBand(1).ReadAsArray()

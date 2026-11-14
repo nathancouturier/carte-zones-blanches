@@ -1,7 +1,10 @@
 """Génération des tuiles : zoom maximal, puis zooms inférieurs en plus proche voisin.
 
 On ne fait jamais de moyenne entre pixels : les canaux portent des données
-codées, une moyenne les rendrait fausses.
+codées, une moyenne les rendrait fausses. À tous les zooms la règle est la
+même : un pixel du zoom z recopie le pixel central du carré de 2^(12 - z)
+pixels de côté qu'il représente au zoom 12. Le contenu d'une tuile ne dépend
+donc pas de la façon dont les tuiles sont ensuite rangées dans les archives.
 """
 
 from __future__ import annotations
@@ -94,7 +97,8 @@ def build_tiles(ctx: BuildContext, store: TileStore) -> None:
 
     bx0, bx1 = canvas.tx0 // per_block, canvas.tx1 // per_block
     by0, by1 = canvas.ty0 // per_block, canvas.ty1 // per_block
-    overview: dict[tuple[int, int], np.ndarray] = {}  # tuiles du zoom des blocs, pour bâtir les zooms inférieurs
+    # Tuiles des zooms inférieurs au zoom des blocs : chaque bloc y dépose ses pixels au passage.
+    low: dict[int, dict[tuple[int, int], np.ndarray]] = {z: {} for z in range(min_zoom, block_zoom)}
     total_blocks = (bx1 - bx0 + 1) * (by1 - by0 + 1)
     done = 0
     for by in range(by0, by1 + 1):
@@ -126,26 +130,25 @@ def build_tiles(ctx: BuildContext, store: TileStore) -> None:
                             continue
                         if z >= min_zoom:
                             store.put(z, (bx << (z - block_zoom)) + i, (by << (z - block_zoom)) + j, encode_png(tile))
-                        if z == block_zoom:
-                            overview[(bx, by)] = np.ascontiguousarray(tile)
+            # Zooms inférieurs : les pixels centraux qui tombent dans ce bloc, rangés dans la tuile qui le contient.
+            x_origin, y_origin = bx * block_px, by * block_px  # coin du bloc, en pixels du zoom maximal
+            for z, tiles in low.items():
+                factor = 1 << (max_zoom - z)
+                first_x = (factor // 2 - x_origin) % factor
+                first_y = (factor // 2 - y_origin) % factor
+                if first_x >= block_px or first_y >= block_px:
+                    continue
+                samples = block[first_y::factor, first_x::factor]
+                if not samples[..., 3].any():
+                    continue
+                gx, gy = (x_origin + first_x) // factor, (y_origin + first_y) // factor  # pixel du zoom z, compté depuis l'origine du monde
+                tile = tiles.setdefault((gx // ts, gy // ts), np.zeros((ts, ts, 4), dtype=np.uint8))
+                tile[gy % ts : gy % ts + samples.shape[0], gx % ts : gx % ts + samples.shape[1]] = samples
             if done % 10 == 0 or done == total_blocks:
                 print(f"   blocs traités : {done}/{total_blocks}", flush=True)
 
-    # Zooms inférieurs au zoom des blocs : chaque tuile est bâtie à partir de ses 4 filles.
-    current = overview
-    for z in range(block_zoom - 1, -1, -1):
-        parents: dict[tuple[int, int], np.ndarray] = {}
-        for px, py in sorted({(x >> 1, y >> 1) for x, y in current}):
-            mosaic = np.zeros((2 * ts, 2 * ts, 4), dtype=np.uint8)
-            for dy in (0, 1):
-                for dx in (0, 1):
-                    child = current.get((2 * px + dx, 2 * py + dy))
-                    if child is not None:
-                        mosaic[dy * ts : (dy + 1) * ts, dx * ts : (dx + 1) * ts] = child
-            tile = np.ascontiguousarray(_downsample(mosaic, 2))
+    for z in sorted(low, reverse=True):
+        for (x, y), tile in sorted(low[z].items()):
             if tile[..., 3].any():
-                parents[(px, py)] = tile
-                if z >= min_zoom:
-                    store.put(z, px, py, encode_png(tile))
-        current = parents
+                store.put(z, x, y, encode_png(tile))
     store.commit()

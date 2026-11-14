@@ -6,6 +6,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from .net import USER_AGENT
@@ -48,6 +49,21 @@ def latest_release_state(repo: str) -> tuple[str | None, dict[str, Any] | None]:
             data = _get(asset["url"], accept="application/octet-stream")
             return release["tag_name"], json.loads(data)
     return release["tag_name"], None
+
+
+def fetch_cache(repo: str, dest: Path) -> list[str]:
+    """Télécharge les copies de travail (cache-*.tif) de la dernière release de données. Renvoie leurs noms."""
+    release = latest_data_release(repo)
+    if release is None:
+        return []
+    dest.mkdir(parents=True, exist_ok=True)
+    names = []
+    for asset in release.get("assets", []):
+        name = asset["name"]
+        if name.startswith("cache-") and name.endswith(".tif"):
+            (dest / name).write_bytes(_get(asset["url"], accept="application/octet-stream"))
+            names.append(name)
+    return names
 
 
 def write_github_output(values: dict[str, str]) -> None:
