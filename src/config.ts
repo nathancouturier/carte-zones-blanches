@@ -3,6 +3,14 @@
 /** Dossier des données de couverture (manifest.json et archives PMTiles), relatif à la page. */
 export const DATA_BASE_URL = `${import.meta.env.BASE_URL}data/`;
 
+/**
+ * Délai maximal d'une lecture de tuile de couverture dans les archives, en
+ * millisecondes. Au-delà (connexion qui cale), la lecture échoue : l'analyse
+ * d'un GPX s'arrête avec un message au lieu de rester figée, et une nouvelle
+ * tentative relit vraiment au lieu d'attendre la requête bloquée.
+ */
+export const TILE_READ_TIMEOUT_MS = 20_000;
+
 /** Vue de départ : la France métropolitaine. */
 export const INITIAL_VIEW = { center: [2.6, 46.5] as [number, number], zoom: 5.2 };
 /** Emprise utile de la carte : ouest, sud, est, nord. */

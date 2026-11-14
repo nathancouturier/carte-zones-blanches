@@ -1,8 +1,8 @@
 // Chef d'orchestre : relie l'état, la carte, les données et l'interface.
 
 import { PMTiles } from 'pmtiles';
-import { DATA_BASE_URL, MAX_GPX_BYTES } from './config';
-import { createArchiveReader } from './coverage/archives';
+import { DATA_BASE_URL, MAX_GPX_BYTES, TILE_READ_TIMEOUT_MS } from './config';
+import { createArchiveReader, type OnlineArchiveReader } from './coverage/archives';
 import { unpackCountry } from './coverage/codec';
 import { createTileDecoder } from './coverage/decode';
 import {
@@ -54,7 +54,7 @@ export class App {
   private tables: LevelTables = [];
   private renderState: CoverageRenderState | null = null;
   private importSeq = 0;
-  private readArchive: ArchiveReader | null = null;
+  private readArchive: OnlineArchiveReader | null = null;
   private offlineAbort: AbortController | null = null;
   private moveTimer: ReturnType<typeof setTimeout> | undefined;
   private hooks: AppHooks = { toast: () => undefined, padding: () => ({ top: 40, right: 40, bottom: 40, left: 40 }) };
@@ -106,13 +106,13 @@ export class App {
     }
     const online = createArchiveReader((file) => new PMTiles(`${DATA_BASE_URL}${file}`));
     // Sans réseau, on sert les tuiles enregistrées par « Préparer le hors ligne ».
-    const read: ArchiveReader = async (file, z, x, y) => {
+    const read: ArchiveReader = async (file, z, x, y, signal) => {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         const stored = await storedCoverageTile(import.meta.env.BASE_URL, z, x, y);
         if (stored !== undefined) return stored ?? undefined;
       }
       try {
-        return await online(file, z, x, y);
+        return await online(file, z, x, y, signal);
       } catch (error) {
         const stored = await storedCoverageTile(import.meta.env.BASE_URL, z, x, y);
         if (stored === undefined) throw error;
@@ -350,6 +350,7 @@ export class App {
     const { track, manifest } = this.state;
     const store = this.tileStore;
     if (!track || !manifest || !store) return;
+    this.restartReads();
     const seq = ++this.importSeq;
     this.store.set({ trackStatus: 'analyzing', trackError: null, progress: 0 });
     try {
@@ -365,6 +366,15 @@ export class App {
       console.warn('Analyse du tracé :', error);
       if (seq === this.importSeq) this.store.set({ trackStatus: 'ready', trackError: { key: 'gpx.error.analysis' } });
     }
+  }
+
+  /**
+   * Après une panne : les lectures suivantes repartent du réseau, avec des
+   * archives neuves, au lieu d'attendre des requêtes restées en suspens.
+   */
+  private restartReads(): void {
+    this.tileStore?.restart();
+    this.readArchive?.reset();
   }
 
   private showTrack(track: LoadedTrack | null): void {
@@ -442,7 +452,8 @@ export class App {
         coverageMaxZoom: manifest.tiles.maxzoom,
         readCoverageTile: async (z, x, y) => {
           const archive = archiveForTile(manifest, z, x, y);
-          return archive ? readArchive(archive.file, z, x, y) : undefined;
+          // Même délai que pour l'affichage : une connexion qui cale ne fige pas l'enregistrement.
+          return archive ? readArchive(archive.file, z, x, y, AbortSignal.timeout(TILE_READ_TIMEOUT_MS)) : undefined;
         },
         basemap: basemapPack(activeBasemap, this.mapView.currentVectorStyle()),
         onProgress: (done, total) => {
