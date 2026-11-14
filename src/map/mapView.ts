@@ -27,6 +27,9 @@ import { EMPTY_COLLECTION } from './trackGeojson';
 // Le worker de MapLibre est un fichier à part : on indique son adresse au bundler.
 setWorkerUrl(workerUrl);
 
+/** Délai maximal pour obtenir la position GPS, en millisecondes. */
+const LOCATE_TIMEOUT_MS = 15_000;
+
 export interface StyleInputs {
   basemap: BasemapId;
   hillshade: boolean;
@@ -85,9 +88,12 @@ export class MapView {
     this.map.keyboard.disableRotation();
 
     this.map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+    // Chaque appui sur « Ma position » relit la position, l'affiche et centre la carte dessus.
+    // En mode suivi (trackUserLocation), un second appui coupait la localisation, et la carte
+    // revenait seule sur l'utilisateur après une recherche.
     this.geolocate = new GeolocateControl({
-      positionOptions: { enableHighAccuracy: true, timeout: 15000 },
-      trackUserLocation: true,
+      positionOptions: { enableHighAccuracy: true, timeout: LOCATE_TIMEOUT_MS },
+      trackUserLocation: false,
       showAccuracyCircle: true,
     });
     this.map.addControl(this.geolocate, 'top-right');
@@ -199,9 +205,22 @@ export class MapView {
     this.map.flyTo({ center: [lon, lat], zoom, padding, duration: 700 });
   }
 
-  /** Lance la localisation (ou la recentre si elle est déjà active). */
-  locate(): void {
-    this.geolocate.trigger();
+  /**
+   * Lit la position, l'affiche et centre la carte dessus. La promesse se termine
+   * quand la position est connue ou se révèle indisponible.
+   */
+  locate(): Promise<void> {
+    return new Promise((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        for (const subscription of subscriptions) subscription.unsubscribe();
+        resolve();
+      };
+      const subscriptions = [this.geolocate.on('geolocate', done), this.geolocate.on('error', done), this.geolocate.on('outofmaxbounds', done)];
+      // Filet de sécurité : sans réponse à la demande d'autorisation, certains navigateurs ne disent rien.
+      const timer = setTimeout(done, LOCATE_TIMEOUT_MS + 5000);
+      if (!this.geolocate.trigger()) done();
+    });
   }
 
   /** Points répartis dans la vue (dont le centre en premier), pour savoir quels pays sont à l'écran. */
@@ -227,7 +246,7 @@ export class MapView {
     return Math.max(minzoom, Math.min(maxzoom, Math.round(this.map.getZoom() + 1)));
   }
 
-  /** Met à jour les infobulles des contrôles après un changement de langue. */
+  /** Met à jour les infobulles des contrôles et le nom de la carte après un changement de langue. */
   updateLabels(): void {
     const labels = this.options.labels();
     const set = (selector: string, key: string): void => {
@@ -240,5 +259,7 @@ export class MapView {
     set('.maplibregl-ctrl-zoom-in', 'NavigationControl.ZoomIn');
     set('.maplibregl-ctrl-zoom-out', 'NavigationControl.ZoomOut');
     set('.maplibregl-ctrl-geolocate', 'GeolocateControl.FindMyLocation');
+    // Le canevas n'a pas d'infobulle : seul son nom accessible change.
+    if (labels['Map.Title']) this.map.getCanvas().setAttribute('aria-label', labels['Map.Title']);
   }
 }

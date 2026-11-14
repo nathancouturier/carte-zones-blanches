@@ -91,6 +91,13 @@ a,
   font-size: inherit;
 }
 
+/* Sur écran tactile, les liens d'action (« Modifier », « Sources ») ont une cible de 44 px de haut. */
+@media (pointer: coarse) {
+  .link {
+    min-height: 44px;
+  }
+}
+
 .muted {
   color: var(--c-muted);
 }
@@ -145,6 +152,11 @@ a,
 .fab--on {
   background: var(--c-accent);
   color: #fff;
+}
+
+/* « Ma position » en attente du GPS. */
+.fab--busy svg {
+  animation: pulse 1s ease-in-out infinite;
 }
 
 .search {
@@ -362,6 +374,22 @@ a,
     width: 400px;
     max-height: calc(100dvh - 70px - var(--bar-height) - 36px);
   }
+
+  /* Sur le côté, le panneau laisse la carte visible : pas besoin de le réduire. */
+  .panel__collapse {
+    display: none;
+  }
+}
+
+/* Sur téléphone, le panneau Rapport réduit à son titre laisse voir la carte au-dessus. */
+@media not all and (min-width: 900px) {
+  .panel--collapsed .panel__head {
+    border-bottom: 0;
+  }
+
+  .panel--collapsed .panel__body {
+    display: none;
+  }
 }
 
 /* --- Contenu des panneaux -------------------------------------------------- */
@@ -482,6 +510,12 @@ input[type="range"] {
   width: 100%;
   height: 32px;
   accent-color: var(--c-accent);
+}
+
+@media (pointer: coarse) {
+  input[type="range"] {
+    height: 44px;
+  }
 }
 
 .check,
@@ -844,6 +878,7 @@ input[type="range"] {
 
 /* --- Pied de carte, messages, dépôt de fichier -------------------------------- */
 
+/* Au-dessus de la barre d'outils, sur téléphone comme sur PC : jamais dessous. */
 .attribution {
   position: fixed;
   right: calc(var(--safe-right) + 8px);
@@ -863,8 +898,8 @@ input[type="range"] {
 
 .attribution__toggle {
   flex: none;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.92);
@@ -889,7 +924,6 @@ input[type="range"] {
 
 @media (min-width: 900px) {
   .attribution {
-    bottom: calc(var(--safe-bottom) + 6px);
     max-width: 42vw;
   }
 

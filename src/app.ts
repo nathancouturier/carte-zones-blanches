@@ -27,7 +27,7 @@ import { decodeGpx, GpxError, parseGpx } from './gpx/parse';
 import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/report';
 import { resample } from './gpx/resample';
 import { getLanguage, setLanguage, t } from './i18n';
-import { autoBasemap, basemapPack, BASEMAPS, hillshadePack, type BasemapChoice, type BasemapId, type BasemapPack } from './map/basemaps';
+import { autoBasemapForView, basemapPack, BASEMAPS, hillshadePack, type BasemapChoice, type BasemapId, type BasemapPack } from './map/basemaps';
 import {
   basemapGroups,
   clearOffline,
@@ -74,7 +74,12 @@ export class App {
   private tileStore: TileStore | null = null;
   private tables: LevelTables = [];
   private renderState: CoverageRenderState | null = null;
+  /** Numéro du tracé affiché et de son analyse : un nouvel import ou une relance l'incrémente. */
   private importSeq = 0;
+  /** Numéro du dernier fichier en cours de lecture (un fichier refusé ne touche pas au tracé affiché). */
+  private readSeq = 0;
+  /** Numéro de l'analyse en cours, null s'il n'y en a pas. */
+  private analysing: number | null = null;
   private readArchive: OnlineArchiveReader | null = null;
   private dataWatcher: NewDataWatcher | null = null;
   private offlineAbort: AbortController | null = null;
@@ -91,6 +96,8 @@ export class App {
     this.mapView = new MapView({
       container: mapContainer,
       labels: () => ({
+        // Nom du canevas de la carte, lu par les lecteurs d'écran (« Map » sinon, dans toutes les langues).
+        'Map.Title': t('app.mapLabel'),
         'NavigationControl.ZoomIn': t('action.zoomIn'),
         'NavigationControl.ZoomOut': t('action.zoomOut'),
         'GeolocateControl.FindMyLocation': t('action.locate'),
@@ -137,7 +144,9 @@ export class App {
       manifest = parseManifest(await response.json());
     } catch (error) {
       console.warn('Données de couverture indisponibles :', error);
-      this.store.set({ dataStatus: 'missing' });
+      // Un tracé importé pendant le chargement n'attend plus rien : le rapport dit que les données manquent.
+      const waiting = !!this.state.track && !this.state.track.analysis && this.state.trackStatus === 'analyzing';
+      this.store.set(waiting ? { dataStatus: 'missing', trackStatus: 'ready', panel: 'report' } : { dataStatus: 'missing' });
       return;
     }
     // Une archive illisible peut venir d'une nouvelle publication des données : on relit alors le manifest.
@@ -155,6 +164,8 @@ export class App {
       (next) => void this.switchData(new TileStore(next, read, decoder)),
     );
     this.useTiles(new TileStore(manifest, read, decoder));
+    // Un tracé importé pendant le chargement des données est analysé maintenant.
+    if (this.state.track && !this.state.track.analysis) void this.retryAnalysis();
     await this.applyStyle();
     this.scheduleViewUpdate();
     // Sans réseau (ou presque), on recharge tout seul le tracé préparé pour le hors ligne.
@@ -318,9 +329,10 @@ export class App {
     if (!manifest || !store) return;
     const zoom = this.mapView.dataZoom(manifest.tiles.minzoom, manifest.tiles.maxzoom);
     const points = this.mapView.viewSamplePoints();
-    let pixels: (Awaited<ReturnType<TileStore['sample']>> | null)[];
+    // undefined : la lecture a échoué (réseau) ; null : pas de données à cet endroit.
+    let pixels: (Awaited<ReturnType<TileStore['sample']>> | undefined)[];
     try {
-      pixels = await Promise.all(points.map((p) => store.sample(p.lon, p.lat, zoom).catch(() => null)));
+      pixels = await Promise.all(points.map((p) => store.sample(p.lon, p.lat, zoom).catch(() => undefined)));
     } catch {
       return;
     }
@@ -328,14 +340,17 @@ export class App {
       if (!pixel || pixel[3] === 0) return null;
       return countryByCode(manifest, unpackCountry(pixel[2]))?.iso ?? null;
     };
-    const visible = [...new Set(pixels.map(isoAt).filter((iso): iso is string => iso !== null))];
+    const countries = pixels.map(isoAt);
+    const visible = [...new Set(countries.filter((iso): iso is string => iso !== null))];
     const patch: Partial<AppState> = {};
     const current = this.state;
     if (visible.join() !== current.visibleCountries.join()) patch.visibleCountries = visible;
-    // Mode Auto : le fond national du pays au centre de la carte.
-    if (current.basemap.choice === 'auto') {
-      const wanted = autoBasemap(isoAt(pixels[0]));
-      if (wanted && wanted !== current.activeBasemap && this.basemapUsable(wanted)) patch.activeBasemap = wanted;
+    // Mode Auto : le fond national du pays au centre de la carte, le fond OpenStreetMap hors des
+    // données. Si la lecture du centre a échoué, on ne sait rien : le fond affiché reste.
+    // Sans réseau, on ne passe qu'à un fond enregistré.
+    if (current.basemap.choice === 'auto' && pixels[0] !== undefined) {
+      const wanted = autoBasemapForView(countries[0], countries.slice(1));
+      if (wanted !== current.activeBasemap && this.basemapUsable(wanted)) patch.activeBasemap = wanted;
     }
     if (Object.keys(patch).length === 0) return;
     this.store.set(patch);
@@ -351,34 +366,39 @@ export class App {
   // -- GPX ------------------------------------------------------------------
 
   async importGpx(file: File): Promise<void> {
-    const seq = ++this.importSeq;
-    const fail = (key: string, params?: Record<string, string | number>): void => {
-      if (seq !== this.importSeq) return;
-      this.store.set({ trackStatus: this.state.track ? 'ready' : 'error', trackError: { key, params }, panel: 'gpx' });
-    };
+    const read = ++this.readSeq;
     if (file.size > MAX_GPX_BYTES) {
-      fail('gpx.error.tooBig', { size: Math.ceil(file.size / 1e6), max: Math.round(MAX_GPX_BYTES / 1e6) });
+      // Taille arrondie au-dessus, maximum au-dessous : le fichier refusé est toujours annoncé plus gros.
+      this.failRead(read, 'gpx.error.tooBig', { size: Math.ceil(file.size / 1e6), max: Math.floor(MAX_GPX_BYTES / 1e6) });
       return;
     }
-    this.store.set({ trackStatus: 'reading', trackError: null, progress: 0 });
+    this.store.set({ trackStatus: 'reading', trackError: null });
     let xml: string;
     try {
       // Lu en octets : file.text() décoderait toujours en UTF-8, même un GPX en ISO-8859-1.
       xml = decodeGpx(new Uint8Array(await file.arrayBuffer()));
     } catch {
-      fail('gpx.error.read');
+      this.failRead(read, 'gpx.error.read');
       return;
     }
-    await this.importGpxText(xml, file.name, seq);
+    await this.importGpxText(xml, file.name, read);
+  }
+
+  /**
+   * Un nouveau fichier n'a pas pu être lu : on le dit, sans toucher au tracé déjà
+   * affiché ni à son analyse, qui continue si elle était en cours.
+   */
+  private failRead(read: number, key: string, params?: Record<string, string | number>): void {
+    if (read !== this.readSeq) return;
+    const { track, dataStatus } = this.state;
+    const pending = !!track && !track.analysis && (this.analysing === this.importSeq || dataStatus === 'loading');
+    this.store.set({ trackStatus: !track ? 'error' : pending ? 'analyzing' : 'ready', trackError: { key, params }, panel: 'gpx' });
   }
 
   /** Charge et analyse un GPX déjà lu (import d'un fichier, ou tracé enregistré pour le hors ligne). */
-  private async importGpxText(xml: string, fileName: string, seq: number = ++this.importSeq): Promise<void> {
+  private async importGpxText(xml: string, fileName: string, read: number = ++this.readSeq): Promise<void> {
     const file = { name: fileName };
-    const fail = (key: string, params?: Record<string, string | number>): void => {
-      if (seq !== this.importSeq) return;
-      this.store.set({ trackStatus: this.state.track ? 'ready' : 'error', trackError: { key, params }, panel: 'gpx' });
-    };
+    const fail = (key: string): void => this.failRead(read, key);
     let track: LoadedTrack;
     try {
       const parsed = parseGpx(xml);
@@ -396,43 +416,41 @@ export class App {
       fail(error instanceof GpxError ? `gpx.error.${error.code}` : 'gpx.error.invalid');
       return;
     }
-    if (seq !== this.importSeq) return;
+    if (read !== this.readSeq) return;
+    // Le fichier est valable : il remplace le tracé affiché, dont l'analyse éventuelle est abandonnée.
+    const seq = ++this.importSeq;
+    // Une analyse suit : tout de suite, ou à l'arrivée des données si elles sont encore en chargement (loadManifest).
+    const waiting = !!this.tileStore || this.state.dataStatus === 'loading';
 
     // Un nouveau tracé remplace le précédent : son enregistrement hors ligne en cours s'arrête.
     this.cancelOffline();
     // Le tracé s'affiche tout de suite, d'une seule couleur, et la carte zoome dessus.
-    this.store.set({ track, selectedZone: null, trackStatus: this.tileStore ? 'analyzing' : 'ready', panel: this.tileStore ? this.state.panel : 'report' });
+    this.store.set({ track, selectedZone: null, progress: 0, trackStatus: waiting ? 'analyzing' : 'ready', panel: waiting ? this.state.panel : 'report' });
     this.showTrack(track);
-    const bounds = samplesBounds(track.samples);
-    if (bounds) this.mapView.fitBounds(bounds, this.hooks.padding());
-
-    const store = this.tileStore;
-    const manifest = this.state.manifest;
-    if (!store || !manifest) return;
-    try {
-      const raw = await sampleCoverage(track.samples, store, (done, total) => {
-        if (seq === this.importSeq) this.store.set({ progress: total > 0 ? done / total : 1 });
-      });
-      if (seq !== this.importSeq) return;
-      const analysis = analyzeTrack(track.samples, raw);
-      const analysed: LoadedTrack = { ...track, analysis, report: buildReport(analysis, manifest, this.decodeSettings()) };
-      this.store.set({ track: analysed, trackStatus: 'ready', panel: 'report' });
-      this.showTrack(analysed);
-    } catch (error) {
-      console.warn('Analyse du tracé :', error);
-      if (seq !== this.importSeq) return;
-      this.store.set({ trackStatus: 'ready', trackError: { key: 'gpx.error.analysis' }, panel: 'gpx' });
-    }
+    this.fitTrack();
+    await this.analyse(track, seq, 'gpx');
   }
 
-  /** Relance l'analyse du tracé chargé (après un échec réseau par exemple). */
+  /** Relance l'analyse du tracé chargé (après un échec réseau, ou à l'arrivée des données). */
   async retryAnalysis(): Promise<void> {
     const { track, manifest } = this.state;
-    const store = this.tileStore;
-    if (!track || !manifest || !store) return;
+    if (!track || !manifest || !this.tileStore) return;
     this.restartReads();
     const seq = ++this.importSeq;
     this.store.set({ trackStatus: 'analyzing', trackError: null, progress: 0 });
+    await this.analyse(track, seq);
+  }
+
+  /**
+   * Lit la couverture le long du tracé, puis ouvre le rapport et recadre le tracé
+   * dans la partie de la carte que le panneau laisse visible. « seq » identifie
+   * l'import ou la relance : une analyse dépassée par un nouvel import est abandonnée.
+   */
+  private async analyse(track: LoadedTrack, seq: number, panelOnError?: PanelId): Promise<void> {
+    const store = this.tileStore;
+    const manifest = this.state.manifest;
+    if (!store || !manifest) return;
+    this.analysing = seq;
     try {
       const raw = await sampleCoverage(track.samples, store, (done, total) => {
         if (seq === this.importSeq) this.store.set({ progress: total > 0 ? done / total : 1 });
@@ -442,9 +460,14 @@ export class App {
       const analysed: LoadedTrack = { ...track, analysis, report: buildReport(analysis, manifest, this.decodeSettings()) };
       this.store.set({ track: analysed, trackStatus: 'ready', panel: 'report' });
       this.showTrack(analysed);
+      // Le panneau Rapport est rendu : le cadrage tient compte de la place qu'il prend.
+      this.fitTrack();
     } catch (error) {
       console.warn('Analyse du tracé :', error);
-      if (seq === this.importSeq) this.store.set({ trackStatus: 'ready', trackError: { key: 'gpx.error.analysis' } });
+      if (seq !== this.importSeq) return;
+      this.store.set({ trackStatus: 'ready', trackError: { key: 'gpx.error.analysis' }, ...(panelOnError ? { panel: panelOnError } : {}) });
+    } finally {
+      if (this.analysing === seq) this.analysing = null;
     }
   }
 
@@ -501,6 +524,13 @@ export class App {
   fitTrack(): void {
     const bounds = this.state.track ? samplesBounds(this.state.track.samples) : null;
     if (bounds) this.mapView.fitBounds(bounds, this.hooks.padding());
+  }
+
+  /** Recadre la zone blanche choisie, sinon tout le tracé : le panneau vient de changer de taille. */
+  refitTrack(): void {
+    const zone = this.state.track?.report?.zones.find((z) => z.index === this.state.selectedZone);
+    if (zone) this.mapView.fitBounds(zone.bbox, this.hooks.padding(), 16);
+    else this.fitTrack();
   }
 
   /** Met une zone blanche en surbrillance et zoome dessus. */
@@ -660,8 +690,9 @@ export class App {
 
   // -- divers ---------------------------------------------------------------
 
-  locate(): void {
-    this.mapView.locate();
+  /** « Ma position » : se termine quand la position est affichée ou indisponible. */
+  locate(): Promise<void> {
+    return this.mapView.locate();
   }
 
   changeLanguage(code: string): void {

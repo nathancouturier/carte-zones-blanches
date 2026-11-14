@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoBasemap, BASEMAP_ORDER, BASEMAPS, isBasemapChoice } from '../src/map/basemaps';
+import { autoBasemap, autoBasemapForView, BASEMAP_ORDER, BASEMAPS, isBasemapChoice } from '../src/map/basemaps';
 import { buildStyle, COVERAGE_LAYER } from '../src/map/style';
 import { EMPTY_COLLECTION, trackToGeoJson, zoneToGeoJson } from '../src/map/trackGeojson';
 import { mergePlaces, parseIgnCompletion, parsePhoton, type Place } from '../src/search/geocode';
@@ -56,6 +56,11 @@ describe('fonds de carte et style', () => {
     expect(autoBasemap('IT')).toBe('osm');
     expect(autoBasemap('AD')).toBe('osm');
     expect(autoBasemap(null)).toBeNull();
+    // Pour la vue : le pays au centre, sinon le pays le plus présent autour, sinon OpenStreetMap (ui-10).
+    expect(autoBasemapForView('CH', ['FR', 'FR', 'FR'])).toBe('swisstopo');
+    expect(autoBasemapForView(null, ['FR', 'ES', 'ES', null, 'FR', 'ES'])).toBe('ign-es');
+    expect(autoBasemapForView(null, [null, null])).toBe('osm');
+    expect(autoBasemapForView(null, [])).toBe('osm');
     expect(isBasemapChoice('auto')).toBe(true);
     expect(isBasemapChoice('ortho')).toBe(true);
     expect(isBasemapChoice('google')).toBe(false);

@@ -24,13 +24,27 @@ const PANEL_TITLES: Record<PanelId, string> = {
 
 const DESKTOP = '(min-width: 900px)';
 
+/** Boutons de la barre du bas, dans l'ordre. Le bouton Rapport n'apparaît qu'après l'import d'un tracé. */
+const TOOLS: { id: PanelId; icon: string; label: string }[] = [
+  { id: 'network', icon: ICONS.network, label: 'toolbar.network' },
+  { id: 'basemap', icon: ICONS.layers, label: 'toolbar.basemap' },
+  { id: 'gpx', icon: ICONS.upload, label: 'toolbar.gpx' },
+  { id: 'report', icon: ICONS.report, label: 'toolbar.report' },
+];
+
 export class Ui {
   private readonly toolbar: HTMLElement;
   private readonly topbar: HTMLElement;
+  // Les boutons des barres sont créés une fois et mis à jour : recréés, ils perdraient le focus clavier.
+  private readonly tools: HTMLButtonElement[];
+  private readonly searchButton: HTMLButtonElement;
+  private readonly locateButton: HTMLButtonElement;
+  private readonly settingsButton: HTMLButtonElement;
   private readonly panel: HTMLElement;
   private readonly panelTitle: HTMLElement;
   private readonly panelBody: HTMLElement;
   private readonly panelBack: HTMLButtonElement;
+  private readonly panelCollapse: HTMLButtonElement;
   private readonly attribution: HTMLElement;
   private readonly coverageAlert: HTMLElement;
   private readonly toastEl: HTMLElement;
@@ -43,9 +57,18 @@ export class Ui {
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
   private searchAbort: AbortController | null = null;
   private searchSeq = 0;
+  /** Saisie qui a produit la liste affichée : Entrée ne choisit que dans une liste à jour. */
+  private resultsQuery: string | null = null;
+  /** Entrée appuyée avant l'arrivée des résultats : le premier sera choisi. */
+  private pickFirst = false;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
-  private attributionOpen = false;
+  /** Mentions dépliées sur téléphone : au chargement, jusqu'au premier geste sur la carte. */
+  private attributionOpen = true;
+  /** Panneau Rapport réduit à son titre (téléphone), pour voir la carte. */
+  private panelCollapsed = false;
   private dragDepth = 0;
+  /** « Ma position » attend le GPS. */
+  private locating = false;
 
   constructor(
     private readonly app: App,
@@ -76,12 +99,20 @@ export class Ui {
     });
     this.searchResults = h('ul', { class: 'search__results', role: 'listbox' });
     this.searchBox = h('div', { class: 'search', hidden: true, role: 'search' }, this.searchInput, this.searchResults);
-    this.topbar = h('div', { class: 'topbar' });
-    this.toolbar = h('nav', { class: 'toolbar' });
+    this.searchButton = h('button', { type: 'button', class: 'fab', onclick: () => (this.searchOpen ? this.closeSearch() : this.openSearch()) });
+    this.locateButton = h('button', { type: 'button', class: 'fab', onclick: () => this.locate() }, icon(ICONS.locate));
+    this.settingsButton = h('button', { type: 'button', class: 'fab', onclick: () => this.app.openPanel('settings') }, icon(ICONS.settings));
+    this.topbar = h('div', { class: 'topbar' }, this.searchButton, this.searchBox, h('div', { class: 'topbar__spacer' }), this.locateButton, this.settingsButton);
+    this.tools = TOOLS.map(({ id, icon: path }) =>
+      h('button', { type: 'button', class: 'tool', dataset: { panel: id }, onclick: () => this.app.openPanel(id) }, icon(path), h('span')),
+    );
+    this.toolbar = h('nav', { class: 'toolbar' }, this.tools);
 
-    this.panelTitle = h('h2', { class: 'panel__title', id: 'panel-title' });
-    this.panelBody = h('div', { class: 'panel__body' });
+    // tabindex -1 : le titre reçoit le focus à l'ouverture du panneau, sans entrer dans l'ordre de tabulation.
+    this.panelTitle = h('h2', { class: 'panel__title', id: 'panel-title', tabindex: '-1' });
+    this.panelBody = h('div', { class: 'panel__body', id: 'panel-body' });
     this.panelBack = h('button', { type: 'button', class: 'icon-btn', onclick: () => this.app.openPanel('settings') }, icon(ICONS.back));
+    this.panelCollapse = h('button', { type: 'button', class: 'icon-btn panel__collapse', 'aria-controls': 'panel-body', onclick: () => this.toggleCollapsed() });
     this.panel = h(
       'section',
       { class: 'panel', hidden: true, 'aria-labelledby': 'panel-title' },
@@ -90,6 +121,7 @@ export class Ui {
         { class: 'panel__head' },
         this.panelBack,
         this.panelTitle,
+        this.panelCollapse,
         h('button', { type: 'button', class: 'icon-btn', dataset: { role: 'close' }, onclick: () => this.app.closePanel() }, icon(ICONS.close)),
       ),
       this.panelBody,
@@ -110,6 +142,14 @@ export class Ui {
       this.renderAll();
     });
     this.bindDragAndDrop();
+    // Comme le mode compact de MapLibre : les mentions se replient au premier geste sur la carte
+    // (glisser, pincer, molette). Les déplacements commandés par le site n'ont pas d'originalEvent.
+    const firstGesture = this.app.mapView.map.on('movestart', (event) => {
+      if (!event.originalEvent) return;
+      firstGesture.unsubscribe();
+      this.attributionOpen = false;
+      this.renderAttribution();
+    });
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
       if (this.searchOpen) this.closeSearch();
@@ -125,6 +165,27 @@ export class Ui {
   // -- rendu ----------------------------------------------------------------
 
   private onState(state: AppState, previous: AppState): void {
+    // Un panneau s'ouvre : la recherche se ferme, ses résultats le recouvriraient (rien n'est
+    // empilé). Sauf pendant une saisie, si c'est l'analyse d'un tracé qui ouvre le rapport.
+    if (state.panel && state.panel !== previous.panel && this.searchOpen && !this.searchBox.contains(document.activeElement)) this.closeSearch();
+    this.render(state, previous);
+    // Panneau fermé (Échap, Fermer) alors que le focus y était : il revient au bouton de ce panneau.
+    if (previous.panel && !state.panel && this.focusLost()) this.panelButton(previous.panel)?.focus();
+  }
+
+  /** Vrai si le focus clavier n'est plus nulle part : sur la page, ou dans le panneau masqué. */
+  private focusLost(): boolean {
+    const active = document.activeElement;
+    return !active || active === document.body || (this.panel.hidden && this.panel.contains(active));
+  }
+
+  /** Bouton qui ouvre un panneau : celui de la barre du bas, ou la roue dentée. */
+  private panelButton(panel: PanelId): HTMLButtonElement | undefined {
+    if (panel === 'settings' || panel === 'sources') return this.settingsButton;
+    return this.tools.find((button) => button.dataset.panel === panel && !button.hidden);
+  }
+
+  private render(state: AppState, previous: AppState): void {
     // Pendant l'analyse, seul l'avancement change : on ne refait pas tout le panneau.
     const onlyProgress = (Object.keys(state) as (keyof AppState)[]).every((key) => key === 'progress' || state[key] === previous[key]);
     if (onlyProgress) {
@@ -176,22 +237,30 @@ export class Ui {
   }
 
   private renderTopbar(): void {
-    const searchBtn = h(
-      'button',
-      { type: 'button', class: 'fab', 'aria-label': t('action.search'), title: t('action.search'), 'aria-expanded': String(this.searchOpen), onclick: () => (this.searchOpen ? this.closeSearch() : this.openSearch()) },
-      icon(this.searchOpen ? ICONS.close : ICONS.search),
-    );
-    const settingsBtn = h(
-      'button',
-      { type: 'button', class: `fab${this.isPanel('settings', 'sources') ? ' fab--on' : ''}`, 'aria-label': t('action.settings'), title: t('action.settings'), onclick: () => this.app.openPanel('settings') },
-      icon(ICONS.settings),
-    );
-    const locateBtn = h(
-      'button',
-      { type: 'button', class: 'fab', 'aria-label': t('action.locate'), title: t('action.locate'), onclick: () => this.app.locate() },
-      icon(ICONS.locate),
-    );
-    setChildren(this.topbar, searchBtn, this.searchBox, h('div', { class: 'topbar__spacer' }), locateBtn, settingsBtn);
+    const label = (button: HTMLButtonElement, key: string): void => {
+      button.setAttribute('aria-label', t(key));
+      button.title = t(key);
+    };
+    label(this.searchButton, 'action.search');
+    this.searchButton.setAttribute('aria-expanded', String(this.searchOpen));
+    setChildren(this.searchButton, icon(this.searchOpen ? ICONS.close : ICONS.search));
+    label(this.locateButton, 'action.locate');
+    this.locateButton.classList.toggle('fab--busy', this.locating);
+    if (this.locating) this.locateButton.setAttribute('aria-busy', 'true');
+    else this.locateButton.removeAttribute('aria-busy');
+    label(this.settingsButton, 'action.settings');
+    this.settingsButton.classList.toggle('fab--on', this.isPanel('settings', 'sources'));
+  }
+
+  /** « Ma position » : le bouton montre l'attente du GPS ; un nouvel appui pendant l'attente ne relance rien. */
+  private locate(): void {
+    if (this.locating) return;
+    this.locating = true;
+    this.renderTopbar();
+    void this.app.locate().finally(() => {
+      this.locating = false;
+      this.renderTopbar();
+    });
   }
 
   private isPanel(...ids: PanelId[]): boolean {
@@ -201,21 +270,14 @@ export class Ui {
 
   private renderToolbar(): void {
     const { panel, track, trackStatus } = this.app.state;
-    const button = (id: PanelId, iconPath: string, label: string, extra = ''): HTMLElement =>
-      h(
-        'button',
-        { type: 'button', class: `tool${panel === id ? ' tool--on' : ''}${extra}`, 'aria-pressed': String(panel === id), dataset: { panel: id }, onclick: () => this.app.openPanel(id) },
-        icon(iconPath),
-        h('span', null, label),
-      );
-    setChildren(
-      this.toolbar,
-      button('network', ICONS.network, t('toolbar.network')),
-      button('basemap', ICONS.layers, t('toolbar.basemap')),
-      button('gpx', ICONS.upload, t('toolbar.gpx'), trackStatus === 'analyzing' || trackStatus === 'reading' ? ' tool--busy' : ''),
-      // Le bouton Rapport n'apparaît qu'après l'import d'un tracé.
-      track ? button('report', ICONS.report, t('toolbar.report')) : null,
-    );
+    TOOLS.forEach(({ id, label }, i) => {
+      const button = this.tools[i];
+      button.classList.toggle('tool--on', panel === id);
+      button.setAttribute('aria-pressed', String(panel === id));
+      button.querySelector('span')!.textContent = t(label);
+      if (id === 'gpx') button.classList.toggle('tool--busy', trackStatus === 'analyzing' || trackStatus === 'reading');
+      if (id === 'report') button.hidden = !track;
+    });
     this.toolbar.setAttribute('aria-label', t('toolbar.label'));
   }
 
@@ -232,6 +294,8 @@ export class Ui {
     this.panelTitle.textContent = t(PANEL_TITLES[panel]);
     this.panelBack.hidden = panel !== 'sources';
     this.panelBack.setAttribute('aria-label', t('action.back'));
+    if (opened) this.panelCollapsed = false;
+    this.renderCollapse(panel);
     this.panel.querySelector<HTMLElement>('[data-role="close"]')?.setAttribute('aria-label', t('action.close'));
     this.panel.dataset.panel = panel;
     let content;
@@ -258,9 +322,33 @@ export class Ui {
     setChildren(this.panelBody, content as never);
     this.panel.hidden = false;
     this.panelBody.scrollTop = scroll;
-    if (active) this.panelBody.querySelector<HTMLElement>(`[data-focus="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
-    else if (opened) this.panelTitle.focus?.();
+    // Panneau qui s'ouvre : le focus va sur son titre (lu par les lecteurs d'écran), sauf pendant une
+    // saisie dans la recherche. Sinon, l'élément actif est retrouvé dans le nouveau rendu.
+    if (opened) {
+      if (!this.searchBox.contains(document.activeElement)) this.panelTitle.focus({ preventScroll: true });
+    } else if (active) this.panelBody.querySelector<HTMLElement>(`[data-focus="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
     this.renderTopbar();
+  }
+
+  /** Sur téléphone, le panneau Rapport se réduit à son titre pour laisser voir la carte et le tracé. */
+  private renderCollapse(panel: PanelId): void {
+    const collapsed = panel === 'report' && this.panelCollapsed;
+    this.panel.classList.toggle('panel--collapsed', collapsed);
+    this.panelCollapse.hidden = panel !== 'report';
+    this.panelCollapse.setAttribute('aria-expanded', String(!collapsed));
+    const label = t(collapsed ? 'action.expand' : 'action.collapse');
+    this.panelCollapse.setAttribute('aria-label', label);
+    this.panelCollapse.title = label;
+    setChildren(this.panelCollapse, icon(collapsed ? ICONS.chevronUp : ICONS.chevronDown));
+  }
+
+  private toggleCollapsed(): void {
+    const { panel } = this.app.state;
+    if (!panel) return;
+    this.panelCollapsed = !this.panelCollapsed;
+    this.renderCollapse(panel);
+    // La carte visible a changé de taille : le tracé (ou la zone choisie) y est recadré.
+    this.app.refitTrack();
   }
 
   private renderAttribution(): void {
@@ -335,6 +423,9 @@ export class Ui {
   /** Marges à laisser libres quand on cadre la carte : barres et panneau ouvert. */
   padding(): Padding {
     const padding: Padding = { top: 84, right: 56, bottom: 110, left: 40 };
+    // Le pied de carte est posé au-dessus de la barre d'outils : rien n'est cadré dessous.
+    const attribution = this.attribution.getBoundingClientRect();
+    if (attribution.height > 0) padding.bottom = Math.max(padding.bottom, Math.round(window.innerHeight - attribution.top) + 8);
     if (this.panel.hidden) return padding;
     const rect = this.panel.getBoundingClientRect();
     if (window.matchMedia(DESKTOP).matches) padding.left = Math.round(rect.right) + 32;
@@ -354,18 +445,23 @@ export class Ui {
   }
 
   private closeSearch(): void {
+    // Le focus était dans la recherche : il revient à la loupe.
+    const hadFocus = this.searchBox.contains(document.activeElement);
     this.searchOpen = false;
     this.searchBox.hidden = true;
     this.searchInput.value = '';
     this.searchAbort?.abort();
     clearTimeout(this.searchTimer);
+    this.pickFirst = false;
     setChildren(this.searchResults);
     this.renderTopbar();
+    if (hadFocus) this.searchButton.focus();
   }
 
   private onSearchInput(): void {
     clearTimeout(this.searchTimer);
     this.searchAbort?.abort();
+    this.pickFirst = false;
     const query = this.searchInput.value.trim();
     if (query.length < SEARCH_MIN_CHARS) {
       setChildren(this.searchResults, query.length > 0 ? h('li', { class: 'search__info' }, t('search.hint', { count: SEARCH_MIN_CHARS })) : null);
@@ -387,9 +483,18 @@ export class Ui {
         signal: this.searchAbort.signal,
       });
       if (seq !== this.searchSeq || !this.searchOpen) return;
+      this.resultsQuery = query;
+      if (this.pickFirst && places.length > 0) {
+        this.pickFirst = false;
+        this.pickPlace(places[0]);
+        return;
+      }
+      this.pickFirst = false;
       this.showResults(places);
     } catch (error) {
       if (seq !== this.searchSeq || (error instanceof Error && error.name === 'AbortError')) return;
+      this.pickFirst = false;
+      this.resultsQuery = null;
       setChildren(this.searchResults, h('li', { class: 'search__info' }, t('search.error')));
     }
   }
@@ -426,12 +531,17 @@ export class Ui {
   private onSearchKey(event: KeyboardEvent): void {
     if (event.key === 'Enter') {
       event.preventDefault();
+      const query = this.searchInput.value.trim();
       const first = this.searchResults.querySelector<HTMLButtonElement>('.search__item');
-      if (first) first.click();
-      else {
+      // La liste affichée peut venir de la saisie précédente (« Bri » pour « Brides ») : on ne
+      // la prend que si elle répond à la saisie actuelle ; sinon on cherche tout de suite et on
+      // prendra le premier résultat à son arrivée.
+      if (first && query === this.resultsQuery) first.click();
+      else if (query.length >= SEARCH_MIN_CHARS) {
         clearTimeout(this.searchTimer);
-        const query = this.searchInput.value.trim();
-        if (query.length >= SEARCH_MIN_CHARS) void this.runSearch(query);
+        this.searchAbort?.abort();
+        this.pickFirst = true;
+        void this.runSearch(query);
       }
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();

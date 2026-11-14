@@ -52,6 +52,22 @@ function section(title: string | null, ...children: Node_[]): HTMLElement {
   return h('section', { class: 'block' }, title ? h('h3', { class: 'block__title' }, title) : null, children as never);
 }
 
+/** Sections repliables ouvertes ou fermées par l'utilisateur : son choix survit aux rendus du panneau. */
+const openDetails = new Map<string, boolean>();
+
+/** Section repliable « key », ouverte par défaut si « defaultOpen », puis comme l'utilisateur l'a laissée. */
+function details(key: string, className: string, defaultOpen: boolean, ...children: Node_[]): HTMLElement {
+  return h(
+    'details',
+    {
+      class: className,
+      open: openDetails.get(key) ?? defaultOpen,
+      ontoggle: (event: Event) => openDetails.set(key, (event.currentTarget as HTMLDetailsElement).open),
+    },
+    children as never,
+  );
+}
+
 function note(text: string, kind: 'info' | 'warning' = 'info'): HTMLElement {
   return h('p', { class: `note note--${kind}` }, icon(kind === 'warning' ? ICONS.warning : ICONS.info, 18), h('span', null, text));
 }
@@ -178,9 +194,10 @@ export function networkPanel(app: App): Node_[] {
   );
   if (multiCountry) {
     parts.push(
-      h(
-        'details',
-        { class: 'block details', open: abroad.some((c) => network.operators[c.iso]) },
+      details(
+        'abroad',
+        'block details',
+        abroad.some((c) => network.operators[c.iso]),
         h('summary', { dataset: { focus: 'abroad' } }, t('network.abroad')),
         h('p', { class: 'hint' }, t('network.abroadHint')),
         abroad.map((country) => operatorSelect(app, country)),
@@ -548,9 +565,10 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
         h('button', { type: 'button', class: 'btn', dataset: { focus: 'copier' }, onclick: () => void app.copyReport() }, icon(ICONS.copy, 20), t('report.copy')),
       ),
       h('p', { class: 'hint' }, t('report.downloadHint')),
-      h(
+      details(
+        'texte',
         'details',
-        { class: 'details' },
+        false,
         h('summary', { dataset: { focus: 'texte' } }, t('report.textTitle')),
         h('textarea', { class: 'report-text', readonly: true, rows: '12', 'aria-label': t('report.textTitle'), onfocus: (event: Event) => (event.target as HTMLTextAreaElement).select() }, text),
       ),
@@ -708,19 +726,10 @@ export function sourcesPanel(app: App): Node_[] {
                   t(`sources.method.${SOURCE_TYPE_KEYS[source.type] ?? 'estimated'}`),
                   h('br'),
                   h('small', null, t(`sources.levels.${source.levels}`)),
-                  source.technology
-                    ? [
-                        h('br'),
-                        h(
-                          'small',
-                          null,
-                          source.services
-                            .filter((s) => source.technology?.[s])
-                            .map((s) => t('sources.technology', { service: t(`service.${s}`), techno: source.technology?.[s] ?? '' }))
-                            .join(' ; '),
-                        ),
-                      ]
-                    : null,
+                  // Une ligne par service : pas de séparateur à traduire entre eux.
+                  source.services
+                    .filter((s) => source.technology?.[s])
+                    .map((s) => [h('br'), h('small', null, t('sources.technology', { service: t(`service.${s}`), techno: source.technology?.[s] ?? '' }))]),
                 ),
               ),
               h(
@@ -755,11 +764,12 @@ export function sourcesPanel(app: App): Node_[] {
     parts.push(note(t('network.noData'), 'warning'));
   }
 
-  const basemapItems = BASEMAP_ORDER.map((id) => BASEMAPS[id]).map((b) => h('li', null, `${t(b.labelKey)} : ${b.attribution}`));
+  // « Plan IGN classique : © IGN » ; la ponctuation suit la langue (« Plan IGN klassisch: © IGN »).
+  const credit = (name: string, attribution: string): HTMLElement => h('li', null, t('sources.basemapItem', { name, attribution }));
   parts.push(
     section(
       t('sources.basemaps'),
-      h('ul', { class: 'plain' }, basemapItems, h('li', null, `${t('basemap.hillshade')} : ${HILLSHADE.attribution}`)),
+      h('ul', { class: 'plain' }, BASEMAP_ORDER.map((id) => credit(t(BASEMAPS[id].labelKey), BASEMAPS[id].attribution)), credit(t('basemap.hillshade'), HILLSHADE.attribution)),
     ),
     section(t('sources.search'), h('ul', { class: 'plain' }, h('li', null, t('sources.searchIgn')), h('li', null, t('sources.searchOsm')))),
     h('p', null, h('a', { href: `${REPO_URL}/blob/main/docs/sources.md`, target: '_blank', rel: 'noopener noreferrer' }, t('sources.details'))),

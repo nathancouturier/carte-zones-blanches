@@ -247,7 +247,7 @@ export function reportText(
       .filter((s) => s.services.includes(settings.service))
       .map((s) => `${s.attribution} (${countryName(country.iso)}, ${formatDataDate(s.date)})`),
   );
-  if (sources.length > 0) lines.push(t('report.sourcesLine', { sources: sources.join(' ; ') }));
+  if (sources.length > 0) lines.push(t('report.sourcesLine', { sources: sources.join(t('report.sourcesSeparator')) }));
   return plain(lines.join('\n'));
 }
 

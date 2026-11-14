@@ -88,4 +88,6 @@ export const ICONS = {
   info: 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z|M12 11v6|M12 7.5v.01',
   trash: 'M4 7h16|M9 7V4h6v3|M6 7l1 13h10l1-13',
   chevron: 'M9 6l6 6-6 6',
+  chevronDown: 'M6 9l6 6 6-6',
+  chevronUp: 'M6 15l6-6 6 6',
 };

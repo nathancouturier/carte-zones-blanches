@@ -536,6 +536,23 @@ describe('rapport en texte', () => {
     }
   });
 
+  it('sépare les sources selon la ponctuation de la langue', () => {
+    // France puis Suisse : deux sources sur la ligne « Sources ».
+    const { samples, raw } = synthetic(repeat(3, 40));
+    for (let i = 20; i < 40; i++) raw.meta[i] = packMeta(2, 1);
+    const analysis = analyzeTrack(samples, raw);
+    const report = buildReport(analysis, manifest, settings);
+    expect(reportText(analysis, report, manifest, settings, null)).toContain('Sources : Arcep (France, T2 2026) ; OFCOM (Suisse, mars 2026)');
+    try {
+      setLanguage('de');
+      const text = reportText(analysis, report, manifest, settings, null);
+      expect(text).toContain('Quellen: Arcep (Frankreich, Q2 2026); OFCOM (Schweiz, März 2026)');
+      expect(text).not.toMatch(/ [;:]/);
+    } finally {
+      setLanguage('fr');
+    }
+  });
+
   it('signale les points écartés et les sauts ignorés à la lecture du GPX', () => {
     expect(importNotes({ discarded: 0, jumps: 0 })).toEqual([]);
     expect(importNotes({ discarded: 1, jumps: 1 })).toEqual([
