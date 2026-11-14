@@ -161,8 +161,8 @@ jobs:
       - name: Ne garder que les trois dernières releases de données
         shell: bash
         run: |
-          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,createdAt \
-            --jq '[.[] | select(.tagName | startswith("data-"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' \
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,publishedAt \
+            --jq '[.[] | select(.tagName | startswith("data-"))] | sort_by(.publishedAt) | reverse | .[3:] | .[].tagName' \
             | while read -r ancien; do
                 echo "Suppression de $ancien"
                 gh release delete "$ancien" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true

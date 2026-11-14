@@ -35,7 +35,8 @@ def latest_data_release(repo: str) -> dict[str, Any] | None:
     candidates = [r for r in releases if r["tag_name"].startswith(RELEASE_PREFIX) and not r["draft"]]
     if not candidates:
         return None
-    return max(candidates, key=lambda r: r["created_at"])
+    # Par date de publication : « created_at » est la date du commit étiqueté, pas celle de la release.
+    return max(candidates, key=lambda r: r.get("published_at") or "")
 
 
 def latest_release_state(repo: str) -> tuple[str | None, dict[str, Any] | None]:

@@ -46,8 +46,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p public/data
-          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,createdAt \
-            --jq '[.[] | select(.isDraft | not) | select(.tagName | startswith("data-"))] | sort_by(.createdAt) | last | .tagName // empty')
+          # La plus récente par date de PUBLICATION : la date de création d'une release est celle du commit
+          # étiqueté, identique pour toutes les releases posées sur le même commit.
+          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,publishedAt \
+            --jq '[.[] | select(.isDraft | not) | select(.tagName | startswith("data-"))] | sort_by(.publishedAt) | last | .tagName // empty')
           if [ -z "$tag" ]; then
             if [ "${{ inputs.sans_donnees }}" = "true" ]; then
               echo "::warning::Aucune release de données : le site est publié sans couche réseau."

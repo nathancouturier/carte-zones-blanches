@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from .base import Source
+from .ch_bakom import ChBakom
 from .fr_arcep import FrArcep
 
 REGISTRY: dict[str, type[Source]] = {
     FrArcep.id: FrArcep,
+    ChBakom.id: ChBakom,
 }
 
 

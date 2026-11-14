@@ -97,3 +97,34 @@ def geometry_windows(geom: ogr.Geometry, canvas: Canvas) -> Iterator[tuple[Windo
         mask = rasterize_geometry(geom, canvas, win)
         if mask.any():
             yield win, mask
+
+
+def warp_to_window(
+    array: np.ndarray,
+    geotransform: tuple[float, float, float, float, float, float],
+    projection_wkt: str,
+    canvas: Canvas,
+    win: Window,
+    nodata: int,
+) -> np.ndarray:
+    """Ramène un raster d'octets (dans son SCR d'origine) sur une fenêtre de la grille, en plus proche voisin.
+
+    Chaque pixel de la grille prend la valeur du pixel source qui contient son centre.
+    Les pixels sans correspondance valent « nodata ».
+    """
+    h, w = array.shape
+    source = gdal.GetDriverByName("MEM").Create("", w, h, 1, gdal.GDT_Byte)
+    source.SetGeoTransform(geotransform)
+    source.SetProjection(projection_wkt)
+    band = source.GetRasterBand(1)
+    band.WriteArray(np.ascontiguousarray(array, dtype=np.uint8))
+    band.SetNoDataValue(nodata)
+    col0, row0, ww, hh = win
+    target = gdal.GetDriverByName("MEM").Create("", ww, hh, 1, gdal.GDT_Byte)
+    target.SetGeoTransform(canvas.geotransform(col0, row0))
+    target.SetProjection(mercator_srs().ExportToWkt())
+    out_band = target.GetRasterBand(1)
+    out_band.SetNoDataValue(nodata)
+    out_band.Fill(nodata)
+    gdal.Warp(target, source, resampleAlg="near")
+    return target.GetRasterBand(1).ReadAsArray()

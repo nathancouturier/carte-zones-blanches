@@ -7,6 +7,18 @@ from typing import Any
 from .context import BuildContext
 
 
+def _slot(slot: dict[str, Any]) -> dict[str, Any]:
+    """Un emplacement : un opérateur nommé, ou un seuil « au moins N opérateurs » pour une source agrégée."""
+    out: dict[str, Any] = {"id": slot["id"]}
+    if "name" in slot:
+        out["name"] = slot["name"]
+    if "min_operators" in slot:
+        out["minOperators"] = int(slot["min_operators"])
+    if "name" not in out and "minOperators" not in out:
+        raise ValueError(f"emplacement {slot['id']} : il faut un nom d'opérateur ou un seuil min_operators")
+    return out
+
+
 def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated: str) -> dict[str, Any]:
     assert ctx.canvas is not None
     grid_cfg = ctx.cfg["grid"]
@@ -33,7 +45,8 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
                 "services": services,
                 "levels": scfg["levels_kind"],
                 "levelMap": scfg.get("level_map", [0, 1, 2, 3]),
-                "perOperator": int(scfg["type"]) != 1 and bool(scfg.get("per_operator", True)),
+                # Vrai si les emplacements se choisissent un par un (opérateurs, ou seuils d'une source agrégée).
+                "perOperator": bool(scfg.get("per_operator", int(scfg["type"]) != 1)),
                 "technology": {s: scfg["services"][s]["techno"] for s in services if "techno" in scfg["services"][s]},
             }
             if info.get("data_date"):
@@ -48,7 +61,9 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
                 "code": int(country["code"]),
                 "iso": iso,
                 "euRoaming": bool(country["eu_roaming"]),
-                "slots": [{"id": s["id"], "name": s["name"]} for s in country.get("slots", [])],
+                # Opérateurs du pays, pour l'affichage quand la source ne les distingue pas.
+                **({"operators": list(country["operators"])} if country.get("operators") else {}),
+                "slots": [_slot(s) for s in country.get("slots", [])],
                 "sources": sources,
             }
         )
