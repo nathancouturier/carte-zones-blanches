@@ -399,7 +399,7 @@ export class App {
     if (read !== this.readSeq) return;
     // Le fichier est valable : il remplace le tracé affiché, dont l'analyse éventuelle est abandonnée.
     const seq = ++this.importSeq;
-    // Données encore en chargement : l'analyse partira à leur arrivée (loadManifest).
+    // Une analyse suit : tout de suite, ou à l'arrivée des données si elles sont encore en chargement (loadManifest).
     const waiting = !!this.tileStore || this.state.dataStatus === 'loading';
 
     // Le tracé s'affiche tout de suite, d'une seule couleur, et la carte zoome dessus.
