@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from .context import BuildContext
+from .context import BuildContext, check_translations
+
+
+def _boundary(credit: dict[str, Any], iso: str) -> dict[str, Any]:
+    """Mention du contour d'un pays (texte, lien), avec la traduction du texte s'il contient du français (textI18n)."""
+    out = {k: v for k, v in credit.items() if k != "text_i18n"}
+    if "text_i18n" in credit:
+        out["textI18n"] = check_translations(credit["text_i18n"], f"countries.{iso}.mask.credit.text_i18n")
+    return out
 
 
 def _slot(slot: dict[str, Any]) -> dict[str, Any]:
@@ -49,6 +57,10 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
                 "perOperator": bool(scfg.get("per_operator", int(scfg["type"]) != 1)),
                 "technology": {s: scfg["services"][s]["techno"] for s in services if "techno" in scfg["services"][s]},
             }
+            # Traductions du nom et de la licence (es, ca, it, de) ; le site prend le français s'il n'y en a pas.
+            for key, field in (("name_i18n", "nameI18n"), ("licence_i18n", "licenceI18n")):
+                if key in scfg:
+                    entry[field] = check_translations(scfg[key], f"sources.{source_id}.{key}")
             if info.get("data_date"):
                 entry["dataDate"] = info["data_date"]
             # Mentions que certaines licences demandent d'afficher telles quelles (logo de l'AGCOM, formule d'OpenCellID).
@@ -71,7 +83,7 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
                 # Opérateurs du pays, pour l'affichage quand la source ne les distingue pas.
                 **({"operators": list(country["operators"])} if country.get("operators") else {}),
                 # Mention du contour du pays (source et licence), à afficher avec les sources.
-                **({"boundary": dict(country["mask"]["credit"])} if country.get("mask", {}).get("credit") else {}),
+                **({"boundary": _boundary(country["mask"]["credit"], iso)} if country.get("mask", {}).get("credit") else {}),
                 "slots": [_slot(s) for s in country.get("slots", [])],
                 "sources": sources,
             }

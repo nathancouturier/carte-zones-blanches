@@ -167,6 +167,8 @@ def test_spain_manifest(spain: dict):
     source = country["sources"][0]
     assert source["type"] == 0 and source["levels"] == "binary" and source["perOperator"] is True
     assert source["date"] == "2024-06" and source["dataDate"] == "2024-06-30"
+    # Pas de traduction dans la configuration : pas de champ de traduction dans le manifest (un ancien site l'ignorerait).
+    assert "nameI18n" not in source and "licenceI18n" not in source and "boundary" not in country
     state = json.loads((spain["out"] / "etat-sources.json").read_text(encoding="utf-8"))
     assert state["sources"]["es_mtd"] == {"couche": "InfoCob4G_2025_Muni", "dataLastEditDate": 1778025600000, "modified": 1778716800000, "regions": {"02": 5, "09": 1}}
 

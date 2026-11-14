@@ -82,8 +82,11 @@ def _config(root: Path, remote: Path, cells_url: str) -> Path:
                 "country": "AD",
                 "type": 2,
                 "name": "Estimation : antennes OpenCellID et relief Copernicus",
-                "attribution": "OpenCellID, Copernicus",
+                # Les traductions et la mention de config.yaml (réglages communs des estimations).
+                "name_i18n": base["estimation"]["name_i18n"],
+                "attribution": base["estimation"]["attribution"],
                 "licence": "CC BY-SA 4.0",
+                "licence_i18n": base["estimation"]["licence_i18n"],
                 "cells_url": cells_url,
                 "dem_url": (remote / "mnt").as_uri() + "/dem_{ns}{lat:02d}_{ew}{lon:03d}.tif",
                 "mcc": [213],
@@ -153,6 +156,9 @@ def test_estimated_levels_follow_the_terrain(andorra: dict):
     assert country["iso"] == "AD" and country["euRoaming"] is False
     source = country["sources"][0]
     assert source["type"] == 2 and source["levels"] == "three" and source["id"] == "ad_estimation"
+    base = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.yaml").read_text(encoding="utf-8"))["estimation"]
+    assert source["nameI18n"] == base["name_i18n"] and source["licenceI18n"] == base["licence_i18n"]
+    assert source["attribution"] == "OpenCellID (CC BY-SA 4.0), Copernicus DEM"
     stats = report["stats"]
     assert stats["estimation_cellules"]["ad_estimation"] == {"lues": 7, "retenues": 4, "par_code_reseau": {"3": 4}}
     sites = stats["estimation_sites"]["ad_estimation"]["reseaux"]
