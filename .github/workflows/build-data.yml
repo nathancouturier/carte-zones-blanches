@@ -7,7 +7,7 @@
 # vérifié, son résultat est gardé 7 jours en artefact, mais il ne remplace jamais les
 # données du site.
 name: Données
-run-name: "Données : ${{ inputs.scope || (github.event_name == 'push' && 'essai (DEMANDE-DONNEES)') || 'production' }}"
+run-name: "Données : ${{ inputs.scope || 'production' }}"
 
 on:
   workflow_dispatch:
@@ -27,10 +27,6 @@ on:
         default: false
   schedule:
     - cron: "23 3 5 * *" # le 5 de chaque mois à 3 h 23 UTC
-  # Depuis une branche de travail : modifier pipeline/DEMANDE-DONNEES et pousser (toujours un essai).
-  push:
-    branches: ["claude/**"]
-    paths: ["pipeline/DEMANDE-DONNEES"]
 
 # Une seule construction de production à la fois ; les essais lancés à la main ne se gênent pas.
 concurrency:
@@ -84,23 +80,14 @@ jobs:
         run: |
           # Passage mensuel et lancement à la main sans choix : la production, telle que config.yaml la décrit.
           scope="${IN_SCOPE:-production}"; services="${IN_SERVICES:-data}"; force="${IN_FORCE:-false}"
-          demande="$scope"
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            f=pipeline/DEMANDE-DONNEES
-            scope=$(sed -n 's/^scope=//p' "$f" | head -1)
-            services=$(sed -n 's/^services=//p' "$f" | head -1)
-            force=true
-            demande=essai
-          fi
-          if [ "$scope" = "production" ]; then scope="$PROD_SCOPE"; services="$PROD_SERVICES"; fi
+          # On ne publie que le choix « production » (passage mensuel compris), jamais un essai, même s'il a les
+          # mêmes réglages. C'est aussi ce choix qui range la construction dans le groupe « production »
+          # (voir concurrency) : une seule publication à la fois.
+          publish=false
+          if [ "$scope" = "production" ]; then publish=true; scope="$PROD_SCOPE"; services="$PROD_SERVICES"; fi
           case "$scope" in *[!a-z0-9-]*|"") echo "scope invalide : $scope"; exit 1 ;; esac
           case "$services" in data|data,voice) ;; *) echo "services invalides : $services"; exit 1 ;; esac
           case "$force" in true|false) ;; *) force=false ;; esac
-          # On ne publie que le choix « production » (passage mensuel compris), jamais un essai, même s'il a les
-          # mêmes réglages, et jamais un push sur une branche de travail. C'est aussi ce choix qui range la
-          # construction dans le groupe « production » (voir concurrency) : une seule publication à la fois.
-          publish=false
-          if [ "$demande" = "production" ]; then publish=true; fi
           # Un essai est toujours construit : il n'a pas de release à laquelle se comparer.
           if [ "$publish" = "false" ]; then force=true; fi
           {
@@ -222,4 +209,4 @@ jobs:
       - name: Réactiver ce workflow
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/donnees.yml/enable" && echo "Workflow Données réactivé."
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/build-data.yml/enable" && echo "Workflow Données réactivé."

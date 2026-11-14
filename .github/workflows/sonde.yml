@@ -2,7 +2,7 @@
 # Sert à vérifier une URL, un identifiant de couche, un schéma (ogrinfo) ou une licence
 # avant d'intégrer une source. On lit le résultat dans les logs du job.
 name: Sonde
-run-name: Sonde ${{ inputs.script || '(fichier DEMANDE)' }}
+run-name: Sonde ${{ inputs.script }}
 
 on:
   workflow_dispatch:
@@ -11,9 +11,6 @@ on:
         description: "Nom du script dans pipeline/sondes/ (par exemple fonds.sh)"
         required: true
         type: string
-  push:
-    branches: ["claude/**"]
-    paths: ["pipeline/sondes/DEMANDE"]
 
 permissions:
   contents: read
@@ -33,7 +30,6 @@ jobs:
         shell: bash
         run: |
           script="$SCRIPT_DEMANDE"
-          if [ -z "$script" ]; then script="$(awk 'NR==1{print $1}' pipeline/sondes/DEMANDE)"; fi
           case "$script" in
             *[!A-Za-z0-9._-]*|"") echo "Nom de script invalide : $script"; exit 1 ;;
           esac

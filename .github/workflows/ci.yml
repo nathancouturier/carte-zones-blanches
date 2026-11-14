@@ -4,7 +4,7 @@ name: Tests
 on:
   push:
     branches-ignore: [main] # sur main, deploy.yml lance déjà les tests du front
-    paths-ignore: ["pipeline/sondes/**", "pipeline/DEMANDE-DONNEES", "**.md"]
+    paths-ignore: ["pipeline/sondes/**", "**.md"]
   pull_request:
 
 permissions:

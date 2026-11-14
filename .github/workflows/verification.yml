@@ -16,10 +16,6 @@ on:
         type: string
         required: false
         default: "https://nathancouturier.github.io/carte-zones-blanches/"
-  # Depuis une branche de travail : modifier e2e/DEMANDE et pousser.
-  push:
-    branches: ["claude/**"]
-    paths: ["e2e/DEMANDE"]
 
 permissions:
   contents: read

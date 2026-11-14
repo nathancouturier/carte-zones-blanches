@@ -564,7 +564,7 @@ Dans le site :
 
 Dans le pipeline :
 
-- Il tourne dans GitHub Actions (workflow « Données », `.github/workflows/donnees.yml`), une fois par mois (le 5, à 3 h 23 UTC) ou à la main. Il commence par détecter les nouvelles versions et ne reconstruit que si une source a changé.
+- Il tourne dans GitHub Actions (workflow « Données », `.github/workflows/build-data.yml`), une fois par mois (le 5, à 3 h 23 UTC) ou à la main. Il commence par détecter les nouvelles versions et ne reconstruit que si une source a changé.
 - Les requêtes sont faites l'une après l'autre, avec une pause entre deux pages (1 s pour l'AGCOM, 0,5 s pour le ministère espagnol) ; ces pages sont demandées compressées. Un seul fichier est téléchargé à la fois et les fichiers intermédiaires sont supprimés au fur et à mesure. Les copies de travail évitent de relire les services les plus coûteux.
 - Nom de logiciel annoncé aux serveurs (User-Agent) générique : « pipeline-couverture-mobile/1.0 (Python urllib) », sans le nom du dépôt ni celui de son propriétaire.
 - La clé OpenCellID est un secret du dépôt. Elle est envoyée à la page des téléchargements dans le corps de la requête et masquée dans les journaux.

@@ -281,22 +281,20 @@ Un workflow est une tâche automatique de GitHub Actions. Ils sont dans `.github
 
 | Workflow | Fichier | Quand | Rôle |
 |---|---|---|---|
-| Tests | `ci.yml` | à chaque push sur une autre branche que `main` (sauf s'il ne touche que les sondes, `pipeline/DEMANDE-DONNEES` ou des fichiers `.md`), et sur chaque pull request | teste et construit le site ; teste le pipeline dans l'image GDAL |
-| Données | `donnees.yml` | à la main, le 5 de chaque mois à 3 h 23 UTC, ou depuis une branche de travail | construit les tuiles ; ne publie que la production |
+| Tests | `ci.yml` | à chaque push sur une autre branche que `main` (sauf s'il ne touche que les sondes ou des fichiers `.md`), et sur chaque pull request | teste et construit le site ; teste le pipeline dans l'image GDAL |
+| Données | `build-data.yml` | à la main, et le 5 de chaque mois à 3 h 23 UTC | construit les tuiles ; ne publie que la production |
 | Déploiement | `deploy.yml` | à chaque push sur `main`, à chaque release publiée, à la main, et relancé par « Données » après une nouvelle release | construit le site avec la dernière release de données et le publie sur GitHub Pages |
-| Vérification | `verification.yml` | après chaque déploiement, à la main (adresse à vérifier), ou depuis une branche de travail | contrôle le site en ligne dans un vrai navigateur |
-| Sonde | `sonde.yml` | à la main (nom du script), ou depuis une branche de travail | lance un script de vérification d'une source sur une machine de GitHub qui a accès à Internet |
-
-Depuis une branche de travail dont le nom commence par `claude/`, on lance « Données », « Vérification » ou « Sonde » en modifiant et en poussant un petit fichier : `pipeline/DEMANDE-DONNEES` (lignes `scope=` et `services=`), `e2e/DEMANDE` ou `pipeline/sondes/DEMANDE` (le nom du script en premier mot).
+| Vérification | `verification.yml` | après chaque déploiement, ou à la main (adresse à vérifier) | contrôle le site en ligne dans un vrai navigateur |
+| Sonde | `sonde.yml` | à la main (nom du script) | lance un script de vérification d'une source sur une machine de GitHub qui a accès à Internet |
 
 ### Données
 
-- **Production et essais.** La production est ce qu'indique la section `production` de `pipeline/config.yaml` : le périmètre `complet` (tous les pays), avec les services `data` (internet mobile) et `voice` (appels et SMS). C'est la seule combinaison publiée. Tout autre choix est un essai : il est toujours construit, même si rien n'a changé, et vérifié comme la production, puis gardé 7 jours dans l'artefact « donnees » du run (des fichiers téléchargeables depuis la page du run). Un essai ne remplace jamais les données du site. Un lancement depuis une branche de travail est toujours un essai.
+- **Production et essais.** La production est ce qu'indique la section `production` de `pipeline/config.yaml` : le périmètre `complet` (tous les pays), avec les services `data` (internet mobile) et `voice` (appels et SMS). Seul le choix « production » du lancement à la main, et le passage mensuel, sont publiés. Tout autre choix est un essai, même le périmètre `complet` : il est toujours construit, même si rien n'a changé, et vérifié comme la production, puis gardé 7 jours dans l'artefact « donnees » du run (des fichiers téléchargeables depuis la page du run). Un essai ne remplace jamais les données du site.
 - **Réglages du lancement à la main** : « Périmètre » (`production`, ou un périmètre d'essai), « Services d'un essai » (`data` ou `data,voice`, ignoré pour la production), « Reconstruire même si aucune source n'a changé ».
 - **Étapes** : installation des outils (7-Zip, dépendances Python), lecture de la production, tests du pipeline sur données synthétiques, « Une source a-t-elle changé ? », récupération des copies de travail, construction, test de cohérence, conservation du résultat. Pour la production, si une source a changé, un second job publie la release `data-AAAA-MM-JJ` (puis `data-AAAA-MM-JJ-2`, `-3` s'il y en a déjà une ce jour-là), ne garde que les trois releases de données les plus récentes, et relance le déploiement.
 - **Ne reconstruire que si une source a changé.** Chaque release contient `etat-sources.json`, l'état des sources au moment de la construction. Avant de construire, le workflow relit l'état en ligne et le compare. S'il n'a pas changé, rien n'est construit.
 - **Passage mensuel.** Le 5 de chaque mois à 3 h 23 UTC. GitHub désactive les workflows planifiés d'un dépôt resté 60 jours sans activité : un petit job réactive ce workflow à chaque passage mensuel.
-- **Constructions simultanées.** Les passages mensuels, les lancements à la main avec le périmètre « production » et les essais poussés depuis une branche de travail passent l'un après l'autre. Un lancement à la main avec un autre périmètre de la liste peut tourner en même temps qu'eux, y compris `complet` avec `data,voice`, qui est pourtant publié.
+- **Constructions simultanées.** Les constructions de production (passage mensuel ou choix « production ») passent l'une après l'autre. Les essais peuvent tourner en même temps : ils ne publient rien.
 
 ### Déploiement
 
@@ -356,9 +354,7 @@ Onglet Actions, « Données », « Run workflow » : choisir un périmètre d'es
 | `france` | la France entière |
 | `alpes` | les départements 04, 05, 06, 73 et 74, la Suisse et l'Italie |
 | `frontieres` | les 15 départements frontaliers et tous les pays voisins |
-| `complet` | tout : c'est le périmètre de la production |
-
-Attention : `complet` avec `data,voice`, c'est exactement la production. Ce lancement-là est publié.
+| `complet` | tout : le même périmètre que la production, mais en essai |
 
 Un essai n'est jamais publié. Pour le regarder, télécharger l'artefact « donnees » depuis la page du run (il est gardé 7 jours), copier ses fichiers `.pmtiles` et `manifest.json` dans `public/data/`, puis lancer `npm run dev` (voir [Développement local](#développement-local)).
 
@@ -391,7 +387,7 @@ La langue apparaît toute seule dans les paramètres et répond à `?lang=`. Si 
    - si besoin, `available()` (par exemple quand une clé d'accès manque) et `prepare()`. Une source qui se révèle inutilisable en cours de route lève `SourceUnavailable` : la construction continue sans elle.
 5. **L'enregistrer** dans `pipeline/czb/sources/__init__.py` (dictionnaire `REGISTRY`).
 6. **Ajouter un test** sur des données synthétiques dans `pipeline/tests/`, sans réseau. Exemples : `test_ch_bakom.py` (GeoTIFF fabriqué), `test_it_agcom.py` et `test_es_mtd.py` (faux service ArcGIS de `fake_arcgis.py`).
-7. Pour un nouveau pays, **ajouter un périmètre** dans `scopes` et son nom dans la liste `options` de `.github/workflows/donnees.yml`, pour pouvoir l'essayer seul. Puis lancer un essai.
+7. Pour un nouveau pays, **ajouter un périmètre** dans `scopes` et son nom dans la liste `options` de `.github/workflows/build-data.yml`, pour pouvoir l'essayer seul. Puis lancer un essai.
 
 Le site n'a pas besoin d'être modifié : il lit le nouveau pays dans le manifest. Seul le fond du mode Automatique se règle à part, dans `NATIONAL_BASEMAP` de `src/map/basemaps.ts` (à défaut, le pays reçoit OpenTopoMap).
 
