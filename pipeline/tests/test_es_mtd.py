@@ -22,12 +22,17 @@ COL0 = round((0.50 + 180) / STEP)
 ROW0 = round((90 - 42.70) / STEP)
 
 
+# Comme dans les données réelles, la grille des polygones est décalée d'une fraction de maille par rapport au
+# point de référence de la configuration : le module doit mesurer ce décalage lui-même.
+SHIFT_X, SHIFT_Y = 0.35, 0.49
+
+
 def lon(col: float) -> float:
-    return -180 + (COL0 + col) * STEP
+    return -180 + (COL0 + col + SHIFT_X) * STEP
 
 
 def lat(row: float) -> float:
-    return 90 - (ROW0 + row) * STEP
+    return 90 - (ROW0 + row + SHIFT_Y) * STEP
 
 
 def cells(col: int, row: int, width: int, height: int) -> list[list[float]]:
@@ -224,23 +229,45 @@ def test_spain_working_copy_is_reused_until_the_edition_changes(spain: dict):
     assert spain["layer"].requests - before > 6
 
 
-def test_spain_grid_alignment_is_checked(spain: dict):
-    """Des polygones qui ne tombent pas sur la grille annoncée arrêtent la lecture dès le début."""
-    from osgeo import ogr
-
+def test_spain_grid_phase_is_measured(spain: dict):
+    """Le décalage de la grille est mesuré sur les sommets ; des polygones qui ne dessinent pas une grille arrêtent la lecture."""
     from czb.context import load_config
     from czb.sources import create_source
 
+    report = json.loads((spain["out"] / "rapport-construction.json").read_text(encoding="utf-8"))
+    assert report["stats"]["calage_grille"]["es_mtd"] == [SHIFT_X, SHIFT_Y]
+
     source = create_source("es_mtd", load_config(spain["config"]))
-    gt = source.geotransform((COL0, ROW0, 512, 512))
-    on_grid = ogr.CreateGeometryFromWkt(f"POLYGON (({lon(10)} {lat(20)},{lon(10)} {lat(10)},{lon(30)} {lat(10)},{lon(30)} {lat(20)},{lon(10)} {lat(20)}))")
-    assert max(source._vertex_offsets(on_grid, gt)) < 1e-6
-    shifted = ogr.CreateGeometryFromWkt(f"POLYGON (({lon(10.3)} {lat(20.3)},{lon(10.3)} {lat(10.3)},{lon(30.3)} {lat(10.3)},{lon(30.3)} {lat(20.3)},{lon(10.3)} {lat(20.3)}))")
-    offsets = source._vertex_offsets(shifted, gt)
-    assert all(abs(v - 0.3) < 1e-6 for v in offsets)
-    source._check_alignment(source._vertex_offsets(on_grid, gt) * 50, "02")
-    with pytest.raises(RuntimeError, match="calés sur la grille"):
-        source._check_alignment(offsets * 50, "02")
+    # Neuf sommets sur dix sur la grille (les autres viennent de mailles coupées par une limite de commune).
+    on_grid = ([0.35] * 90 + [0.07, 0.81, 0.5, 0.93, 0.2, 0.66, 0.12, 0.44, 0.58, 0.9], [0.49] * 90 + [0.1 * i for i in range(10)])
+    phase = source.measure_phase(on_grid, "02")
+    assert abs(phase[0] - 0.35) < 1e-9 and abs(phase[1] - 0.49) < 1e-9
+    # Un pic à cheval sur 0 et 1 est une seule et même ligne de grille.
+    around_zero = ([0.999, 0.001, 0.0, 0.998, 0.002] * 20, [0.0] * 100)
+    phase = source.measure_phase(around_zero, "02")
+    assert min(phase[0], 1 - phase[0]) < 0.001 and phase[1] == 0
+    assert source._agree(None, (0.35, 0.49), "02") == (0.35, 0.49)
+    assert source._agree((0.999, 0.49), (0.001, 0.49), "09") == (0.999, 0.49)
+    with pytest.raises(RuntimeError, match="calage de grille différent"):
+        source._agree((0.35, 0.49), (0.10, 0.49), "09")
+    scattered = ([(i * 0.137) % 1 for i in range(200)], [0.49] * 200)
+    with pytest.raises(RuntimeError, match="ne dessinent pas une grille"):
+        source.measure_phase(scattered, "02")
+
+
+def test_scope_can_override_a_source_setting(spain: dict):
+    """Un périmètre d'essai peut restreindre une source (ici une seule région) sans toucher à la configuration commune."""
+    from czb.context import apply_scope, load_config
+
+    cfg = load_config(spain["config"])
+    cfg["scopes"]["essai"] = {"countries": ["ES"], "source_overrides": {"es_mtd": {"regions": ["09"]}}}
+    assert apply_scope(cfg, "essai")["sources"]["es_mtd"]["regions"] == ["09"]
+    assert load_config(spain["config"])["sources"]["es_mtd"]["regions"] == ["02", "09"]
+    with pytest.raises(ValueError, match="périmètre inconnu"):
+        apply_scope(cfg, "nulle-part")
+    cfg["scopes"]["faux"] = {"countries": ["ES"], "source_overrides": {"inconnue": {}}}
+    with pytest.raises(ValueError, match="source inconnue"):
+        apply_scope(cfg, "faux")
 
 
 def test_spain_unknown_operator_stops_the_build(spain: dict):

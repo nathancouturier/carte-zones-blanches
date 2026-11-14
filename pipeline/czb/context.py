@@ -37,6 +37,20 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     return cfg
 
 
+def apply_scope(cfg: dict[str, Any], scope_name: str) -> dict[str, Any]:
+    """Applique les réglages propres à un périmètre (clé « source_overrides ») aux sources de la configuration.
+
+    Sert aux essais : par exemple une seule région d'une source longue à lire.
+    """
+    if scope_name not in cfg["scopes"]:
+        raise ValueError(f"périmètre inconnu : {scope_name} (périmètres : {sorted(cfg['scopes'])})")
+    for source_id, patch in (cfg["scopes"][scope_name].get("source_overrides") or {}).items():
+        if source_id not in cfg["sources"]:
+            raise ValueError(f"config.yaml : le périmètre {scope_name} modifie une source inconnue « {source_id} »")
+        cfg["sources"][source_id] = {**cfg["sources"][source_id], **patch}
+    return cfg
+
+
 def grid_from_config(cfg: dict[str, Any]) -> Grid:
     return Grid(zoom=int(cfg["grid"]["max_zoom"]), tile_size=int(cfg["grid"]["tile_size"]))
 

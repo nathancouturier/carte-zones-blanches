@@ -5,7 +5,10 @@ opérateurs dont le réseau 4G est présent, sans niveau de qualité. Vérifié 
 sonde sur l'édition 2024 (situation au 30 juin 2024) :
 
 - couche d'entités publique d'ArcGIS Online, polygones en EPSG:4258 formés de
-  mailles d'une grille de 0,000346111018645788° (environ 28 m sur 38 m) ;
+  mailles d'une grille de 0,000346111018645788° (environ 28 m sur 38 m). Cette
+  grille a le pas de l'image du ministère mais pas son calage : elle est décalée
+  d'une fraction de maille (0,35 en longitude et 0,49 en latitude en 2024). Le
+  module mesure ce décalage sur les sommets des polygones à chaque lecture ;
 - champ COBERTURA : identifiants fiscaux (CIF) des opérateurs présents, séparés
   par « ; », dans un ordre quelconque ; chaîne vide = partie de la commune sans 4G ;
 - champ CCOM : code de la communauté autonome (02 Aragón, 09 Cataluña,
@@ -31,7 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .. import arcgis
-from ..cache import cache_name, read_cache, write_cache
+from ..cache import cache_geotransform, cache_name, read_cache, write_cache
 from ..context import BuildContext
 from ..grid import mercator_to_lonlat
 from ..witness import draw_country_pixels
@@ -48,8 +51,8 @@ WITNESS_MARGIN = 0.03
 #: (les mailles coupées par une limite de commune ou de région ne sont pas des carrés entiers).
 #: Les bords de la fenêtre de la copie de travail tombent sur des multiples de ce nombre de mailles (environ 7 km).
 WINDOW_SNAP = 256
-#: Nombre de coordonnées de sommets examinées, au début de chaque région, pour vérifier le calage de la grille.
-ALIGNMENT_SAMPLE = 2000
+#: Nombre de sommets examinés, au début de chaque région, pour mesurer le calage de la grille.
+ALIGNMENT_SAMPLE = 3000
 CHECK_POINTS = 400
 CHECK_TOLERANCE = 0.01
 
@@ -118,16 +121,18 @@ class EsMtd(Source):
         east, north = mercator_to_lonlat(extent[2], extent[3])
         # Fenêtre élargie à des multiples de WINDOW_SNAP mailles : si le contour du pays bouge de quelques
         # pixels d'une construction à l'autre, la fenêtre reste la même et la copie de travail reste valable.
-        col0 = math.floor((west - x0) / step / WINDOW_SNAP) * WINDOW_SNAP
-        col1 = math.ceil((east - x0) / step / WINDOW_SNAP) * WINDOW_SNAP
-        row0 = math.floor((y0 - north) / step / WINDOW_SNAP) * WINDOW_SNAP
-        row1 = math.ceil((y0 - south) / step / WINDOW_SNAP) * WINDOW_SNAP
+        # (deux mailles de marge : le calage mesuré décale la grille d'une fraction de maille)
+        col0 = math.floor(((west - x0) / step - 2) / WINDOW_SNAP) * WINDOW_SNAP
+        col1 = math.ceil(((east - x0) / step + 2) / WINDOW_SNAP) * WINDOW_SNAP
+        row0 = math.floor(((y0 - north) / step - 2) / WINDOW_SNAP) * WINDOW_SNAP
+        row1 = math.ceil(((y0 - south) / step + 2) / WINDOW_SNAP) * WINDOW_SNAP
         return col0, row0, col1 - col0, row1 - row0
 
-    def geotransform(self, window: tuple[int, int, int, int]) -> tuple[float, float, float, float, float, float]:
+    def geotransform(self, window: tuple[int, int, int, int], phase: tuple[float, float] = (0.0, 0.0)) -> tuple[float, float, float, float, float, float]:
+        """Calage de la fenêtre : le point de référence de config.yaml, décalé du calage mesuré (en fractions de maille)."""
         step = float(self.source_cfg["grid_step_deg"])
         x0, y0 = (float(v) for v in self.source_cfg["grid_origin"])
-        return (x0 + window[0] * step, step, 0.0, y0 - window[1] * step, 0.0, -step)
+        return (x0 + (window[0] + phase[0]) * step, step, 0.0, y0 - (window[1] + phase[1]) * step, 0.0, -step)
 
     # -- copie de travail ----------------------------------------------------
 
@@ -160,8 +165,8 @@ class EsMtd(Source):
             bits |= self.bit_of_cif[cif]
         return bits
 
-    def download(self, ctx: BuildContext, window: tuple[int, int, int, int], state: dict[str, Any]) -> "np.ndarray":
-        """Lit les polygones région par région et les rastérise à la maille d'origine."""
+    def download(self, ctx: BuildContext, window: tuple[int, int, int, int], state: dict[str, Any]) -> tuple["np.ndarray", tuple[float, float]]:
+        """Lit les polygones région par région et les rastérise à la maille d'origine. Renvoie aussi le calage mesuré."""
         import numpy as np
         from osgeo import gdal, ogr, osr
 
@@ -170,7 +175,8 @@ class EsMtd(Source):
         cfg = self.source_cfg
         oid_field, operator_field = cfg["oid_field"], cfg["operator_field"]
         step = float(cfg["grid_step_deg"])
-        gt = self.geotransform(window)
+        reference = self.geotransform(window)  # sans calage : sert à mesurer celui des polygones
+        phase: tuple[float, float] | None = None
         srs = osr.SpatialReference()
         srs.ImportFromEPSG(4258)
         srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
@@ -188,7 +194,8 @@ class EsMtd(Source):
             layer.CreateField(ogr.FieldDefn("bits", ogr.OFTInteger))
             defn = layer.GetLayerDefn()
             count = page_index = 0
-            alignment: list[float] = []
+            fractions: tuple[list[float], list[float]] = ([], [])
+            measured = False
             minx = miny = float("inf")
             maxx = maxy = float("-inf")
             pages = arcgis.pages(self.query_url, self.where(region), [oid_field, operator_field], oid_field, int(cfg.get("page_size", 2000)), workdir, pause_s=float(cfg.get("pause_s", 0.5)), expected=expected)
@@ -206,10 +213,12 @@ class EsMtd(Source):
                     geom = polygonal(feat.GetGeometryRef())
                     if value == 0 or geom is None:
                         continue
-                    if len(alignment) < ALIGNMENT_SAMPLE:
-                        alignment.extend(self._vertex_offsets(geom, gt))
-                        if len(alignment) >= ALIGNMENT_SAMPLE:
-                            self._check_alignment(alignment, region)
+                    if len(fractions[0]) < ALIGNMENT_SAMPLE:
+                        self._vertex_fractions(geom, reference, fractions)
+                        if len(fractions[0]) >= ALIGNMENT_SAMPLE:
+                            # Dès le début de la région : pas de grille reconnaissable, on s'arrête avant de tout lire.
+                            phase = self._agree(phase, self.measure_phase(fractions, region), region)
+                            measured = True
                     out = ogr.Feature(defn)
                     out.SetField("bits", value)
                     out.SetGeometry(ogr.ForceToMultiPolygon(geom.Clone()))
@@ -224,6 +233,10 @@ class EsMtd(Source):
                     print(f"    {page_index} pages lues, {count:,} polygones".replace(",", " "), flush=True)
             if count == 0:
                 raise RuntimeError(f"{self.source_id} : aucun polygone pour la région {region}")
+            if not measured:  # petite région : on mesure sur ce qu'on a
+                phase = self._agree(phase, self.measure_phase(fractions, region), region)
+            assert phase is not None
+            gt = self.geotransform(window, phase)
             # Fenêtre de la région dans la grille d'origine, limitée à la fenêtre du pays.
             c0 = max(0, math.floor((minx - gt[0]) / step) - 1)
             c1 = min(window[2], math.ceil((maxx - gt[0]) / step) + 1)
@@ -249,33 +262,57 @@ class EsMtd(Source):
             vds = None
             gpkg.unlink(missing_ok=True)
         shutil.rmtree(workdir, ignore_errors=True)
-        return bits
+        assert phase is not None
+        return bits, phase
 
     @staticmethod
-    def _vertex_offsets(geom: Any, gt: tuple) -> list[float]:
-        """Écart de quelques sommets d'un polygone à la ligne de grille la plus proche, en fraction de maille (0 à 0,5)."""
+    def _vertex_fractions(geom: Any, reference: tuple, fractions: tuple[list[float], list[float]]) -> None:
+        """Ajoute, pour quelques sommets du polygone, leur position dans une maille (0 à 1) en longitude et en latitude."""
         part = geom.GetGeometryRef(0) if geom.GetGeometryName() == "MULTIPOLYGON" else geom
         ring = part.GetGeometryRef(0)
-        out = []
         for i in range(min(ring.GetPointCount(), 6)):
             x, y = ring.GetPoint_2D(i)
-            for value in ((x - gt[0]) / gt[1], (y - gt[3]) / gt[5]):
-                frac = value - math.floor(value)
-                out.append(min(frac, 1 - frac))
-        return out
+            for value, out in (((x - reference[0]) / reference[1], fractions[0]), ((y - reference[3]) / reference[5], fractions[1])):
+                out.append(value - math.floor(value))
 
-    def _check_alignment(self, offsets: list[float], region: str) -> None:
-        """Dès les premiers polygones : leurs sommets tombent-ils sur les lignes de la grille annoncée ?
+    def measure_phase(self, fractions: tuple[list[float], list[float]], region: str) -> tuple[float, float]:
+        """Calage de la grille des polygones, en fraction de maille, mesuré sur leurs sommets.
 
-        Les mailles coupées par une limite de commune ont des sommets ailleurs ; la grande majorité doit
-        pourtant être sur une ligne. Sinon le pas ou l'origine ont changé : on s'arrête tout de suite,
-        avant de lire deux millions de polygones.
+        Les polygones sont des assemblages de mailles carrées : la grande majorité de leurs sommets tombe
+        donc sur les lignes d'une même grille (les autres viennent des mailles coupées par une limite de
+        commune). On cherche la position la plus fréquente ; si aucune ne domine, ce n'est plus une grille
+        du pas annoncé et on s'arrête.
         """
-        on_grid = sum(1 for v in offsets if v < 0.01) / len(offsets)
-        print(f"    sommets sur les lignes de la grille d'origine : {on_grid * 100:.0f} % (sur {len(offsets)} coordonnées)", flush=True)
-        if on_grid < 0.6:
-            typical = sorted(offsets)[len(offsets) // 2]
-            raise RuntimeError(f"{self.source_id} : région {region}, les polygones ne sont pas calés sur la grille annoncée (écart médian de {typical:.2f} maille) : vérifier grid_step_deg et grid_origin dans config.yaml")
+        out = []
+        for axis, values in zip(("longitude", "latitude"), fractions):
+            if len(values) < 4:
+                raise RuntimeError(f"{self.source_id} : région {region}, trop peu de sommets pour mesurer le calage de la grille")
+            bins = [0] * 100
+            for v in values:
+                bins[int(v * 100) % 100] += 1
+            # Fenêtre glissante de 3 centièmes : le pic peut être à cheval sur deux cases, ou autour de 0.
+            best = max(range(100), key=lambda i: bins[i - 1] + bins[i] + bins[(i + 1) % 100])
+            centre = (best + 0.5) / 100
+            # Écart de chaque sommet au centre du pic, ramené entre -0,5 et 0,5 maille.
+            near = sorted(d for d in ((v - centre + 0.5) % 1 - 0.5 for v in values) if abs(d) <= 0.02)
+            share = len(near) / len(values)
+            if share < 0.6:
+                raise RuntimeError(f"{self.source_id} : région {region}, les sommets ne dessinent pas une grille au pas annoncé en {axis} ({share * 100:.0f} % au mieux sur une même ligne) : vérifier grid_step_deg dans config.yaml")
+            # Les sommets de la grille ont tous exactement la même position : la médiane du pic la donne,
+            # sans être tirée par les quelques sommets de mailles coupées qui tombent tout près.
+            value = (centre + near[len(near) // 2]) % 1
+            out.append(0.0 if value > 1 - 1e-9 or value < 1e-9 else value)
+        print(f"    calage de la grille mesuré sur {len(fractions[0])} sommets : {out[0]:.4f} maille en longitude, {out[1]:.4f} en latitude", flush=True)
+        return out[0], out[1]
+
+    def _agree(self, phase: tuple[float, float] | None, measured: tuple[float, float], region: str) -> tuple[float, float]:
+        """Toutes les régions doivent partager le calage de la première."""
+        if phase is None:
+            return measured
+        for a, b in zip(phase, measured):
+            if abs((a - b + 0.5) % 1 - 0.5) > 0.02:
+                raise RuntimeError(f"{self.source_id} : région {region}, calage de grille différent de celui des autres régions ({measured} contre {phase})")
+        return phase
 
     def _check_region(self, layer: Any, region_bits: "np.ndarray", gt: tuple, rng: "np.random.Generator", region: str) -> None:
         """Compare la copie de travail aux polygones en des points tirés au hasard (test géométrique exact)."""
@@ -344,15 +381,17 @@ class EsMtd(Source):
         reused = bits is not None
         if bits is not None:
             print(f"  - édition inchangée : copie de travail reprise ({cached.name}, {bits.shape[1]} x {bits.shape[0]} mailles)", flush=True)
+            gt = cache_geotransform(cached)  # la copie de travail porte son calage exact
         else:
             reason = "absente" if not cached.exists() else "d'une autre édition"
             print(f"  - copie de travail {reason} : lecture du service du ministère", flush=True)
-            bits = self.download(ctx, window, state)
+            bits, phase = self.download(ctx, window, state)
+            gt = self.geotransform(window, phase)
+            ctx.stats.setdefault("calage_grille", {})[self.source_id] = [round(phase[0], 4), round(phase[1], 4)]
         # La copie de travail part avec les données publiées : la prochaine construction la reprendra.
-        write_cache(ctx.outdir / cache_name(self.source_id), bits, self.geotransform(window), 4258, key, "bit i = opérateur de l'emplacement i présent en 4G ; 0 = aucun réseau ou hors des régions")
+        write_cache(ctx.outdir / cache_name(self.source_id), bits, gt, 4258, key, "bit i = opérateur de l'emplacement i présent en 4G ; 0 = aucun réseau ou hors des régions")
         ctx.stats.setdefault("copie_de_travail", {})[self.source_id] = "reprise" if reused else "reconstruite"
 
-        gt = self.geotransform(window)
         srs = osr.SpatialReference()
         srs.ImportFromEPSG(4258)
         srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)

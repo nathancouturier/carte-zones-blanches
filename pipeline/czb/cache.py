@@ -55,3 +55,11 @@ def write_cache(path: Path, bands: "np.ndarray", geotransform: tuple, epsg: int,
     for index in range(bands.shape[0]):
         ds.GetRasterBand(index + 1).WriteArray(bands[index])
     ds = None
+
+
+def cache_geotransform(path: Path) -> tuple[float, float, float, float, float, float]:
+    """Géotransformation enregistrée dans une copie de travail (son calage exact sur le terrain)."""
+    from osgeo import gdal
+
+    ds = gdal.Open(str(path))
+    return tuple(ds.GetGeoTransform())  # type: ignore[return-value]

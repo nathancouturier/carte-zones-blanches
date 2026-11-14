@@ -254,8 +254,9 @@ sources:
     operator_separator: ";"
     page_size: 2000
     pause_s: 0.5
-    # Grille d'origine de la source (EPSG:4258) : pas de l'image « Cob4G_2024 » du ministère, et coin nord-ouest de
-    # son emprise. Les polygones sont des assemblages de mailles de cette grille (le module le vérifie à la lecture).
+    # Grille d'origine de la source (EPSG:4258) : pas de l'image « Cob4G_2024 » du ministère, et point de référence
+    # (coin nord-ouest de cette image). Les polygones sont des assemblages de mailles de ce pas, décalés d'une
+    # fraction de maille par rapport à ce point : le module mesure ce décalage à chaque lecture.
     grid_step_deg: 0.000346111018645788
     grid_origin: [-18.356176100718844, 43.95448719807852]
     services:
@@ -293,6 +294,11 @@ scopes:
     countries: [IT]
   espagne:
     countries: [ES]
+  # L'Espagne avec la couverture d'une seule région (le Pays basque) : la chaîne complète en quelques minutes.
+  espagne-essai:
+    countries: [ES]
+    source_overrides:
+      es_mtd: {regions: ["16"]}
   andorre-monaco:
     countries: [AD, MC]
   # Alpes : cinq départements, la Suisse et l'Italie. Essai d'ensemble rapide (frontières, interstices, plusieurs pays).

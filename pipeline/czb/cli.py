@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .context import BuildContext, Timer, grid_from_config, load_config
+from .context import BuildContext, Timer, apply_scope, grid_from_config, load_config
 from .sources import create_source
 from .sources.base import SourceUnavailable
 
@@ -55,7 +55,7 @@ def unavailable_sources(cfg: dict[str, Any], scope_name: str) -> dict[str, str]:
 
 
 def cmd_state(args: argparse.Namespace) -> int:
-    cfg = load_config(args.config)
+    cfg = apply_scope(load_config(args.config), args.scope)
     state = remote_state(cfg, args.scope, args.services.split(","))
     text = json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True)
     if args.out:
@@ -68,7 +68,7 @@ def cmd_changed(args: argparse.Namespace) -> int:
     """Compare l'état des sources en ligne à celui de la dernière release de données."""
     from .release_state import latest_release_state, write_github_output
 
-    cfg = load_config(args.config)
+    cfg = apply_scope(load_config(args.config), args.scope)
     current = remote_state(cfg, args.scope, args.services.split(","))
     tag, previous = latest_release_state(args.repo)
     if args.force:
@@ -122,7 +122,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     from .masks import canvas_for_geometries, load_mask_geometries, rasterize_masks
     from .tiles import TileStore, build_tiles
 
-    cfg = load_config(args.config)
+    cfg = apply_scope(load_config(args.config), args.scope)
     services = args.services.split(",")
     workdir, outdir = Path(args.work), Path(args.out)
     workdir.mkdir(parents=True, exist_ok=True)
