@@ -1,5 +1,6 @@
 // Rapport de couverture d'un tracé : chiffres, zones blanches et version texte.
 
+import { WHITE_ZONE_MIN_LENGTH_M } from '../config';
 import {
   countryName,
   formatDataDate,
@@ -137,6 +138,11 @@ export function describeZone(zone: WhiteZone, manifest: Manifest): string {
   return parts.join(', ');
 }
 
+/** « Aucune zone blanche de plus de 100 m sur ce parcours. », dans le panneau comme dans le texte. */
+export function noZonesMessage(): string {
+  return t('report.noZones', { min: formatNumber(WHITE_ZONE_MIN_LENGTH_M) });
+}
+
 /** Opérateur appliqué dans chaque pays traversé : « Orange (France), tous opérateurs (Italie) ». */
 export function describeOperators(report: Report, settings: DecodeSettings): string {
   return report.countries
@@ -201,7 +207,7 @@ export function reportText(
   if (report.stats.unknown > 0) lines.push(t('report.unknownLine', { km: formatKm(report.stats.unknown) }));
   lines.push('');
   if (report.zones.length === 0) {
-    lines.push(t('report.noZones'));
+    lines.push(noZonesMessage());
   } else {
     lines.push(t('report.zonesTitle', { count: report.zones.length }));
     for (const zone of report.zones) lines.push(`  ${zone.index}. ${describeZone(zone, manifest)}`);

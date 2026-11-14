@@ -18,6 +18,7 @@ import { distance } from '../src/gpx/geodesy';
 import { GpxError, parseGpx } from '../src/gpx/parse';
 import { analyzeTrack, buildReport, describeZone, reportText, zoneWaypoints } from '../src/gpx/report';
 import { resample, trackLength, type Sample } from '../src/gpx/resample';
+import { availableLanguages, setLanguage } from '../src/i18n';
 import { fixtureStore, sampleManifest, xmlParser, xmlTools } from './helpers';
 
 const GPX_HEAD = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">';
@@ -356,6 +357,27 @@ describe('analyse sur les tuiles du pipeline', () => {
     expect(waypoints).toHaveLength(report.zones.length * 2);
     expect(waypoints[0].name).toBe('Zone blanche 1, début');
     expect(waypoints[1].name).toBe('Zone blanche 1, fin');
+  });
+});
+
+describe('rapport en texte', () => {
+  const manifest = sampleManifest();
+  const settings = { service: 'data' as const, operators: {} };
+
+  it('remplace toutes les variables, même sans zone blanche, dans toutes les langues', () => {
+    const { samples, raw } = synthetic(repeat(3, 20));
+    const analysis = analyzeTrack(samples, raw);
+    const report = buildReport(analysis, manifest, settings);
+    expect(report.zones).toHaveLength(0);
+    expect(reportText(analysis, report, manifest, settings, 'Sans zone')).toContain('Aucune zone blanche de plus de 100 m sur ce parcours.');
+    try {
+      for (const { code } of availableLanguages()) {
+        setLanguage(code);
+        expect(reportText(analysis, report, manifest, settings, 'Sans zone'), code).not.toMatch(/[{}]/);
+      }
+    } finally {
+      setLanguage('fr');
+    }
   });
 });
 

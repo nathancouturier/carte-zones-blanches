@@ -16,8 +16,7 @@ import {
 import { LEVEL_SOLID } from '../coverage/render';
 import { hasThresholdSlots, networkCount, slotLabel } from '../coverage/slotLabel';
 import type { CoverageStats } from '../gpx/analyze';
-import { describeOperators, describeZone, LEVEL_KEYS } from '../gpx/report';
-import { WHITE_ZONE_MIN_LENGTH_M } from '../config';
+import { describeOperators, describeZone, LEVEL_KEYS, noZonesMessage } from '../gpx/report';
 import {
   availableLanguages,
   countryName,
@@ -504,7 +503,7 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
     section(
       t('report.zonesHeading', { count: report.zones.length }),
       report.zones.length === 0
-        ? h('p', { class: 'muted' }, t('report.noZones', { min: formatNumber(WHITE_ZONE_MIN_LENGTH_M) }))
+        ? h('p', { class: 'muted' }, noZonesMessage())
         : [
             h('p', { class: 'hint' }, t('report.zonesHint')),
             h(
