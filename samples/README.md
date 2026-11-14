@@ -9,7 +9,7 @@ traverse une zone blanche réelle des données françaises (Arcep), vérifiée d
 
 | Fichier | Itinéraire | Distance | Dénivelé + / - | Altitude | Points | Frontière |
 |---|---|---|---|---|---|---|
-| `test-alpes.gpx` | Les Chapieux, col de la Seigne, refuge Elisabetta, La Visaille | 20,04 km | 1 030 m / 934 m | 1 548 à 2 512 m | 1 077 | France, Italie : col de la Seigne, km 10,25 |
+| `test-alpes.gpx` | Les Chapieux, col de la Seigne, refuge Elisabetta, La Visaille | 19,90 km | 1 023 m / 928 m | 1 548 à 2 512 m | 1 070 | France, Italie : col de la Seigne, km 10,25 |
 | `test-pyrenees.gpx` | Gavarnie, refuge des Sarradets, brèche de Roland, refuge de Góriz | 14,05 km | 1 585 m / 773 m | 1 374 à 2 811 m | 843 | France, Espagne : brèche de Roland, km 7,81 |
 
 Dénivelés calculés comme le fait le site : tracé rééchantillonné tous les 20 m, variations d'altitude de moins de
@@ -23,19 +23,18 @@ affiche 2 511 m et 2 808 m pour les maximums. Le script `e2e/verif.mjs` importe 
 Départ aux Chapieux (Savoie, 1 556 m), route de la Ville des Glaciers jusqu'à La Ville des Glaciers (km 4,6),
 piste et sentier par Les Mottets, col de la Seigne (frontière franco-italienne, km 10,25, 45,751309 N
 6,807186 E), descente par La Casermetta (vers le km 11) et le refuge Elisabetta (km 13,6), lac Combal (vers le
-km 16,8), puis la piste du val Veny jusqu'à La Visaille (Vallée d'Aoste, Italie, 1 656 m). Le tracé suit
+km 16,8), puis la piste du val Veny jusqu'à La Visaille (Vallée d'Aoste, Italie, 1 647 m). Le tracé suit
 l'itinéraire principal du Tour du Mont-Blanc sur 16 km, puis la piste et les sentiers balisés du val Veny
-(balisage AV2, sentiers 8 et 12). Chemins : 9,5 km de piste, 5,5 km de sentier, 5,1 km de petite route.
+(balisage AV2, sentiers 8 et 12). Chemins : 9,4 km de piste, 5,5 km de sentier, 5,0 km de petite route.
 
 ### `test-pyrenees.gpx` : de Gavarnie au refuge de Góriz par la brèche de Roland
 
 Départ à Gavarnie (Hautes-Pyrénées, 1 374 m), chemin du Cirque, puis sentiers jusqu'au pied de l'échelle des
 Sarradets, échelle (vers les km 4,6 à 5,3, cotée « demanding_mountain_hiking » dans OpenStreetMap), refuge des
-Sarradets, aussi appelé
-refuge de la Brèche de Roland (km 7,1), brèche de Roland (frontière franco-espagnole, km 7,81, 42,691062 N
-0,034022 O ; la montée du refuge à la brèche est cotée « alpine_hiking »), puis descente côté espagnol par le
-collado de Millaris (km 9,6) et le collado del Descargador (km 11,0) jusqu'au refuge de Góriz (Aragon, Espagne,
-2 190 m).
+Sarradets, aussi appelé refuge de la Brèche de Roland (km 7,1), brèche de Roland (frontière franco-espagnole,
+km 7,81, 42,691062 N 0,034022 O ; la montée du refuge à la brèche est cotée « alpine_hiking »), puis descente
+côté espagnol par le collado de Millaris (km 9,6) et le collado del Descargador (km 11,0) jusqu'au refuge de
+Góriz (Aragon, Espagne, 2 190 m).
 
 ## Zones blanches attendues dans le rapport
 
@@ -44,7 +43,7 @@ Données lues dans la release `data-2026-11-14-2` : Arcep, couverture théorique
 moins 100 m ; deux zones séparées par moins de 50 m de couverture sont fusionnées. Ces chiffres ont été recalculés
 avec le code du site (`src/gpx`) et peuvent changer avec une nouvelle release.
 
-### `test-alpes.gpx` (10,25 km en France, 9,79 km en Italie)
+### `test-alpes.gpx` (10,25 km dans les données françaises, 9,65 km hors zone en Italie)
 
 | Opérateur | Sans couverture côté France | Zones blanches |
 |---|---|---|
@@ -55,7 +54,7 @@ Tout le côté français, des Chapieux au col de la Seigne, est sans couverture 
 commence dans la zone blanche et la quitte à la frontière. Il ne teste donc pas le passage d'une zone couverte à
 une zone blanche (le tracé des Pyrénées le fait).
 
-### `test-pyrenees.gpx` (7,83 km en France, 6,22 km en Espagne)
+### `test-pyrenees.gpx` (7,83 km dans les données françaises, 6,22 km hors zone en Espagne)
 
 Côté France, tous opérateurs : pas de couverture 2,00 km, couverture limitée 0,90 km, bonne 1,74 km, très bonne
 3,19 km.
@@ -69,7 +68,13 @@ Côté France, tous opérateurs : pas de couverture 2,00 km, couverture limitée
 | Free | 7 830 m | km 0 à 7,83 (tout le côté français) |
 
 La première zone va du haut de l'échelle des Sarradets jusqu'au-dessus du refuge. La seconde mesure exactement
-100 m, le seuil : elle teste la règle de longueur minimale.
+100 m, le seuil : elle teste la règle de longueur minimale, mais un seul point de 20 m de moins la ferait sortir
+du rapport, si bien qu'elle peut disparaître avec une prochaine release.
+
+### Appels et SMS
+
+Avec le service « Appels et SMS » (couverture 2G et 3G de la même édition), tous opérateurs : une zone blanche
+de km 0,23 à 10,25 (10,02 km) sur le tracé des Alpes, et une de km 6,85 à 7,83 (980 m) sur celui des Pyrénées.
 
 ### Côté étranger
 
@@ -92,11 +97,15 @@ Les données italiennes et espagnoles ne sont pas encore publiées : ces parties
    chemins des relations `route` = hiking ou foot, avec leur géométrie ; refuges, cols et lieux ; frontière
    (relations `boundary=administrative`, `admin_level=2`).
 2. **Graphe et plus court chemin** : les chemins sont reliés par leurs noeuds partagés. Le poids d'un tronçon est
-   sa longueur multipliée par un facteur : 1 pour un sentier ou une piste, 1,6 pour une route sauf si un
-   itinéraire balisé l'emprunte, 1,15 à 10 selon la cotation `sac_scale` (passages alpins écartés), 3 si le sentier
-   est peu visible, 0,95 sur un itinéraire balisé (0,7 de plus sur le Tour du Mont-Blanc et l'Alta Via 2 pour le
-   tracé des Alpes). Plus court chemin (Dijkstra) entre les étapes (départ, col, refuges, arrivée), sans repasser
-   par un noeud déjà emprunté. Le tracé suit les chemins de bout en bout, sans saut.
+   sa longueur multipliée par un facteur : 1 pour un sentier ou une piste, 1,6 pour une route, 1,15 à 10 selon la
+   cotation `sac_scale`, 3 si le sentier est peu visible. Un tronçon emprunté par un itinéraire balisé n'est pas
+   pénalisé (facteur ramené à 1, ou 1,05 pour une route, cotation comprise) et reçoit en plus 0,95 (0,7 de plus sur
+   le Tour du Mont-Blanc et l'Alta Via 2 pour le tracé des Alpes) : les passages alpins balisés restent donc
+   possibles, comme la montée à la brèche de Roland. Plus court chemin (Dijkstra) entre les étapes (départ, col, refuges, arrivée), sans repasser
+   par un noeud déjà emprunté. Le tracé suit les chemins de bout en bout, sans saut. À l'arrivée des Alpes, le
+   noeud le plus proche du hameau de La Visaille était sur une piste parallèle à la route : le calcul dépassait le
+   hameau puis revenait sur environ 150 m. Ce crochet a été retiré, le tracé s'arrête sur la route, à 21 m du
+   hameau.
 3. **Simplification légère** : Douglas-Peucker à 2 m, puis des points intermédiaires pris sur le chemin là où deux
    points sont à plus de 25 m. Écart entre points : 18,6 m en moyenne (Alpes), 16,7 m (Pyrénées), 25 m au plus.
    Coordonnées à 6 décimales, pas de doublon, pas d'horodatage.
@@ -106,7 +115,10 @@ Les données italiennes et espagnoles ne sont pas encore publiées : ces parties
 5. **Vérifications** : les deux fichiers sont valides selon le schéma officiel GPX 1.1
    (http://www.topografix.com/GPX/1/1/gpx.xsd) ; l'analyse ci-dessus a été refaite avec le code du site
    (lecture GPX, rééchantillonnage, tables de niveaux du manifest, zones blanches, dénivelé) sur les mêmes pixels,
-   avec des résultats identiques.
+   avec des résultats identiques. Frontière : d'après les contours officiels (Etalab pour la France, ISTAT pour la
+   Vallée d'Aoste, IGN España pour l'Aragon), chaque tracé la franchit une seule fois, au km 10,23 (Alpes) et au
+   km 7,82 (Pyrénées). OpenStreetMap la place au km 10,25 et au km 7,81 ; les tuiles françaises s'arrêtent entre
+   les km 10,24 et 10,26 et entre les km 7,82 et 7,84 (pixels de 27 à 28 m).
 
 ## Sources, licences et mentions
 
@@ -135,6 +147,10 @@ Les données italiennes et espagnoles ne sont pas encore publiées : ces parties
   n'encourent aucune responsabilité pour quelque utilisation que ce soit du Copernicus WorldDEM-30.
 - **Arcep, Mon réseau mobile** : couverture théorique, Licence Ouverte / Open Licence (Etalab), d'après le manifest
   de la release. Elle a seulement servi à vérifier les zones blanches : les fichiers GPX n'en contiennent rien.
+- **Contours officiels des pays** : contours administratifs d'Etalab (d'après ADMIN EXPRESS de l'IGN, ceux du
+  pipeline), limites des régions de l'ISTAT au 1er janvier 2026 (CC BY 4.0) et unités administratives de l'IGN
+  España (« BDLJE CC-BY 4.0 ign.es »), lus le 14 novembre 2026. Ils ont seulement servi à vérifier le passage de la
+  frontière : les fichiers GPX n'en contiennent rien.
 
 ## Limites
 
@@ -147,5 +163,6 @@ Les données italiennes et espagnoles ne sont pas encore publiées : ces parties
 - Pas de 30 m : les reliefs fins sont lissés. La brèche de Roland sort à 2 784 m (2 807 m dans OpenStreetMap) et
   le point le plus haut du tracé (2 811 m) est 80 m plus loin, côté espagnol ; le col de la Seigne sort à 2 511 m
   (2 515 m dans OpenStreetMap). Dans l'échelle des Sarradets (km 4,7 à 4,9), le chemin longe des falaises et
-  l'altitude saute de 20 à 37 m entre points voisins, ce qui gonfle un peu le dénivelé.
+  l'altitude saute de 16 à 37 m entre points voisins, parfois vers le bas alors que le chemin monte, ce qui gonfle
+  un peu le dénivelé.
 - Couverture théorique, des écarts locaux sont possibles.

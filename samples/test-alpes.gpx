@@ -13,7 +13,7 @@
     <link href="https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N45_00_E006_00_DEM/INFO/eula_F.pdf">
       <text>Altitudes : Copernicus DEM GLO-30, produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved</text>
     </link>
-    <bounds minlat="45.696657" minlon="6.733651" maxlat="45.787094" maxlon="6.905009"/>
+    <bounds minlat="45.696657" minlon="6.733651" maxlat="45.787094" maxlon="6.904196"/>
   </metadata>
   <trk>
     <name>Test Alpes : des Chapieux à La Visaille par le col de la Seigne</name>
@@ -1088,13 +1088,6 @@
       <trkpt lat="45.787094" lon="6.903780"><ele>1649.7</ele></trkpt>
       <trkpt lat="45.787082" lon="6.903994"><ele>1647.8</ele></trkpt>
       <trkpt lat="45.787031" lon="6.904196"><ele>1646.8</ele></trkpt>
-      <trkpt lat="45.787002" lon="6.904406"><ele>1644.8</ele></trkpt>
-      <trkpt lat="45.787006" lon="6.904709"><ele>1644.0</ele></trkpt>
-      <trkpt lat="45.787037" lon="6.905009"><ele>1645.3</ele></trkpt>
-      <trkpt lat="45.786929" lon="6.904902"><ele>1649.1</ele></trkpt>
-      <trkpt lat="45.786824" lon="6.904670"><ele>1651.6</ele></trkpt>
-      <trkpt lat="45.786795" lon="6.904377"><ele>1651.8</ele></trkpt>
-      <trkpt lat="45.786785" lon="6.904082"><ele>1655.6</ele></trkpt>
     </trkseg>
   </trk>
 </gpx>
