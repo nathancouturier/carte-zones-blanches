@@ -245,6 +245,57 @@ def test_mask_area_guard(border: dict, tmp_path: Path):
         load_mask_geometries(ctx)
 
 
+OSM_LAND_AREA = """<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="test">
+ <node id="1" lat="43.70" lon="7.40" version="1"/>
+ <node id="2" lat="43.70" lon="7.42" version="1"/>
+ <node id="3" lat="43.72" lon="7.42" version="1"/>
+ <node id="4" lat="43.72" lon="7.40" version="1"/>
+ <way id="10" version="1"><nd ref="1"/><nd ref="2"/><nd ref="3"/></way>
+ <way id="11" version="1"><nd ref="3"/><nd ref="4"/><nd ref="1"/></way>
+ <relation id="36990" version="1"><member type="way" ref="10" role="outer"/><member type="way" ref="11" role="outer"/><tag k="type" v="land_area"/></relation>
+</osm>
+"""
+
+
+def test_mask_files_are_deleted_once_read(built: dict, tmp_path: Path):
+    """Chaque fichier de contour téléchargé est supprimé dès que ses géométries sont lues, avec les trois chargeurs ;
+    une nouvelle lecture le télécharge de nouveau, et « delete_after: false » le garde."""
+    import gzip
+    import zipfile
+
+    from czb.masks import LOADERS
+
+    # La construction à deux pays ne laisse aucun contour dans son dossier de travail.
+    assert not (built["root"] / "work" / "ouest.gpkg").exists() and not (built["root"] / "work" / "est.gpkg").exists()
+
+    remote, work = tmp_path / "distant", tmp_path / "travail"
+    remote.mkdir()
+    _write_mask(remote / "ouest.gpkg", west_country())
+    _write_mask(remote / "est.gpkg", east_country())
+    with zipfile.ZipFile(remote / "est.zip", "w") as archive:
+        archive.write(remote / "est.gpkg", "dossier/est.gpkg")
+    vector = {"type": "vector_file", "expect": 2, "urls": [{"url": (remote / "ouest.gpkg").as_uri(), "filename": "ouest.gpkg"}, {"url": (remote / "est.zip").as_uri(), "filename": "est.zip", "member": "dossier/est.gpkg"}]}
+    for _ in range(2):  # la seconde lecture retélécharge les fichiers supprimés
+        assert len(LOADERS["vector_file"](vector, {}, work)) == 2
+        assert list(work.iterdir()) == []
+
+    departements = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"code": code}, "geometry": {"type": "Polygon", "coordinates": [[[lon, 45.0], [lon + 0.1, 45.0], [lon + 0.1, 45.1], [lon, 45.1], [lon, 45.0]]]}} for code, lon in (("05", 6.0), ("38", 5.9), ("971", -61.5))]}
+    (remote / "departements.geojson.gz").write_bytes(gzip.compress(json.dumps(departements).encode("utf-8")))
+    etalab = {"type": "etalab_departements", "url": (remote / "departements.geojson.gz").as_uri(), "metropole_only": True}
+    assert len(LOADERS["etalab_departements"](etalab, {}, work)) == 2
+    assert list(work.iterdir()) == []
+
+    (remote / "terre.osm").write_text(OSM_LAND_AREA, encoding="utf-8")
+    land = {"type": "osm_land_area", "url": (remote / "terre.osm").as_uri(), "relation": 36990}
+    assert len(LOADERS["osm_land_area"](land, {}, work)) == 1
+    assert list(work.iterdir()) == []
+
+    kept = {"type": "vector_file", "url": (remote / "ouest.gpkg").as_uri(), "filename": "ouest.gpkg", "delete_after": False}
+    assert len(LOADERS["vector_file"](kept, {}, work)) == 1
+    assert [p.name for p in work.iterdir()] == ["ouest.gpkg"]
+
+
 def test_extrapolate_marked_takes_the_lowest_known_neighbour(tmp_path: Path):
     canvas = Canvas(Grid(12, 256), 2100, 1400, 2100, 1400)
     layers = Layers(canvas, tmp_path)

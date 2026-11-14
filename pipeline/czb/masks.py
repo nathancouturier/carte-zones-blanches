@@ -29,6 +29,16 @@ GAP_MAX_HA = 100.0
 GAP_TOUCH_M = 0.01
 
 
+def _done_with(path: Path, mask_cfg: dict[str, Any], entry: dict[str, Any] | None = None) -> None:
+    """Supprime un fichier de contour dès que ses géométries sont lues.
+
+    Il ne reste donc pas sur le disque pendant toute la construction ; une nouvelle lecture le télécharge de
+    nouveau. « delete_after: false » (dans le masque, ou dans une entrée de « urls ») le garde, pour la mise au point.
+    """
+    if (entry or {}).get("delete_after", mask_cfg.get("delete_after", True)):
+        path.unlink(missing_ok=True)
+
+
 def _load_etalab_departements(mask_cfg: dict[str, Any], scope: dict[str, Any], workdir: Path) -> list[ogr.Geometry]:
     """Contours des départements (Etalab). Champs utilisés : code, nom."""
     url = mask_cfg["url"]
@@ -61,6 +71,8 @@ def _load_etalab_departements(mask_cfg: dict[str, Any], scope: dict[str, Any], w
         geom.Transform(to_merc)
         geoms.append(geom)
         found.add(code)
+    layer = ds = None
+    _done_with(local, mask_cfg)
     if wanted is not None and set(wanted) - found:
         raise RuntimeError(f"départements introuvables : {sorted(set(wanted) - found)}")
     if not geoms:
@@ -82,7 +94,8 @@ def _load_vector_file(mask_cfg: dict[str, Any], scope: dict[str, Any], workdir: 
 
     Clés : « url » (ou « urls », liste de {url, filename}), « filename » quand la fin de l'URL n'est pas un nom
     de fichier, « member » pour un fichier rangé dans une archive zip, « layer », « where », et « expect »
-    (nombre d'entités attendu, pour s'arrêter si le filtre ne trouve plus ce qu'il doit).
+    (nombre d'entités attendu, pour s'arrêter si le filtre ne trouve plus ce qu'il doit). Chaque fichier est
+    supprimé dès que ses géométries sont lues.
     """
     entries = mask_cfg.get("urls") or [{"url": mask_cfg["url"], "filename": mask_cfg.get("filename")}]
     geoms: list[ogr.Geometry] = []
@@ -111,12 +124,11 @@ def _load_vector_file(mask_cfg: dict[str, Any], scope: dict[str, Any], workdir: 
             geom.Transform(to_merc)
             geoms.append(geom)
             count += 1
+        layer = ds = None
+        _done_with(local, mask_cfg, entry)
         expect = entry.get("expect", mask_cfg.get("expect") if len(entries) == 1 else None)
         if expect is not None and count != int(expect):
             raise RuntimeError(f"{path} : {count} entité(s) retenue(s), {expect} attendue(s) (couche {layer_name}, filtre {where})")
-        ds = None
-        if entry.get("delete_after", mask_cfg.get("delete_after")):
-            local.unlink(missing_ok=True)
     if len(entries) > 1 and mask_cfg.get("expect") is not None and len(geoms) != int(mask_cfg["expect"]):
         raise RuntimeError(f"masque : {len(geoms)} entité(s) retenue(s), {mask_cfg['expect']} attendue(s)")
     if not geoms:
@@ -158,6 +170,8 @@ def _load_osm_land_area(mask_cfg: dict[str, Any], scope: dict[str, Any], workdir
     _collect_lines(feat.GetGeometryRef(), lines)
     faces = lines.Polygonize()
     to_merc = transformer_to_mercator(layer.GetSpatialRef())
+    feat = layer = ds = None
+    _done_with(local, mask_cfg)
     geoms = []
     for i in range(faces.GetGeometryCount() if faces is not None else 0):
         geom = faces.GetGeometryRef(i).Clone()
