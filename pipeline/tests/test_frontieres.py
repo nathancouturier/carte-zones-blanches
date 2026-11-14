@@ -297,6 +297,29 @@ def test_border_build_skips_the_unavailable_country(built: dict):
     assert set(state["sources"]) == {"ouest", "est", "sans_cle"}
 
 
+def test_undeclared_slots_are_always_zero(built: dict):
+    """Les deux pays ne déclarent que 2 emplacements : le manifest dit que les emplacements 2 et 3 valent 0, et c'est vrai dans chaque pixel."""
+    manifest = json.loads((built["out"] / "manifest.json").read_text(encoding="utf-8"))
+    assert [len(c["slots"]) for c in manifest["countries"]] == [2, 2]
+    assert "au-delà de cette liste, l'emplacement est inutilisé et vaut toujours 0" in manifest["encoding"]["slots"]
+    report = json.loads((built["out"] / "rapport-construction.json").read_text(encoding="utf-8"))
+    g = report["grid"]
+    reader = TileReader(built["out"], manifest)
+    try:
+        covered = 0
+        for ty in range(g["ty0"], g["ty1"] + 1):
+            for tx in range(g["tx0"], g["tx1"] + 1):
+                tile = reader.tile(12, tx, ty)
+                if tile is None:
+                    continue
+                covered += int((tile[..., 0] != 0).sum())
+                # Bits 4 à 7 des canaux R et G : emplacements 2 et 3, jamais déclarés.
+                assert not (tile[..., 0] >> 4).any() and not (tile[..., 1] >> 4).any(), f"tuile 12/{tx}/{ty}"
+        assert covered > 10_000  # les emplacements déclarés, eux, portent des niveaux
+    finally:
+        reader.close()
+
+
 def test_border_gap_is_filled_and_extrapolated(built: dict):
     manifest = json.loads((built["out"] / "manifest.json").read_text(encoding="utf-8"))
     report = json.loads((built["out"] / "rapport-construction.json").read_text(encoding="utf-8"))

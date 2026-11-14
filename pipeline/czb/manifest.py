@@ -83,6 +83,8 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
         "encoding": {
             "R": "internet mobile : 2 bits par emplacement d'opérateur (emplacement i sur les bits 2i et 2i+1)",
             "G": "appels et SMS : même encodage",
+            # Un pays peut déclarer moins de 4 emplacements (la Suisse 2, l'Andorre et Monaco 1) : on dit ce que valent les autres.
+            "slots": "l'emplacement i (à partir de 0) est le i-ème élément de la liste « slots » du pays ; au-delà de cette liste, l'emplacement est inutilisé et vaut toujours 0",
             "B": "bits 0 à 3 : code du pays ; bits 4 et 5 : type de source (0 officielle par opérateur, 1 officielle agrégée, 2 estimée)",
             "A": "255 dans la zone couverte par les données, 0 ailleurs",
             "levels": "0 pas de couverture, 1 couverture limitée, 2 bonne couverture, 3 très bonne couverture",
