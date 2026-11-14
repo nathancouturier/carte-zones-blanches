@@ -28,7 +28,7 @@ import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/repo
 import { resample } from './gpx/resample';
 import { getLanguage, setLanguage, t } from './i18n';
 import { autoBasemap, basemapPack, BASEMAPS, type BasemapChoice, type BasemapId } from './map/basemaps';
-import { clearOffline, offlineSupported, prepareOffline, storedCoverageTile, storedTrack } from './offline/manager';
+import { clearOffline, OfflineError, offlineSupported, prepareOffline, storedCoverageTile, storedTrack } from './offline/manager';
 import { MapView, type Padding } from './map/mapView';
 import { samplesBounds, trackToGeoJson, zoneToGeoJson, EMPTY_COLLECTION } from './map/trackGeojson';
 import {
@@ -439,6 +439,7 @@ export class App {
         trackName: track.parsed.name ?? track.fileName,
         gpxText: track.xml,
         fileName: track.fileName,
+        manifestJson: JSON.stringify(manifest),
         coverageMaxZoom: manifest.tiles.maxzoom,
         readCoverageTile: async (z, x, y) => {
           const archive = archiveForTile(manifest, z, x, y);
@@ -454,7 +455,7 @@ export class App {
     } catch (error) {
       if (abort.signal.aborted) return;
       console.warn('Préparation du hors ligne :', error);
-      this.store.set({ offline: { ...this.state.offline, status: 'error', progress: 0 } });
+      this.store.set({ offline: { ...this.state.offline, status: 'error', progress: 0, error: error instanceof OfflineError ? error.code : undefined } });
     }
   }
 

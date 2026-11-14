@@ -202,6 +202,7 @@
   "offline.clear": "Elimina i dati offline",
   "offline.cleared": "Dati offline eliminati",
   "offline.error": "Salvataggio non riuscito. Controlla la connessione e lo spazio disponibile.",
+  "offline.shellMissing": "Non è stato possibile salvare il sito stesso per l'uso offline. Ricarica la pagina con una buona connessione, poi riprova.",
   "offline.unsupported": "Questo browser non supporta la modalità offline.",
   "offline.restored": "Percorso offline ricaricato: {name}",
   "offline.resume": "Riprendi il percorso salvato: {name}",

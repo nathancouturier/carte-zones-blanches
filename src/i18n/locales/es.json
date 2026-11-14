@@ -202,6 +202,7 @@
   "offline.clear": "Borrar los datos sin conexión",
   "offline.cleared": "Datos sin conexión borrados",
   "offline.error": "No se ha podido guardar. Comprueba tu conexión y el espacio disponible.",
+  "offline.shellMissing": "No se ha podido guardar el propio sitio para usarlo sin conexión. Recarga la página con buena conexión y vuelve a intentarlo.",
   "offline.unsupported": "Este navegador no permite el modo sin conexión.",
   "offline.restored": "Ruta sin conexión recuperada: {name}",
   "offline.resume": "Recuperar la ruta guardada: {name}",

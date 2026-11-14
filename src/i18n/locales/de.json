@@ -202,6 +202,7 @@
   "offline.clear": "Offline-Daten löschen",
   "offline.cleared": "Offline-Daten gelöscht",
   "offline.error": "Das Speichern ist fehlgeschlagen. Prüfe deine Verbindung und den freien Speicherplatz.",
+  "offline.shellMissing": "Die Website selbst konnte nicht für die Offline-Nutzung gespeichert werden. Lade die Seite mit guter Verbindung neu und versuche es dann erneut.",
   "offline.unsupported": "Dieser Browser unterstützt den Offline-Modus nicht.",
   "offline.restored": "Offline-Route geladen: {name}",
   "offline.resume": "Gespeicherte Route laden: {name}",

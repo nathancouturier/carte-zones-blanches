@@ -572,7 +572,7 @@ function offlineSection(app: App): Node_ {
       h('div', { class: 'progress', role: 'status' }, h('span', null, t('offline.preparing')), h('progress', { max: '1', value: String(offline.progress), dataset: { role: 'offline-progress' } })),
     );
   } else {
-    if (offline.status === 'error') parts.push(note(t('offline.error'), 'warning'));
+    if (offline.status === 'error') parts.push(note(offline.error === 'shell' ? t('offline.shellMissing') : t('offline.error'), 'warning'));
     const info = offline.info;
     if (info) {
       parts.push(

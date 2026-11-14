@@ -202,6 +202,7 @@
   "offline.clear": "Supprimer les données hors ligne",
   "offline.cleared": "Données hors ligne supprimées",
   "offline.error": "L'enregistrement a échoué. Vérifiez votre connexion et l'espace disponible.",
+  "offline.shellMissing": "Le site lui-même n'a pas pu être enregistré pour le hors ligne. Rechargez la page avec une bonne connexion, puis recommencez.",
   "offline.unsupported": "Ce navigateur ne permet pas le mode hors ligne.",
   "offline.restored": "Tracé hors ligne rechargé : {name}",
   "offline.resume": "Reprendre le tracé enregistré : {name}",

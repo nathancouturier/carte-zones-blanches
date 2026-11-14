@@ -41,6 +41,8 @@ export interface OfflineState {
   status: 'idle' | 'preparing' | 'error';
   /** Avancement de l'enregistrement, de 0 à 1. */
   progress: number;
+  /** Cause d'un échec, quand elle est connue (OfflineError). */
+  error?: 'shell';
   /** Tracé déjà préparé pour le hors ligne, s'il y en a un. */
   info: OfflineInfo | null;
 }

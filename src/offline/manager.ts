@@ -1,21 +1,33 @@
 // Mode hors ligne pour un tracé.
 //
 // « Préparer le hors ligne » enregistre dans le navigateur, pour le tracé chargé :
-//   1. les fichiers du site ;
+//   1. rien pour le site lui-même : le Service Worker en a enregistré la coque
+//      entière à son installation (public/sw.js) ; on vérifie seulement qu'elle
+//      est complète, sans quoi rien ne s'ouvrirait sans réseau ;
 //   2. les tuiles de couverture du couloir du tracé (lues dans les archives PMTiles) ;
 //   3. les tuiles du fond de carte affiché, si son fournisseur l'autorise, dans la
 //      limite qu'il tolère (voir src/map/basemaps.ts et docs/sources.md) ;
-//   4. le GPX lui-même, pour le retrouver sans réseau.
+//   4. le GPX lui-même et le manifest des données, pour les retrouver sans réseau.
 // Tout reste dans le navigateur (Cache API). Rien n'est envoyé.
 
+import { NETWORK_TIMEOUT_MS } from '../config';
 import type { Sample } from '../gpx/resample';
 import type { BasemapPack, PreloadPolicy } from '../map/basemaps';
 import { corridorTiles, planCorridor, tileUrl, type TileId } from './corridor';
 
 /** Doit rester identique à HORS_LIGNE dans public/sw.js. */
 export const OFFLINE_CACHE = 'czb-hors-ligne-v1';
-const SHELL_CACHE = 'czb-coque-v1';
+/** Préfixe des caches de la coque, un par version du site (public/sw.js). */
+const SHELL_CACHE_PREFIX = 'czb-coque-';
 const INFO_KEY = 'czb.horsLigne';
+/**
+ * En-tête de la copie du manifest enregistrée avec le tracé : le Service Worker la
+ * sert telle quelle quand le réseau manque ou tarde, et la page sait ainsi qu'elle
+ * travaille sur les données enregistrées.
+ */
+export const LOCAL_COPY_HEADER = 'x-czb-copie-locale';
+/** Attente maximale de la coque à la première visite (Service Worker en cours d'installation), en millisecondes. */
+const SHELL_WAIT_MS = 30_000;
 /** Marge du couloir autour du tracé, en mètres. */
 export const CORRIDOR_BUFFER_M = 700;
 /** Zooms des tuiles de couverture enregistrées (le zoom 12 sert à l'analyse, les autres à l'affichage dézoomé). */
@@ -44,6 +56,8 @@ export interface PrepareOptions {
   trackName: string;
   gpxText: string;
   fileName: string;
+  /** Manifest des données utilisé par la page, en JSON : il accompagne les tuiles de couverture enregistrées. */
+  manifestJson: string;
   /** Lit les octets d'une tuile de couverture, undefined si elle n'existe pas. */
   readCoverageTile: (z: number, x: number, y: number) => Promise<ArrayBuffer | undefined>;
   coverageMaxZoom: number;
@@ -63,6 +77,18 @@ export function coverageTileKey(base: string, z: number, x: number, y: number): 
 
 function trackKey(base: string): string {
   return new URL(`${base}hors-ligne/trace.gpx`, location.href).href;
+}
+
+/** Adresse du manifest des données : sa copie enregistrée est servie par le Service Worker à la même adresse. */
+function manifestKey(base: string): string {
+  return new URL(`${base}data/manifest.json`, location.href).href;
+}
+
+/** Erreur de préparation dont la cause est expliquée à l'utilisateur (clé de traduction offline.error.<code>). */
+export class OfflineError extends Error {
+  constructor(readonly code: 'shell') {
+    super(`Hors ligne : ${code}`);
+  }
 }
 
 async function pool<T>(items: readonly T[], worker: (item: T) => Promise<void>, signal?: AbortSignal): Promise<void> {
@@ -96,27 +122,13 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
   const template = options.basemap?.tileTemplates[0];
   const basemapUrls = template ? plan.tiles.map((tile) => tileUrl(template, tile)) : [];
   const extras = options.basemap?.policy.allowed ? options.basemap.extraUrls : [];
-  const shell = shellUrls(base);
-  const total = coverage.length + basemapUrls.length + extras.length + shell.length + 1;
+  const total = coverage.length + basemapUrls.length + extras.length + 1;
   let done = 0;
   const step = (): void => options.onProgress(++done, total);
   options.onProgress(0, total);
 
-  // 1. Fichiers du site.
-  const shellCache = await caches.open(SHELL_CACHE);
-  await pool(
-    shell,
-    async (url) => {
-      try {
-        const response = await fetch(url, { cache: 'no-cache', signal: options.signal });
-        if (response.ok) await shellCache.put(url, response);
-      } catch {
-        // un fichier secondaire manquant n'empêche pas le reste
-      }
-      step();
-    },
-    options.signal,
-  );
+  // 1. La coque du site, enregistrée par le Service Worker : sans elle, rien ne s'ouvrirait sans réseau.
+  if (!(await waitForShell(base))) throw new OfflineError('shell');
 
   // 2. Tuiles de couverture : une entrée par tuile, vide si la tuile n'existe pas.
   await pool(
@@ -156,11 +168,12 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
     options.signal,
   );
 
-  // 4. Le tracé lui-même.
+  // 4. Le tracé lui-même, et le manifest qui va avec les tuiles de couverture enregistrées.
   await cache.put(
     trackKey(base),
     new Response(options.gpxText, { headers: { 'content-type': 'application/gpx+xml', 'x-czb-nom': encodeURIComponent(options.fileName) } }),
   );
+  await cache.put(manifestKey(base), new Response(options.manifestJson, { headers: { 'content-type': 'application/json', [LOCAL_COPY_HEADER]: '1' } }));
   step();
 
   const info: OfflineInfo = {
@@ -185,22 +198,36 @@ export async function prepareOffline(base: string, options: PrepareOptions): Pro
   return info;
 }
 
-/** Fichiers du site déjà chargés par la page : ce sont eux qu'il faut pour redémarrer sans réseau. */
-function shellUrls(base: string): string[] {
-  const origin = location.origin;
-  const urls = new Set<string>([new URL(base, location.href).href, new URL(`${base}data/manifest.json`, location.href).href]);
-  for (const entry of performance.getEntriesByType('resource')) {
+/**
+ * Vrai si une coque du site est enregistrée en entier : sa liste (coque.json, écrite
+ * en dernier par le Service Worker) est présente et chacun de ses fichiers aussi.
+ */
+export async function shellComplete(base: string): Promise<boolean> {
+  const scope = new URL(base, location.href);
+  for (const name of await caches.keys()) {
+    if (!name.startsWith(SHELL_CACHE_PREFIX)) continue;
     try {
-      const url = new URL(entry.name);
-      if (url.origin !== origin) continue;
-      if (url.pathname.endsWith('.pmtiles') || url.pathname.includes('/hors-ligne/')) continue;
-      url.hash = '';
-      urls.add(url.href);
+      const cache = await caches.open(name);
+      const list = await cache.match(new URL('coque.json', scope).href, IGNORE_VARY);
+      const files = list ? ((await list.json()) as { files?: unknown }).files : undefined;
+      if (!Array.isArray(files) || files.length === 0) continue;
+      const found = await Promise.all(files.map((file) => cache.match(new URL(String(file), scope).href, IGNORE_VARY)));
+      if (found.every(Boolean)) return true;
     } catch {
-      // adresse illisible : on passe
+      // cache illisible : on regarde le suivant
     }
   }
-  return [...urls];
+  return false;
+}
+
+/** Attend, à la première visite, que le Service Worker ait fini d'enregistrer la coque. */
+async function waitForShell(base: string): Promise<boolean> {
+  if (!import.meta.env.PROD) return true; // pas de Service Worker en développement
+  if (await shellComplete(base)) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([navigator.serviceWorker.ready, new Promise((resolve) => (timer = setTimeout(resolve, SHELL_WAIT_MS)))]);
+  clearTimeout(timer);
+  return shellComplete(base);
 }
 
 /** Informations sur le tracé préparé, ou null. */
@@ -257,7 +284,7 @@ export async function clearOffline(): Promise<void> {
 export function registerServiceWorker(base: string): void {
   if (!offlineSupported() || !import.meta.env.PROD) return;
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(`${base}sw.js`, { scope: base }).catch((error) => {
+    navigator.serviceWorker.register(`${base}sw.js?delai=${NETWORK_TIMEOUT_MS}`, { scope: base }).catch((error) => {
       console.warn('Service Worker non enregistré :', error);
     });
   });

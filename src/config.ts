@@ -7,6 +7,13 @@ export const DATA_BASE_URL = `${import.meta.env.BASE_URL}data/`;
 export const INITIAL_VIEW = { center: [2.6, 46.5] as [number, number], zoom: 5.2 };
 /** Emprise utile de la carte : ouest, sud, est, nord. */
 export const MAX_BOUNDS: [number, number, number, number] = [-12, 36, 18, 54.5];
+/**
+ * Réseau faible : délai d'attente de la page et du manifest des données avant que
+ * le Service Worker serve leur copie locale, si elle existe (sinon il attend le
+ * réseau). En montagne, une barre EDGE laisse le téléphone « en ligne » sans que
+ * rien n'arrive. En millisecondes ; transmis dans l'adresse du Service Worker.
+ */
+export const NETWORK_TIMEOUT_MS = 3000;
 
 // ---------------------------------------------------------------------------
 // Analyse des GPX

@@ -239,6 +239,21 @@ try {
       return true;
     });
     controle('hors ligne : Service Worker enregistré', controleParSw);
+    // La coque (index.html et ses fichiers) est enregistrée en entier à l'installation, dans un seul cache versionné.
+    const coque = await page.evaluate(async () => {
+      const noms = (await caches.keys()).filter((nom) => nom.startsWith('czb-coque-'));
+      if (noms.length !== 1) return `${noms.length} caches de coque`;
+      const cache = await caches.open(noms[0]);
+      const liste = await cache.match(new URL('coque.json', location.href).href);
+      if (!liste) return 'coque.json absent';
+      const { files } = await liste.json();
+      const absents = [];
+      for (const f of files) if (!(await cache.match(new URL(f, location.href).href))) absents.push(f);
+      const scripts = [...document.querySelectorAll('script[src], link[rel=stylesheet]')].map((e) => new URL(e.src || e.href).pathname.split('/').pop());
+      const horsListe = scripts.filter((s) => !files.some((f) => f.endsWith(s)));
+      return absents.length || horsListe.length ? `manquent : ${[...absents, ...horsListe].join(', ')}` : `${noms[0]}, ${files.length} fichiers`;
+    });
+    controle('hors ligne : coque complète, une seule version', /^czb-coque-\w+, \d+ fichiers$/.test(coque), coque);
     await importer(page, gpx('test-alpes.gpx'));
     await page.locator('[data-focus="hors-ligne"]').scrollIntoViewIfNeeded();
     await page.click('[data-focus="hors-ligne"]');
@@ -269,6 +284,11 @@ try {
       await page.waitForTimeout(2500);
     }
     await capture(page, '8c-telephone-fr-hors-ligne-carte');
+    // Sans réseau, une adresse avec ?lang (un signet par exemple) retrouve la même page, dans sa langue.
+    await page.goto(`${SITE}?lang=es#11/44.9/6.42`, { waitUntil: 'load' }).catch(() => null);
+    await page.waitForTimeout(1500);
+    const signet = { lang: await page.evaluate(() => document.documentElement.lang).catch(() => ''), titre: await page.title().catch(() => '') };
+    controle('hors ligne : ?lang=es retrouve la page sans réseau', signet.lang === 'es' && signet.titre === 'Mapa de zonas sin cobertura', `${signet.lang} | ${signet.titre}`);
     await contexte.setOffline(false);
     controle('hors ligne : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
