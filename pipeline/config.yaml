@@ -254,9 +254,10 @@ sources:
     operator_separator: ";"
     page_size: 2000
     pause_s: 0.5
-    # Grille d'origine de la source : pas et origine du service d'images du ministère (EPSG:4258).
+    # Grille d'origine de la source (EPSG:4258) : pas de l'image « Cob4G_2024 » du ministère, et coin nord-ouest de
+    # son emprise. Les polygones sont des assemblages de mailles de cette grille (le module le vérifie à la lecture).
     grid_step_deg: 0.000346111018645788
-    grid_origin: [-180, 90]
+    grid_origin: [-18.356176100718844, 43.95448719807852]
     services:
       data: {techno: 4G}
     covered_level: 2      # présence d'un réseau 4G, sans niveau de qualité

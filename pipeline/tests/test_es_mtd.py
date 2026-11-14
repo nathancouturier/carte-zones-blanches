@@ -224,6 +224,25 @@ def test_spain_working_copy_is_reused_until_the_edition_changes(spain: dict):
     assert spain["layer"].requests - before > 6
 
 
+def test_spain_grid_alignment_is_checked(spain: dict):
+    """Des polygones qui ne tombent pas sur la grille annoncée arrêtent la lecture dès le début."""
+    from osgeo import ogr
+
+    from czb.context import load_config
+    from czb.sources import create_source
+
+    source = create_source("es_mtd", load_config(spain["config"]))
+    gt = source.geotransform((COL0, ROW0, 512, 512))
+    on_grid = ogr.CreateGeometryFromWkt(f"POLYGON (({lon(10)} {lat(20)},{lon(10)} {lat(10)},{lon(30)} {lat(10)},{lon(30)} {lat(20)},{lon(10)} {lat(20)}))")
+    assert max(source._vertex_offsets(on_grid, gt)) < 1e-6
+    shifted = ogr.CreateGeometryFromWkt(f"POLYGON (({lon(10.3)} {lat(20.3)},{lon(10.3)} {lat(10.3)},{lon(30.3)} {lat(10.3)},{lon(30.3)} {lat(20.3)},{lon(10.3)} {lat(20.3)}))")
+    offsets = source._vertex_offsets(shifted, gt)
+    assert all(abs(v - 0.3) < 1e-6 for v in offsets)
+    source._check_alignment(source._vertex_offsets(on_grid, gt) * 50, "02")
+    with pytest.raises(RuntimeError, match="calés sur la grille"):
+        source._check_alignment(offsets * 50, "02")
+
+
 def test_spain_unknown_operator_stops_the_build(spain: dict):
     from czb.context import load_config
     from czb.sources import create_source

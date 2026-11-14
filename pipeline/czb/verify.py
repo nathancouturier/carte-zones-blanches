@@ -83,11 +83,25 @@ def verify(outdir: Path) -> int:
                 errors.append(f"niveau lu {got}, attendu {w['expected']} : {where}")
             key = (w["source"], w["service"], w["expected"])
             checked[key] = checked.get(key, 0) + 1
+        # Témoins des contours : le pixel appartient-il au pays attendu, ou à aucun ?
+        mask_path = outdir / "temoins-contours.json"
+        mask_witnesses = json.loads(mask_path.read_text(encoding="utf-8")) if mask_path.exists() else []
+        for w in mask_witnesses:
+            if w["country"] and w["country"] not in codes:
+                continue  # pays retiré de la construction (source indisponible)
+            expected_code = codes[w["country"]] if w["country"] else 0
+            tile = reader.tile(w["z"], w["x"], w["y"])
+            r, g, b, a = (0, 0, 0, 0) if tile is None else (int(v) for v in tile[w["py"], w["px"]])
+            got_code = unpack_country(b) if a == 255 else 0
+            if got_code != expected_code or a not in (0, 255) or (a == 0 and (r or g or b)):
+                errors.append(f"pays lu {got_code} (A={a}), attendu {expected_code} ({w['country'] or 'hors zone'}) : contours, tuile {w['z']}/{w['x']}/{w['y']} pixel ({w['px']}, {w['py']}) lon {w['lon']} lat {w['lat']}")
+            key = ("contours", "pays", expected_code)
+            checked[key] = checked.get(key, 0) + 1
     finally:
         reader.close()
-    print(f"Test de cohérence : {len(witnesses)} points comparés entre les sources et les pixels décodés du PMTiles")
+    print(f"Test de cohérence : {len(witnesses)} points comparés entre les sources et les pixels décodés du PMTiles, {len(mask_witnesses)} entre les contours des pays et les pixels")
     for (source, service, level), n in sorted(checked.items()):
-        print(f"   {source} {service} niveau {level} : {n} points")
+        print(f"   {source} {service} {'code' if source == 'contours' else 'niveau'} {level} : {n} points")
     if not witnesses:
         print("ÉCHEC : aucun point témoin")
         return 1

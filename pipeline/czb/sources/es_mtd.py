@@ -48,6 +48,8 @@ WITNESS_MARGIN = 0.03
 #: (les mailles coupées par une limite de commune ou de région ne sont pas des carrés entiers).
 #: Les bords de la fenêtre de la copie de travail tombent sur des multiples de ce nombre de mailles (environ 7 km).
 WINDOW_SNAP = 256
+#: Nombre de coordonnées de sommets examinées, au début de chaque région, pour vérifier le calage de la grille.
+ALIGNMENT_SAMPLE = 2000
 CHECK_POINTS = 400
 CHECK_TOLERANCE = 0.01
 
@@ -186,6 +188,7 @@ class EsMtd(Source):
             layer.CreateField(ogr.FieldDefn("bits", ogr.OFTInteger))
             defn = layer.GetLayerDefn()
             count = page_index = 0
+            alignment: list[float] = []
             minx = miny = float("inf")
             maxx = maxy = float("-inf")
             pages = arcgis.pages(self.query_url, self.where(region), [oid_field, operator_field], oid_field, int(cfg.get("page_size", 2000)), workdir, pause_s=float(cfg.get("pause_s", 0.5)), expected=expected)
@@ -203,6 +206,10 @@ class EsMtd(Source):
                     geom = polygonal(feat.GetGeometryRef())
                     if value == 0 or geom is None:
                         continue
+                    if len(alignment) < ALIGNMENT_SAMPLE:
+                        alignment.extend(self._vertex_offsets(geom, gt))
+                        if len(alignment) >= ALIGNMENT_SAMPLE:
+                            self._check_alignment(alignment, region)
                     out = ogr.Feature(defn)
                     out.SetField("bits", value)
                     out.SetGeometry(ogr.ForceToMultiPolygon(geom.Clone()))
@@ -243,6 +250,32 @@ class EsMtd(Source):
             gpkg.unlink(missing_ok=True)
         shutil.rmtree(workdir, ignore_errors=True)
         return bits
+
+    @staticmethod
+    def _vertex_offsets(geom: Any, gt: tuple) -> list[float]:
+        """Écart de quelques sommets d'un polygone à la ligne de grille la plus proche, en fraction de maille (0 à 0,5)."""
+        part = geom.GetGeometryRef(0) if geom.GetGeometryName() == "MULTIPOLYGON" else geom
+        ring = part.GetGeometryRef(0)
+        out = []
+        for i in range(min(ring.GetPointCount(), 6)):
+            x, y = ring.GetPoint_2D(i)
+            for value in ((x - gt[0]) / gt[1], (y - gt[3]) / gt[5]):
+                frac = value - math.floor(value)
+                out.append(min(frac, 1 - frac))
+        return out
+
+    def _check_alignment(self, offsets: list[float], region: str) -> None:
+        """Dès les premiers polygones : leurs sommets tombent-ils sur les lignes de la grille annoncée ?
+
+        Les mailles coupées par une limite de commune ont des sommets ailleurs ; la grande majorité doit
+        pourtant être sur une ligne. Sinon le pas ou l'origine ont changé : on s'arrête tout de suite,
+        avant de lire deux millions de polygones.
+        """
+        on_grid = sum(1 for v in offsets if v < 0.01) / len(offsets)
+        print(f"    sommets sur les lignes de la grille d'origine : {on_grid * 100:.0f} % (sur {len(offsets)} coordonnées)", flush=True)
+        if on_grid < 0.6:
+            typical = sorted(offsets)[len(offsets) // 2]
+            raise RuntimeError(f"{self.source_id} : région {region}, les polygones ne sont pas calés sur la grille annoncée (écart médian de {typical:.2f} maille) : vérifier grid_step_deg et grid_origin dans config.yaml")
 
     def _check_region(self, layer: Any, region_bits: "np.ndarray", gt: tuple, rng: "np.random.Generator", region: str) -> None:
         """Compare la copie de travail aux polygones en des points tirés au hasard (test géométrique exact)."""

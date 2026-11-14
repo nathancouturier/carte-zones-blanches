@@ -52,6 +52,8 @@ class BuildContext:
     canvas: Canvas | None = None
     layers: "Layers | None" = None
     witnesses: list[dict[str, Any]] = field(default_factory=list)
+    #: points témoins des contours : pays attendu d'un pixel, d'après les polygones eux-mêmes
+    mask_witnesses: list[dict[str, Any]] = field(default_factory=list)
     source_info: dict[str, dict[str, Any]] = field(default_factory=dict)
     timings: dict[str, float] = field(default_factory=dict)
     stats: dict[str, Any] = field(default_factory=dict)

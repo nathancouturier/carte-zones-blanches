@@ -19,7 +19,7 @@ from typing import Any
 from osgeo import ogr
 
 from .context import BuildContext
-from .grid import EARTH_RADIUS, Canvas
+from .grid import EARTH_RADIUS, Canvas, mercator_to_lonlat
 from .net import download, gunzip
 from .raster import geometry_windows, make_valid, transformer_to_mercator
 
@@ -212,7 +212,12 @@ def _union(geoms: list[ogr.Geometry]) -> ogr.Geometry:
     return out
 
 
-def fill_gaps(geoms: dict[str, list[ogr.Geometry]], order: list[str], max_ha: float = GAP_MAX_HA) -> dict[str, list[ogr.Geometry]]:
+def country_unions(geoms: dict[str, list[ogr.Geometry]], order: list[str]) -> dict[str, ogr.Geometry]:
+    """Réunion des polygones de chaque pays (EPSG:3857)."""
+    return {iso: _union(geoms[iso]) for iso in order if geoms.get(iso)}
+
+
+def fill_gaps(geoms: dict[str, list[ogr.Geometry]], order: list[str], max_ha: float = GAP_MAX_HA, unions: dict[str, ogr.Geometry] | None = None) -> dict[str, list[ogr.Geometry]]:
     """Trouve les trous fermés de moins de max_ha (surface au sol) dans l'union des masques.
 
     geoms : polygones en EPSG:3857 par pays ; order : pays par priorité décroissante.
@@ -221,7 +226,7 @@ def fill_gaps(geoms: dict[str, list[ogr.Geometry]], order: list[str], max_ha: fl
     Renvoie les trous par pays, sans modifier geoms.
     """
     holes: dict[str, list[ogr.Geometry]] = {iso: [] for iso in order}
-    per_country = {iso: _union(geoms[iso]) for iso in order if geoms.get(iso)}
+    per_country = unions if unions is not None else country_unions(geoms, order)
     if not per_country:
         return holes
     prepared = {iso: (g.GetEnvelope(), g.CreatePreparedGeometry()) for iso, g in per_country.items()}
@@ -277,7 +282,9 @@ def rasterize_masks(ctx: BuildContext, geoms: dict[str, list[ogr.Geometry]]) -> 
                 gained += ctx.layers.claim_country(win, mask, int(country["code"]), default_type)
         ctx.stats.setdefault("pixels_par_pays", {})[iso] = gained
         print(f"   {iso} : {gained:,} pixels".replace(",", " "), flush=True)
-    holes = fill_gaps(geoms, ctx.countries)
+    unions = country_unions(geoms, ctx.countries)
+    holes = fill_gaps(geoms, ctx.countries, unions=unions)
+    mask_witnesses(ctx, unions, holes)
     for iso in ctx.countries:
         country = ctx.cfg["countries"][iso]
         default_type = int(ctx.cfg["sources"][ctx.country_sources(iso)[-1]]["type"])
@@ -291,3 +298,92 @@ def rasterize_masks(ctx: BuildContext, geoms: dict[str, list[ogr.Geometry]]) -> 
         if holes[iso]:
             ctx.stats.setdefault("pixels_interstices", {})[iso] = gained
             print(f"   {iso} : {len(holes[iso])} interstice(s) de frontière comblé(s), {gained:,} pixels".replace(",", " "), flush=True)
+
+
+#: Un point témoin à moins de cette distance (mètres Mercator) d'un contour est écarté : le résultat dépendrait d'un arrondi.
+MASK_WITNESS_MARGIN_M = 0.5
+
+
+def mask_witnesses(ctx: BuildContext, unions: dict[str, ogr.Geometry], holes: dict[str, list[ogr.Geometry]]) -> None:
+    """Points témoins du canal B : à quel pays appartient un pixel, d'après les contours eux-mêmes (test géométrique exact).
+
+    Des pixels sont tirés au hasard sur toute la grille et dans la fenêtre de chaque pays. Pour chacun, le pays
+    attendu est le premier, dans l'ordre de priorité, dont le contour contient le centre du pixel ; aucun si le
+    point est hors de tous les contours. Le test de cohérence relit ensuite ces pixels dans les tuiles.
+    """
+    import numpy as np
+
+    canvas = ctx.canvas
+    assert canvas is not None
+    verification = ctx.cfg["verification"]
+    per_area = int(verification.get("mask_points", 60))
+    if per_area <= 0 or not unions:
+        return
+    rng = np.random.default_rng(int(verification["seed"]) + 900)
+    order = [iso for iso in ctx.countries if iso in unions]
+    prepared = {iso: (unions[iso].GetEnvelope(), unions[iso].CreatePreparedGeometry()) for iso in order}
+    gap_holes = [(h.GetEnvelope(), h) for items in holes.values() for h in items]
+    res = canvas.grid.resolution
+
+    def window_of(envelope: tuple[float, float, float, float]) -> tuple[int, int, int, int] | None:
+        return canvas.window_for_envelope(envelope[0], envelope[1], envelope[2], envelope[3])
+
+    areas: list[tuple[str, tuple[int, int, int, int]]] = [("grille", (0, 0, canvas.width, canvas.height))]
+    for iso in order:
+        win = window_of(prepared[iso][0])
+        if win is not None:
+            # La fenêtre du pays, élargie d'un dixième : on veut aussi des points juste au-dehors.
+            pad_c, pad_r = max(4, win[2] // 10), max(4, win[3] // 10)
+            c0, r0 = max(0, win[0] - pad_c), max(0, win[1] - pad_r)
+            c1, r1 = min(canvas.width, win[0] + win[2] + pad_c), min(canvas.height, win[1] + win[3] + pad_r)
+            areas.append((iso, (c0, r0, c1 - c0, r1 - r0)))
+    added: dict[str, int] = {}
+    for label, (c0, r0, w, h) in areas:
+        kept = 0
+        cols = rng.integers(c0, c0 + w, size=per_area * 3).tolist()
+        rows = rng.integers(r0, r0 + h, size=per_area * 3).tolist()
+        for col, row in zip(cols, rows):
+            if kept >= per_area:
+                break
+            x, y = canvas.pixel_center(col, row)
+            # Dans un interstice comblé, le pays vient de la règle de comblement, pas d'un contour : pas de témoin ici.
+            if any(e[0] - res <= x <= e[1] + res and e[2] - res <= y <= e[3] + res for e, _ in gap_holes):
+                continue
+            points = []
+            for dx, dy in ((0, 0), (-1, -1), (1, -1), (1, 1), (-1, 1)):
+                pt = ogr.Geometry(ogr.wkbPoint)
+                pt.AddPoint_2D(x + dx * MASK_WITNESS_MARGIN_M, y + dy * MASK_WITNESS_MARGIN_M)
+                points.append(pt)
+            expected = None
+            ambiguous = False
+            for iso in order:
+                (x0, x1, y0, y1), prep = prepared[iso]
+                if x < x0 - 1 or x > x1 + 1 or y < y0 - 1 or y > y1 + 1:
+                    continue
+                results = [bool(prep.Contains(pt)) for pt in points]
+                if any(results) and not all(results):
+                    ambiguous = True
+                    break
+                if results[0]:
+                    expected = iso
+                    break
+            if ambiguous:
+                continue
+            tx, ty, px, py = canvas.tile_and_pixel(col, row)
+            lon, lat = mercator_to_lonlat(x, y)
+            ctx.mask_witnesses.append(
+                {
+                    "country": expected,
+                    "z": canvas.grid.zoom,
+                    "x": tx,
+                    "y": ty,
+                    "px": px,
+                    "py": py,
+                    "lon": round(lon, 6),
+                    "lat": round(lat, 6),
+                }
+            )
+            kept += 1
+        added[label] = kept
+    ctx.stats["temoins_contours"] = added
+    print(f"   points témoins des contours : {added}", flush=True)

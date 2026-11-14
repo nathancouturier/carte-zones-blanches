@@ -177,6 +177,8 @@ def cmd_build(args: argparse.Namespace) -> int:
                 ctx.witnesses = [w for w in ctx.witnesses if w["source"] != source_id]
                 print(f"ATTENTION : source {source_id} laissée de côté ({exc})", flush=True)
                 if not ctx.country_sources(iso):
+                    # Ses pixels redeviennent « hors zone » : ses témoins de contour ne valent plus.
+                    ctx.mask_witnesses = [w for w in ctx.mask_witnesses if w["country"] != iso]
                     freed = ctx.layers.release_country(int(cfg["countries"][iso]["code"]))
                     print(f"ATTENTION : {iso} n'a plus de source, le pays est retiré de cette construction ({freed} pixels)", flush=True)
     skipped = [iso for iso in ctx.scope["countries"] if iso not in ctx.countries]
@@ -207,6 +209,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     manifest = build_manifest(ctx, archives, generated)
     (outdir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (outdir / "temoins.json").write_text(json.dumps(ctx.witnesses, ensure_ascii=False) + "\n", encoding="utf-8")
+    (outdir / "temoins-contours.json").write_text(json.dumps(ctx.mask_witnesses, ensure_ascii=False) + "\n", encoding="utf-8")
     # Ce que le test de cohérence doit trouver : un minimum de points pour chaque source, service et emplacement
     # annoncés par le manifest. Sans cela, une source sans aucun point témoin passerait le test.
     verification = cfg["verification"]
