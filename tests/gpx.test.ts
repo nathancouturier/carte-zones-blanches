@@ -17,7 +17,7 @@ import {
 import { enrichedFileName, enrichGpx, WAYPOINT_TYPE } from '../src/gpx/export';
 import { distance } from '../src/gpx/geodesy';
 import { decodeGpx, GpxError, parseGpx } from '../src/gpx/parse';
-import { analyzeTrack, buildReport, describeZone, reportText, zoneWaypoints } from '../src/gpx/report';
+import { analyzeTrack, buildReport, describeZone, importNotes, reportText, zoneWaypoints } from '../src/gpx/report';
 import { resample, trackLength, type Sample } from '../src/gpx/resample';
 import { availableLanguages, setLanguage } from '../src/i18n';
 import { profileColumns } from '../src/ui/profile';
@@ -102,6 +102,34 @@ describe('lecture du GPX', () => {
     expect(gpx.kind).toBe('track');
     expect(gpx.name).toBe('Tour du lac');
     expect(gpx.segments).toEqual(parseGpx(trackGpx, xmlParser).segments);
+  });
+
+  it('écarte les points aberrants et coupe la trace aux sauts de plus de 10 km', () => {
+    const trace = (points: [number, number][]): string =>
+      `${GPX_HEAD}<trk><trkseg>${points.map(([lat, lon]) => `<trkpt lat="${lat}" lon="${lon}"><ele>1000</ele></trkpt>`).join('')}</trkseg></trk></gpx>`;
+    const lake: [number, number][] = [[44.6, 6.1], [44.601, 6.1], [44.602, 6.1]];
+    const clean = parseGpx(trace(lake), xmlParser);
+    expect([clean.discarded, clean.jumps]).toEqual([0, 0]);
+    // Perte du signal : un point (0, 0) au milieu de la trace.
+    const zero = parseGpx(trace([lake[0], lake[1], [0, 0], lake[2]]), xmlParser);
+    expect(zero.segments).toEqual(clean.segments);
+    expect([zero.discarded, zero.jumps]).toEqual([1, 0]);
+    expect(trackLength(zero.segments)).toBeLessThan(300);
+    // Point isolé à 55 km de ses deux voisins, au milieu ou au bout de la trace.
+    expect(parseGpx(trace([lake[0], lake[1], [45.1, 6.1], lake[2]]), xmlParser)).toMatchObject({ segments: clean.segments, discarded: 1, jumps: 0 });
+    expect(parseGpx(trace([[45.1, 6.1], ...lake]), xmlParser)).toMatchObject({ segments: clean.segments, discarded: 1, jumps: 0 });
+    expect(parseGpx(trace([...lake, [45.1, 6.1]]), xmlParser)).toMatchObject({ segments: clean.segments, discarded: 1, jumps: 0 });
+    // Reprise de l'enregistrement 40 km plus loin : la trace est coupée, le saut ne compte pas.
+    const resumed = parseGpx(trace([lake[0], lake[1], [44.9, 6.5], [44.901, 6.5]]), xmlParser);
+    expect(resumed.segments.map((s) => s.length)).toEqual([2, 2]);
+    expect([resumed.discarded, resumed.jumps]).toEqual([0, 1]);
+    // Une trace dessinée à la main peut avoir des points espacés de quelques kilomètres : rien n'est coupé.
+    const drawn = parseGpx(trace([[44.6, 6.1], [44.66, 6.1], [44.72, 6.1]]), xmlParser);
+    expect(drawn.segments.map((s) => s.length)).toEqual([3]);
+    // Une route garde ses points espacés, mais pas le point (0, 0).
+    const route = parseGpx(`${GPX_HEAD}<rte><rtept lat="44.6" lon="6.1"/><rtept lat="0" lon="0"/><rtept lat="45.1" lon="6.1"/></rte></gpx>`, xmlParser);
+    expect(route.segments.map((s) => s.length)).toEqual([2]);
+    expect([route.discarded, route.jumps]).toEqual([1, 0]);
   });
 
   it('accepte des blancs ou une marque d\'ordre des octets avant la déclaration XML', () => {
@@ -506,6 +534,18 @@ describe('rapport en texte', () => {
     } finally {
       setLanguage('fr');
     }
+  });
+
+  it('signale les points écartés et les sauts ignorés à la lecture du GPX', () => {
+    expect(importNotes({ discarded: 0, jumps: 0 })).toEqual([]);
+    expect(importNotes({ discarded: 1, jumps: 1 })).toEqual([
+      'Un point aberrant a été écarté\u00a0: position (0, 0) ou point isolé à plus de 10 km du tracé.',
+      'Le tracé fait un saut de plus de 10 km entre deux points\u00a0: ce saut n\'est compté ni dans la distance ni dans l\'analyse.',
+    ]);
+    expect(importNotes({ discarded: 3, jumps: 2 })).toEqual([
+      '3 points aberrants ont été écartés\u00a0: position (0, 0) ou points isolés à plus de 10 km du tracé.',
+      'Le tracé fait 2 sauts de plus de 10 km entre deux points\u00a0: ces sauts ne sont comptés ni dans la distance ni dans l\'analyse.',
+    ]);
   });
 
   it('explique pourquoi aucune part du parcours n\'est mesurée', () => {

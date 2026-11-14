@@ -1,6 +1,6 @@
 // Rapport de couverture d'un tracé : chiffres, zones blanches et version texte.
 
-import { WHITE_ZONE_MIN_LENGTH_M } from '../config';
+import { TRACK_MAX_JUMP_M, WHITE_ZONE_MIN_LENGTH_M } from '../config';
 import {
   countryName,
   formatDataDate,
@@ -35,6 +35,7 @@ import {
   type WhiteZone,
 } from './analyze';
 import type { ExtraWaypoint } from './export';
+import type { ParsedGpx } from './parse';
 import type { Sample } from './resample';
 
 /** Résultat de la lecture des tuiles pour un tracé. Indépendant des réglages. */
@@ -140,6 +141,15 @@ export function describeZone(zone: WhiteZone, manifest: Manifest): string {
   if (names.length > 0) parts.push(names.join(', '));
   if (zone.estimated) parts.push(t('report.zoneEstimated'));
   return parts.join(', ');
+}
+
+/** Corrections faites à la lecture du GPX, à signaler : points aberrants écartés, sauts ignorés. */
+export function importNotes(parsed: Pick<ParsedGpx, 'discarded' | 'jumps'>): string[] {
+  const km = formatNumber(TRACK_MAX_JUMP_M / 1000);
+  const notes: string[] = [];
+  if (parsed.discarded > 0) notes.push(t('gpx.discarded', { count: parsed.discarded, km }));
+  if (parsed.jumps > 0) notes.push(t('gpx.jumps', { count: parsed.jumps, km }));
+  return notes;
 }
 
 /** Message à afficher quand aucune part du parcours n'est mesurée, selon la cause. */

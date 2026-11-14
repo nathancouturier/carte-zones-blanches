@@ -1,6 +1,8 @@
 // Lecture d'un fichier GPX : traces, routes et multi-segments.
 
 import { gpx as gpxToGeoJson } from '@tmcw/togeojson';
+import { TRACK_MAX_JUMP_M } from '../config';
+import { distance } from './geodesy';
 
 export interface TrackPoint {
   lon: number;
@@ -19,6 +21,16 @@ export interface ParsedGpx {
   /** Vrai si tous les points ont une altitude. */
   hasElevation: boolean;
   pointCount: number;
+  /** Points aberrants écartés : position (0, 0), ou point isolé loin de ses deux voisins. */
+  discarded: number;
+  /** Endroits où la trace a été coupée, faute de continuité (saut de plus de TRACK_MAX_JUMP_M). */
+  jumps: number;
+}
+
+/** Ce qui a été corrigé en lisant un ensemble de segments. */
+interface Cleanup {
+  discarded: number;
+  jumps: number;
 }
 
 export type GpxErrorCode = 'invalid' | 'empty';
@@ -94,7 +106,40 @@ function withoutPrefix(doc: Document, ns: string): Document {
   return copy;
 }
 
-function toSegment(coords: unknown): TrackPoint[] {
+/**
+ * Coupe une trace là où deux points consécutifs sont à plus de TRACK_MAX_JUMP_M.
+ * Un point loin de ses deux voisins, qui eux se suivent, est une erreur de
+ * position : il est écarté sans couper la trace. Un point resté seul au bout
+ * de la trace après une coupure l'est aussi.
+ */
+function splitAtJumps(points: TrackPoint[], cleanup: Cleanup): TrackPoint[][] {
+  const far = (a: TrackPoint, b: TrackPoint): boolean => distance(a.lon, a.lat, b.lon, b.lat) > TRACK_MAX_JUMP_M;
+  const pieces: TrackPoint[][] = [];
+  let current: TrackPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    const previous = current[current.length - 1];
+    if (previous && far(previous, point)) {
+      const next = points[i + 1];
+      if (next && !far(previous, next)) {
+        cleanup.discarded++;
+        continue;
+      }
+      pieces.push(current);
+      current = [];
+    }
+    current.push(point);
+  }
+  pieces.push(current);
+  if (pieces.length === 1) return pieces;
+  const kept = pieces.filter((piece) => piece.length > 1);
+  cleanup.discarded += pieces.length - kept.length;
+  cleanup.jumps += Math.max(0, kept.length - 1);
+  return kept;
+}
+
+/** Points d'un segment, sans les positions invalides ; une trace est coupée à ses sauts aberrants. */
+function toSegments(coords: unknown, isTrack: boolean, cleanup: Cleanup): TrackPoint[][] {
   if (!Array.isArray(coords)) return [];
   const points: TrackPoint[] = [];
   for (const c of coords) {
@@ -102,10 +147,16 @@ function toSegment(coords: unknown): TrackPoint[] {
     const lon = Number(c[0]);
     const lat = Number(c[1]);
     if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+    // Position (0, 0) : perte du signal sur certains enregistreurs, jamais un point de randonnée.
+    if (lon === 0 && lat === 0) {
+      cleanup.discarded++;
+      continue;
+    }
     const ele = c.length > 2 && c[2] !== null && Number.isFinite(Number(c[2])) ? Number(c[2]) : null;
     points.push({ lon, lat, ele });
   }
-  return points;
+  // Les points d'une route sont souvent très espacés : on ne la coupe pas.
+  return isTrack ? splitAtJumps(points, cleanup) : [points];
 }
 
 /**
@@ -138,6 +189,8 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
 
   const tracks: TrackPoint[][] = [];
   const routes: TrackPoint[][] = [];
+  const trackCleanup: Cleanup = { discarded: 0, jumps: 0 };
+  const routeCleanup: Cleanup = { discarded: 0, jumps: 0 };
   let trackName: string | null = null;
   let routeName: string | null = null;
   for (const feature of collection.features) {
@@ -146,13 +199,14 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
     const props = (feature.properties ?? {}) as Record<string, unknown>;
     const isRoute = props._gpxType === 'rte';
     const target = isRoute ? routes : tracks;
+    const cleanup = isRoute ? routeCleanup : trackCleanup;
     const name = typeof props.name === 'string' && props.name.trim() !== '' ? props.name.trim() : null;
-    if (geometry.type === 'LineString') {
-      target.push(toSegment(geometry.coordinates));
-    } else if (geometry.type === 'MultiLineString') {
-      for (const line of geometry.coordinates) target.push(toSegment(line));
-    } else {
-      continue; // points de passage
+    let lines: unknown[];
+    if (geometry.type === 'LineString') lines = [geometry.coordinates];
+    else if (geometry.type === 'MultiLineString') lines = geometry.coordinates;
+    else continue; // points de passage
+    for (const line of lines) {
+      for (const segment of toSegments(line, !isRoute, cleanup)) target.push(segment);
     }
     if (isRoute) routeName ??= name;
     else trackName ??= name;
@@ -170,5 +224,6 @@ export function parseGpx(text: string, parser?: XmlParser): ParsedGpx {
     pointCount += segment.length;
     if (hasElevation && segment.some((p) => p.ele === null)) hasElevation = false;
   }
-  return { name: kind === 'track' ? trackName : routeName, segments, kind, hasElevation, pointCount };
+  const { discarded, jumps } = kind === 'track' ? trackCleanup : routeCleanup;
+  return { name: kind === 'track' ? trackName : routeName, segments, kind, hasElevation, pointCount, discarded, jumps };
 }

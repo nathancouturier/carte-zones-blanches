@@ -32,6 +32,16 @@ export const ELEVATION_THRESHOLD_M = 5;
  * d'une zone blanche. Au-dessous, le chiffre reposerait sur trop peu de points.
  */
 export const ELEVATION_MIN_SHARE = 0.5;
+/**
+ * Saut maximal entre deux points consécutifs d'une trace (trkpt), en mètres.
+ * Au-delà, c'est une erreur de position ou une portion faite sans enregistrer
+ * (appareil éteint pendant un trajet en voiture) : la trace est coupée là et le
+ * saut ne compte ni dans la distance ni dans l'analyse ; un point isolé loin de
+ * ses deux voisins est écarté. Une trace dessinée à la main peut avoir des
+ * points espacés de 5 km : d'où une valeur large. Les routes (rtept), aux points
+ * souvent très espacés, ne sont pas concernées.
+ */
+export const TRACK_MAX_JUMP_M = 10_000;
 /** Taille maximale d'un fichier GPX accepté, en octets. */
 export const MAX_GPX_BYTES = 40 * 1024 * 1024;
 /** Nombre de tuiles lues en parallèle pendant l'analyse. */
