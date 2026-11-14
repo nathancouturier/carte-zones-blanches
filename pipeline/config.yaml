@@ -118,7 +118,7 @@ countries:
     mask:
       type: vector_file
       expect: 4
-      credit: {text: "Obra derivada de BDLJE CC-BY 4.0 ign.es", url: "https://www.ign.es/resources/licencia/Condiciones_licenciaUso_IGN.pdf"}
+      credit: {text: "Obra derivada de BDLJE CC-BY 4.0 ign.es", lang: es, url: "https://www.ign.es/resources/licencia/Condiciones_licenciaUso_IGN.pdf"}
       urls:
         - {url: "https://api-features.ign.es/collections/administrativeunit/items?f=json&nationalcode=34020000000", filename: es-34020000000.geojson}
         - {url: "https://api-features.ign.es/collections/administrativeunit/items?f=json&nationalcode=34090000000", filename: es-34090000000.geojson}
@@ -145,7 +145,7 @@ countries:
       expect: 1
       # OpenStreetMap est modifiable par tous : on vérifie que la surface reste celle de l'Andorre (467,5 km2 mesurés).
       expect_area_km2: [455, 480]
-      credit: {text: "© OpenStreetMap contributors (ODbL 1.0)", url: "https://www.openstreetmap.org/copyright"}
+      credit: {text: "© OpenStreetMap contributors (ODbL 1.0)", lang: en, url: "https://www.openstreetmap.org/copyright"}
     # Pas de carte officielle : estimation, tous réseaux du pays confondus.
     slots:
       - {id: ad_1, min_operators: 1}
@@ -162,7 +162,7 @@ countries:
       relation: 36990
       # Terre ferme de Monaco : 2,08 km2 mesurés (la marge laisse la place à un nouveau terrain gagné sur la mer).
       expect_area_km2: [1.9, 2.4]
-      credit: {text: "© OpenStreetMap contributors (ODbL 1.0)", url: "https://www.openstreetmap.org/copyright"}
+      credit: {text: "© OpenStreetMap contributors (ODbL 1.0)", lang: en, url: "https://www.openstreetmap.org/copyright"}
     slots:
       - {id: mc_1, min_operators: 1}
     sources: [mc_estimation]
@@ -183,6 +183,7 @@ estimation: &estimation
     de: "Schätzung: Antennen aus OpenCellID und Gelände aus Copernicus DEM"
   # Mention sans mot français : le site dit lui-même, dans sa langue, que la zone est estimée.
   attribution: "OpenCellID (CC BY-SA 4.0), Copernicus DEM"
+  mention_lang: en        # la phrase de licence imposée est en anglais
   url: https://opencellid.org
   licence: CC BY-SA 4.0 (zones estimées, dérivées d'OpenCellID)
   licence_i18n:
@@ -284,6 +285,7 @@ sources:
       it: "AGCOM, Broadband Map: copertura mobile 4G (numero di reti per quadrato di 100 m)"
       de: "AGCOM, Broadband Map: 4G-Mobilfunkabdeckung (Anzahl der Netze pro 100-m-Quadrat)"
     attribution: BroadbandMap di Agcom (CC BY 4.0)
+    mention_lang: it      # langue de la mention et de la phrase de licence, écrites telles quelles
     url: https://www.agcom.it/broadband-map
     licence: Creative Commons Attribuzione 4.0 Internazionale (CC BY 4.0)
     licence_url: https://www.agcom.it/termini-e-condizioni
@@ -315,6 +317,7 @@ sources:
     type: 0
     name: "Ministerio para la Transformación Digital y de la Función Pública, Mapa de Servicios de Banda Ancha Móvil 2024 (4G)"
     attribution: "Origen de los datos: Ministerio para la Transformación Digital y de la Función Pública"
+    mention_lang: es
     url: https://digital.gob.es/telecomunicaciones-infraestructuras-digitales/areas-interes/banda-ancha/informacion-cobertura/mapas-servicios-banda-ancha
     # Aucune licence n'est attachée à la couche elle-même, et elle n'est pas dans le portail de données ouvertes du
     # ministère. La réutilisation s'appuie sur les conditions générales de réutilisation du site du ministère

@@ -54,7 +54,9 @@ def test_proper_names_and_imposed_formulas_are_kept(cfg: dict):
     # Formules imposées, noms propres : jamais traduits.
     assert "name_i18n" not in sources["es_mtd"]
     for iso, formula in (("CH", "©swisstopo, swissBOUNDARIES3D"), ("ES", "Obra derivada de BDLJE CC-BY 4.0 ign.es"), ("AD", "© OpenStreetMap contributors (ODbL 1.0)"), ("MC", "© OpenStreetMap contributors (ODbL 1.0)")):
-        assert countries[iso]["mask"]["credit"] == {"text": formula, "url": countries[iso]["mask"]["credit"]["url"]}
+        # Formule imposée : jamais traduite (la clé « lang » dit seulement dans quelle langue elle est écrite).
+        credit = countries[iso]["mask"]["credit"]
+        assert credit["text"] == formula and "text_i18n" not in credit and set(credit) <= {"text", "url", "lang"}
 
 
 def test_texts_shown_as_they_are_have_no_french_word(cfg: dict):
@@ -84,3 +86,13 @@ def test_incomplete_translation_is_refused(tmp_path: Path):
     path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
     with pytest.raises(ValueError, match="countries.IT.mask.credit.text_i18n"):
         load_config(path)
+
+
+def test_imposed_mentions_carry_their_language(cfg: dict):
+    """Les mentions écrites telles quelles disent leur langue : le site la donne aux lecteurs d'écran."""
+    sources, countries = cfg["sources"], cfg["countries"]
+    assert sources["it_agcom"]["mention_lang"] == "it"
+    assert sources["es_mtd"]["mention_lang"] == "es"
+    assert sources["ad_estimation"]["mention_lang"] == "en" and sources["mc_estimation"]["mention_lang"] == "en"
+    assert countries["ES"]["mask"]["credit"]["lang"] == "es"
+    assert countries["AD"]["mask"]["credit"]["lang"] == "en" and countries["MC"]["mask"]["credit"]["lang"] == "en"

@@ -160,10 +160,14 @@ jobs:
         run: |
           ls -la out
           # Nom de la release : data-AAAA-MM-JJ, puis data-AAAA-MM-JJ-2, -3... s'il y en a déjà une ce jour-là.
+          # Le numéro suit toujours le plus grand déjà pris : un nom libéré par le ménage n'est jamais repris.
           # On ne supprime jamais une release avant d'avoir publié la suivante.
           existantes=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName')
-          tag="data-$DATE"; n=1
-          while printf '%s\n' "$existantes" | grep -qx "$tag"; do n=$((n + 1)); tag="data-$DATE-$n"; done
+          tag="data-$DATE"
+          if printf '%s\n' "$existantes" | grep -Eq "^data-$DATE(-[0-9]+)?$"; then
+            dernier=$(printf '%s\n' "$existantes" | sed -n "s/^data-$DATE-\([0-9][0-9]*\)$/\1/p" | sort -n | tail -1)
+            tag="data-$DATE-$(( ${dernier:-1} + 1 ))"
+          fi
           {
             echo "Tuiles de couverture mobile (PMTiles) et manifest, générés par le workflow Données."
             echo

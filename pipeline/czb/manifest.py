@@ -69,6 +69,9 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
             # Mentions que certaines licences demandent d'afficher telles quelles (logo de l'AGCOM, formule d'OpenCellID).
             if scfg.get("licence_notice"):
                 entry["licenceNotice"] = scfg["licence_notice"]
+            # Langue des mentions imposées telles quelles (mention, phrase de licence), pour les lecteurs d'écran.
+            if scfg.get("mention_lang"):
+                entry["mentionLang"] = str(scfg["mention_lang"])
             if scfg.get("licence_logo"):
                 entry["licenceLogo"] = scfg["licence_logo"]
                 if scfg.get("licence_logo_url"):
