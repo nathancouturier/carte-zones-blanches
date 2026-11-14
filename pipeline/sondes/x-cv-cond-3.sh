@@ -223,7 +223,7 @@ def liens(f, motif, n=8):
           for h, t in re.findall(r'<a\b[^>]*?href="([^"]*)"[^>]*>(.*?)</a\s*>', s, flags=re.S | re.I)]
     ms = [(h, t) for h, t in ms if re.search(motif, h + ' ' + t, flags=re.I)]
     print(f'  [LIENS x{len(ms)}] {motif}')
-    for h, t in ms[:n]:
+    for h, t in ms[:int(n)]:
         print(f'     {t[:100]!r} -> {html.unescape(h)[:160]}')
 
 
@@ -237,7 +237,7 @@ def nuxt(f, motif, n=4, av=6, ap=10):
     strs = [(i, x) for i, x in enumerate(arr) if isinstance(x, str)]
     hits = [k for k, (i, x) in enumerate(strs) if re.search(motif, x, flags=re.I)]
     print(f'  [NUXT] {len(arr)} elements, {len(strs)} chaines ; {len(hits)} chaine(s) pour {motif}')
-    for k in hits[:n]:
+    for k in hits[:int(n)]:
         i, x = strs[k]
         if len(x) > 300:
             t = collapse(html.unescape(re.sub(r'<[^>]+>', ' | ', x)))
@@ -303,6 +303,25 @@ def couche(f, ident):
     print(f'     couche {ident} introuvable')
 
 
+def hrefs(f, ident):
+    root = _xml(f)
+    for el in root.iter():
+        if _ln(el) != 'Layer':
+            continue
+        kids = list(el)
+        if not any(_ln(c) == 'Identifier' and (c.text or '').strip() == ident for c in kids):
+            continue
+        for c in kids:
+            if _ln(c) in ('Metadata', 'MetadataURL'):
+                for e in c.iter():
+                    for k, v in e.attrib.items():
+                        if k.endswith('href'):
+                            print(v.strip())
+                    if _ln(e) in ('OnlineResource', 'URL') and (e.text or '').strip().startswith('http'):
+                        print(e.text.strip())
+        return
+
+
 def xmlv(f, *noms):
     root = _xml(f)
     for nom in noms:
@@ -338,7 +357,7 @@ def debut(f, n=400):
 if __name__ == '__main__':
     cmd, args = sys.argv[1], sys.argv[2:]
     fn = {'cherche': cherche, 'tables': tables, 'liens': liens, 'nuxt': nuxt, 'brut': brut, 'service': service,
-          'couche': couche, 'xmlv': xmlv, 'dgf': dgf, 'titre': titre, 'debut': debut}.get(cmd)
+          'couche': couche, 'hrefs': hrefs, 'xmlv': xmlv, 'dgf': dgf, 'titre': titre, 'debut': debut}.get(cmd)
     try:
         if fn is None:
             print('  [ERREUR] sous-commande inconnue', cmd)
@@ -380,7 +399,7 @@ py couche "$D/caps-es.xml" MTN
 echo "######## 2. IGN Espana : licence d'usage (adresse citee https://www.ign.es/resources/licencia/Condiciones_licenciaUso_IGN.pdf)"
 page lic-es.pdf "https://www.ign.es/resources/licencia/Condiciones_licenciaUso_IGN.pdf"
 if command -v pdfinfo >/dev/null 2>&1; then
-  pdfinfo "$D/lic-es.pdf" 2>/dev/null | grep -aE '^(Title|Author|Creator|CreationDate|ModDate|Pages):' | sed 's/^/   /'
+  pdfinfo "$D/lic-es.pdf" 2>/dev/null | grep -aE '^(Creator|CreationDate|ModDate|Pages):' | sed 's/^/   /'
   pdftotext -enc UTF-8 "$D/lic-es.pdf" "$D/lic-es.txt" 2>/dev/null
   py debut "$D/lic-es.txt" 300
   py cherche "$D/lic-es.txt" text <<'X'
