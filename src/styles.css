@@ -554,8 +554,9 @@ input[type="range"] {
   border: 1px solid rgba(0, 0, 0, 0.25);
 }
 
+/* Même sens que les hachures des zones estimées sur la carte (de bas en haut vers la droite). */
 .swatch--hatch {
-  background: repeating-linear-gradient(45deg, #d62828 0 3px, #f3b4b4 3px 6px);
+  background: repeating-linear-gradient(-45deg, #d62828 0 3px, #f3b4b4 3px 6px);
 }
 
 .actions {
