@@ -104,6 +104,16 @@ try {
     controle('fr : manifest et tuiles de couverture lus', suivi.manifest >= 1 && suivi.archives >= 1, `manifest lu ${suivi.manifest} fois, ${suivi.archives} lectures dans les archives PMTiles`);
     await capture(page, '1-ordinateur-fr-carte');
 
+    // Clavier : le focus va sur le titre du panneau ouvert, puis revient à son bouton à la fermeture.
+    await page.focus('.tool[data-panel="network"]');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    const surTitre = await page.evaluate(() => document.activeElement?.classList.contains('panel__title') ?? false);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    const surBouton = await page.evaluate(() => document.activeElement?.matches('.tool[data-panel="network"]') ?? false);
+    controle('fr : au clavier, le focus suit l\'ouverture et la fermeture d\'un panneau', surTitre && surBouton, `titre ${surTitre}, bouton ${surBouton}`);
+
     await page.click('[data-panel="network"]');
     await page.waitForSelector('.chips');
     const operateurs = await page.locator('.chips .chip').allTextContents();
@@ -141,8 +151,12 @@ try {
     await capture(page, '4-ordinateur-fr-rapport');
     const zone = page.locator('.zone').first();
     if (await zone.count()) {
+      // « Rapport en texte » ouvert : il le reste quand on choisit une zone blanche.
+      await page.click('summary[data-focus="texte"]');
       await zone.click();
       await page.waitForTimeout(2500);
+      const ouvert = await page.evaluate(() => document.querySelector('summary[data-focus="texte"]')?.parentElement?.open === true);
+      controle('fr : « Rapport en texte » reste ouvert après un clic sur une zone blanche', ouvert);
       await capture(page, '5-ordinateur-fr-zone');
     }
     const [telechargement] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }).catch(() => null), page.click('[data-focus="gpx-enrichi"]')]);
@@ -211,6 +225,8 @@ try {
     // Le bouton Rapport existe déjà, masqué tant qu'aucun tracé n'est importé.
     const outils = await page.locator('.toolbar .tool:not([hidden]) span').allTextContents();
     controle('de : barre d\'outils traduite', outils.join('|') === 'Netz|Karte|GPX importieren', outils.join('|'));
+    const nomCarte = await page.locator('.maplibregl-canvas').getAttribute('aria-label');
+    controle('de : la carte est nommée en allemand pour les lecteurs d\'écran', nomCarte === 'Karte', nomCarte ?? '');
     if (!HORS_LIGNE) {
       await page.click('[data-panel="basemap"]');
       await page.click('label:has-text("swisstopo")');
@@ -342,6 +358,101 @@ try {
     await contexte.close();
   }
 
+  // --- 2e. Téléphone, français : pied de carte, Ma position, rapport réduit, recherche, fond Auto --
+  {
+    // Géocodage simulé (300 ms de latence) : le contrôle ne dépend pas du service et marche sans réseau.
+    const lieux = (q) => (q.startsWith('brides') ? [{ fulltext: 'Brides-les-Bains', x: 6.5675, y: 45.4531 }] : q.startsWith('bri') ? [{ fulltext: 'Briançon', x: 6.6436, y: 44.8986 }] : []);
+    const position = { geolocation: { latitude: 44.9, longitude: 6.42, accuracy: 30 }, permissions: ['geolocation'] };
+    const { contexte, page, suivi } = await ouvrir(navigateur, { ...telephone, ...position }, '#10/44.9/6.45', async (c) => {
+      await c.route(/data\.geopf\.fr\/geocodage\/completion/, (route) => {
+        const q = (new URL(route.request().url()).searchParams.get('text') ?? '').toLowerCase();
+        setTimeout(() => route.fulfill({ json: { status: 'OK', results: lieux(q).map((l) => ({ ...l, kind: 'municipality' })) } }).catch(() => undefined), 300);
+      });
+      await c.route(/photon\.komoot\.io/, (route) => route.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
+    });
+
+    // Pied de carte : mentions dépliées au chargement, repliées au premier glissé du doigt sur la carte.
+    const pied = () => page.evaluate(() => ({ visible: getComputedStyle(document.querySelector('.attribution__text')).display !== 'none', bouton: Math.round(document.querySelector('.attribution__toggle').getBoundingClientRect().height) }));
+    const auChargement = await pied();
+    controle('interface : mentions des sources visibles au chargement, bouton « © » de 44 px', auChargement.visible && auChargement.bouton >= 44, JSON.stringify(auChargement));
+    const cdp = await contexte.newCDPSession(page);
+    const toucher = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    await toucher('touchStart', 200, 400);
+    for (let i = 1; i <= 8; i++) await toucher('touchMove', 200 + i * 10, 400 + i * 10);
+    await toucher('touchEnd');
+    await page.waitForTimeout(800);
+    controle('interface : mentions repliées au premier geste sur la carte', !(await pied()).visible);
+
+    // « Ma position » appuyé deux fois : la position reste affichée.
+    await page.tap('.topbar button[aria-label="Ma position"]');
+    await page.waitForSelector('.maplibregl-user-location-dot', { timeout: 20000 }).catch(() => null);
+    await page.waitForTimeout(1500);
+    await page.tap('.topbar button[aria-label="Ma position"]');
+    await page.waitForTimeout(2500);
+    controle('interface : « Ma position » appuyé deux fois garde la position affichée', (await page.locator('.maplibregl-user-location-dot').count()) === 1);
+
+    // Rapport : le tracé reste visible au-dessus du panneau, qui se réduit à son titre pour montrer la carte.
+    // Avant toute recherche : le recentrage sur un lieu laisse pour l'instant une marge à la carte (défaut à part).
+    await importer(page, gpx('test-alpes.gpx'));
+    const reperes = () =>
+      page.evaluate(() => {
+        const haut = document.querySelector('.panel').getBoundingClientRect().top;
+        return [...document.querySelectorAll('.track-marker')].map((m) => {
+          const r = m.getBoundingClientRect();
+          return r.left + r.width / 2 >= 0 && r.left + r.width / 2 <= innerWidth && r.top + r.height / 2 >= 0 && r.top + r.height / 2 < haut;
+        });
+      });
+    const visibles = await reperes();
+    controle('interface : départ et arrivée du tracé visibles au-dessus du rapport', visibles.length === 2 && visibles.every(Boolean), JSON.stringify(visibles));
+    await page.tap('.panel__collapse', { timeout: 5000 }).catch(() => null);
+    await page.waitForTimeout(1500);
+    const hauteur = await page.evaluate(() => document.querySelector('.panel').getBoundingClientRect().height);
+    const reduits = await reperes();
+    controle('interface : rapport réduit à son titre, tracé visible au-dessus', hauteur < 100 && reduits.length === 2 && reduits.every(Boolean), `panneau de ${Math.round(hauteur)} px`);
+    await capture(page, '7b-telephone-fr-rapport-reduit');
+
+    // Recherche : Entrée juste après avoir complété « Bri » en « Brides » choisit Brides-les-Bains, pas Briançon.
+    await page.tap('button[aria-label="Rechercher un lieu"]');
+    await page.type('.search__input', 'Bri');
+    await page.waitForSelector('.search__item', { timeout: 10000 });
+    await page.type('.search__input', 'des');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(2500);
+    const [, latitude] = (await page.evaluate(() => location.hash)).slice(1).split('/').map(Number);
+    controle('interface : Entrée dans la recherche choisit le lieu de la saisie complète', Math.abs(latitude - 45.45) < 0.05, `latitude ${latitude}`);
+
+    // Un panneau qui s'ouvre ferme la recherche, dont les résultats le recouvriraient.
+    await page.tap('button[aria-label="Rechercher un lieu"]');
+    await page.type('.search__input', 'Bri');
+    await page.waitForSelector('.search__item', { timeout: 10000 });
+    await page.tap('.tool[data-panel="network"]');
+    await page.waitForTimeout(500);
+    controle('interface : ouvrir un panneau ferme la recherche', await page.locator('.search').isHidden());
+    const petites = await page.evaluate(() =>
+      [...document.querySelectorAll('.panel .link, .panel .chip, .panel .select, .panel input[type=range], .icon-btn, .attribution__toggle, .attribution .link')]
+        .filter((el) => el.getClientRects().length > 0 && el.getBoundingClientRect().height < 44)
+        .map((el) => `${el.textContent.trim() || el.className} (${Math.round(el.getBoundingClientRect().height)} px)`),
+    );
+    controle('interface : cibles tactiles d\'au moins 44 px de haut', petites.length === 0, petites.join(', '));
+    await page.tap('.icon-btn[data-role="close"]');
+
+    // Fond Auto hors des données (Milan) : le fond OpenStreetMap, puis le Plan IGN de retour en France.
+    await page.evaluate(() => (location.hash = '#9/45.46/9.19'));
+    await page.waitForTimeout(2500);
+    await page.tap('.tool[data-panel="basemap"]');
+    const auto = (await page.locator('.radio:has(input[value="auto"]) small').textContent()) ?? '';
+    await page.tap('.icon-btn[data-role="close"]');
+    await page.evaluate(() => (location.hash = '#10/44.9/6.45'));
+    await page.waitForTimeout(2500);
+    await page.tap('.tool[data-panel="basemap"]');
+    const retour = (await page.locator('.radio:has(input[value="auto"]) small').textContent()) ?? '';
+    await page.tap('.icon-btn[data-role="close"]');
+    controle('interface : fond Auto hors des données, fond OpenStreetMap', /OpenTopoMap/.test(auto) && /Plan IGN/.test(retour), `${auto} | ${retour}`);
+
+    controle('interface : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
   // --- 3. Téléphone, espagnol : sources et changement de langue -----------------
   {
     const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '?lang=es#9/42.6/0.9');
@@ -351,6 +462,9 @@ try {
     await page.waitForSelector('.disclaimer--strong');
     const mention = await page.locator('.disclaimer--strong').textContent();
     controle('es : panneau des sources', mention === 'Cobertura teórica, puede haber diferencias locales.', mention ?? '');
+    const credits = await page.locator('.panel .plain li').allTextContents();
+    const francais = credits.find((c) => /\s[:;]/.test(c));
+    controle('es : ponctuation des mentions selon la langue (pas de « : » à la française)', credits.length > 0 && !francais, francais ?? credits[0]);
     await capture(page, '9-telephone-es-sources');
     await page.click('.icon-btn[aria-label="Volver"]');
     await page.selectOption('#langue', 'ca');
