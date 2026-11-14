@@ -210,7 +210,7 @@ sources:
     level_field: niveau
     levels: {CL: 1, BC: 2, TBC: 3}
     levels_kind: four
-    resolution_m: 50
+    # Pas de « resolution_m » : les fichiers sont des polygones, et aucune source ne donne la résolution de ces cartes.
 
   ch_bakom:
     country: CH

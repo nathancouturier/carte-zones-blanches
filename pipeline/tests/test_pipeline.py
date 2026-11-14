@@ -57,6 +57,8 @@ def test_build_outputs(built: Path):
     source = france["sources"][0]
     assert source["id"] == "fr_arcep" and source["type"] == 0 and source["date"] == "2026-T2"
     assert source["services"] == ["data", "voice"] and source["perOperator"] is True
+    # Aucune source ne donne la résolution des cartes de l'Arcep : le manifest n'en affirme aucune.
+    assert "resolutionM" not in source
     assert len(manifest["archives"]) == 1 and "blocks" not in manifest["archives"][0]
     assert (built / manifest["archives"][0]["file"]).exists()
     state = json.loads((built / "etat-sources.json").read_text(encoding="utf-8"))
