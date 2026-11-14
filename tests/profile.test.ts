@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { packMeta, SOURCE_ESTIMATED, SOURCE_OFFICIAL_OPERATOR } from '../src/coverage/codec';
-import { CLASS_OUTSIDE } from '../src/gpx/analyze';
+import { CLASS_OUTSIDE, CLASS_UNKNOWN, estimatedFlags } from '../src/gpx/analyze';
 import type { Sample } from '../src/gpx/resample';
 import { DEFAULT_LANG, setLanguage } from '../src/i18n';
-import { estimatedFlags, profileColumns, profileKeyIndex, profilePointText, profileSummary } from '../src/ui/profile';
+import { profileColumns, profileKeyIndex, profilePointText, profileSummary } from '../src/ui/profile';
 
 function track(n: number, ele: (i: number) => number | null = (i) => 1000 + i): Sample[] {
   return Array.from({ length: n }, (_, i) => ({ lon: 6 + i * 0.00025, lat: 45, ele: ele(i), dist: i * 20, seg: 0 }));
@@ -74,14 +74,20 @@ describe('profil altimétrique : portions estimées, clavier, lecteurs d\'écran
     const columns = profileColumns(track(6), new Uint8Array([3, 3, 0, 0, 3, 3]), 300, new Uint8Array([0, 0, 1, 1, 0, 0]));
     expect(columns.map((c) => c.estimated)).toEqual([false, false, true, true, false]);
     expect(profileColumns(track(6), null).every((c) => !c.estimated)).toBe(true);
+    // Sans niveau pour le service choisi (appels et SMS en Andorre), rien n'est estimé : pas de hachures,
+    // comme sur la carte et dans le rapport (sources-24).
+    const sansNiveau = new Uint8Array([3, CLASS_UNKNOWN, CLASS_UNKNOWN, CLASS_UNKNOWN, 3, 3]);
+    expect(profileColumns(track(6), sansNiveau, 300, new Uint8Array([0, 1, 1, 1, 0, 0])).map((c) => c.estimated)).toEqual([false, false, false, false, false]);
   });
 
   it('dit, pour un point, le km, l\'altitude, la couverture et si elle est estimée', () => {
     setLanguage('fr');
     const sample = { lon: 6, lat: 45, ele: 1850, dist: 12400, seg: 0 };
-    expect(profilePointText(sample, 0, true).replace(/\s/g, ' ')).toBe('km 12,4, 1 850 m, Pas de couverture, estimée');
-    expect(profilePointText({ ...sample, ele: null }, 3, false)).toBe('km 12,4, altitude inconnue, Très bonne couverture');
-    expect(profilePointText(sample, -1, false).replace(/\s/g, ' ')).toBe('km 12,4, 1 850 m');
+    expect(profilePointText(sample, 0, true).replace(/\s/g, ' ')).toBe('km 12,4, altitude 1 850 m, Pas de couverture, estimée');
+    expect(profilePointText({ ...sample, ele: null }, 3, false)).toBe('km\u00a012,4, altitude inconnue, Très bonne couverture');
+    expect(profilePointText(sample, -1, false).replace(/\s/g, ' ')).toBe('km 12,4, altitude 1 850 m');
+    // Hors de la zone couverte par les données : « hors zone », comme dans le rapport (gpx-07).
+    expect(profilePointText(sample, CLASS_OUTSIDE, false).replace(/\s/g, ' ')).toBe('km 12,4, altitude 1 850 m, hors zone (hors des données de couverture)');
   });
 
   it('se parcourt au clavier : flèches, pages, Début et Fin', () => {

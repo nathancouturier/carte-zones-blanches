@@ -5,10 +5,15 @@
 //   ensemble à l'installation, dans un cache propre à cette version, et les coques des
 //   versions précédentes sont effacées à l'activation : index.html vient toujours avec
 //   ses propres scripts, jamais avec ceux d'une autre version.
-// - Page (quels que soient ?lang et les autres paramètres) et manifest des données :
-//   réseau d'abord ; s'il ne répond pas dans le délai (réseau faible) ou s'il échoue,
-//   copie locale ; sans copie, on attend le réseau. Ce qui arrive ainsi du réseau n'est
-//   rangé nulle part : la coque ne change qu'avec une nouvelle version du Service Worker.
+// - Page (quels que soient ?lang et les autres paramètres) : celle de la coque dès
+//   qu'elle est complète, sans attendre le réseau. Une nouvelle version du site
+//   s'installe en arrière-plan, dans sa propre coque, et ne sert qu'à la visite
+//   suivante, quand plus aucune page de la version en cours n'est ouverte : jamais un
+//   index.html arrivé du réseau sans ses scripts, jamais deux versions mêlées.
+// - Page sans coque complète (première visite) et manifest des données : réseau
+//   d'abord ; s'il ne répond pas dans le délai (réseau faible), s'il échoue ou s'il
+//   répond par une erreur du serveur (5xx), copie locale ; sans copie, on attend le
+//   réseau. Ce qui arrive ainsi du réseau n'est rangé nulle part.
 // - Fichiers de la coque (scripts, styles, icône) : copie locale d'abord.
 // - Manifest des données : la seule copie locale est celle enregistrée avec le tracé
 //   préparé, pour aller avec les tuiles de couverture enregistrées en même temps.
@@ -51,7 +56,8 @@ self.addEventListener('install', (event) => {
       if (!index || (await empreinte(index)) !== SHELL.index) throw new Error('Coque hors ligne : index.html ne correspond pas à cette version');
       // Écrite en dernier : sa présence dit que la coque est complète.
       await cache.put(LISTE, new Response(JSON.stringify(SHELL), { headers: { 'content-type': 'application/json' } }));
-      await self.skipWaiting();
+      // Pas de skipWaiting : les pages ouvertes gardent leur version et sa coque ; celle-ci
+      // prend le relais quand elles sont toutes fermées (première installation : tout de suite).
     })(),
   );
 });
@@ -67,7 +73,10 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-/** Réponse du réseau si elle arrive dans le délai ; sinon la copie locale si elle existe ; sinon le réseau, quand il répondra. */
+/**
+ * Réponse du réseau si elle arrive dans le délai et n'est pas une erreur du serveur (5xx) ;
+ * sinon la copie locale si elle existe ; sinon le réseau, quand il répondra.
+ */
 async function reseauDansLeDelai(request, copieLocale) {
   const reseau = fetch(request);
   reseau.catch(() => undefined); // un échec tardif, après la copie, n'est pas une erreur
@@ -77,7 +86,7 @@ async function reseauDansLeDelai(request, copieLocale) {
   });
   try {
     const reponse = await Promise.race([reseau, delai]);
-    if (reponse) return reponse;
+    if (reponse && reponse.status < 500) return reponse;
   } catch {
     // réseau en échec avant la fin du délai : copie locale
   } finally {
@@ -86,13 +95,25 @@ async function reseauDansLeDelai(request, copieLocale) {
   return (await copieLocale()) || reseau;
 }
 
-/** La page : celle du réseau, ou à défaut l'index.html de la coque, quels que soient ?lang et les autres paramètres. */
-function page(request) {
-  return reseauDansLeDelai(request, async () => {
-    const cache = await caches.open(COQUE);
-    const url = new URL(request.url);
-    return (await cache.match(url.origin + url.pathname, SANS_VARY)) || (await cache.match(PORTEE.href, SANS_VARY));
-  });
+/** Adresse de la page du site elle-même (index.html), et non d'un autre fichier ouvert dans un onglet. */
+function estLaPage(url) {
+  return url.pathname === PORTEE.pathname || url.pathname === `${PORTEE.pathname}index.html`;
+}
+
+/**
+ * La page, quels que soient ?lang et les autres paramètres : celle de la coque si elle est
+ * complète ; sinon celle du réseau, ou à défaut la copie de la coque.
+ */
+async function page(request) {
+  const cache = await caches.open(COQUE);
+  const url = new URL(request.url);
+  const copieLocale = async () => (await cache.match(url.origin + url.pathname, SANS_VARY)) || (await cache.match(PORTEE.href, SANS_VARY));
+  // Coque complète (sa liste est écrite en dernier) : la page vient d'elle, avec ses propres fichiers.
+  if (estLaPage(url) && (await cache.match(LISTE, SANS_VARY))) {
+    const copie = await copieLocale();
+    if (copie) return copie;
+  }
+  return reseauDansLeDelai(request, copieLocale);
 }
 
 /** Le manifest des données : celui du réseau, ou à défaut celui enregistré avec le tracé préparé. */

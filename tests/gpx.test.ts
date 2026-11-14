@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEVEL_NONE, packMeta, packSlots } from '../src/coverage/codec';
-import { buildLevelTables } from '../src/coverage/manifest';
+import { buildLevelTables, parseManifest } from '../src/coverage/manifest';
 import {
   CLASS_OUTSIDE,
   CLASS_UNKNOWN,
@@ -516,7 +516,7 @@ describe('analyse sur les tuiles du pipeline', () => {
     expect(text).toContain('Couverture théorique, des écarts locaux sont possibles.');
     expect(text).not.toMatch(/[\u2013\u2014\u202f]/);
     const line = describeZone(report.zones[0], manifest);
-    expect(line).toMatch(/^km \d+,\d à \d+,\d, soit \d+,\d km, altitude /);
+    expect(line).toMatch(/^km\u00a0\d+,\d à \d+,\d, soit \d+,\d\u00a0km, altitude /);
     expect(line).toContain('France');
 
     const waypoints = zoneWaypoints(analysis, report, manifest);
@@ -563,15 +563,37 @@ describe('rapport en texte', () => {
     }
   });
 
+  it('dit « estimation » dans la langue choisie devant la mention d\'une source estimée (lang-06)', () => {
+    // Andorre, source estimée : la mention vient du manifest, le mot « estimation » du site.
+    const { samples, raw } = synthetic(repeat(2, 30), { country: 5, sourceType: 2 });
+    const textIn = (data: typeof manifest, lang: string): string => {
+      setLanguage(lang);
+      const analysis = analyzeTrack(samples, raw);
+      return reportText(analysis, buildReport(analysis, data, settings), data, settings, null);
+    };
+    // Manifest publié avant les traductions : « Estimation : » écrit devant la mention, en français.
+    const old = JSON.parse(JSON.stringify(manifest));
+    old.countries[2].sources[0].attribution = 'Estimation : OpenCellID (CC BY-SA 4.0), Copernicus DEM';
+    try {
+      expect(textIn(manifest, 'fr')).toContain('Sources : estimation : OpenCelliD (Andorre, novembre 2026)');
+      expect(textIn(manifest, 'de')).toContain('Quellen: Schätzung: OpenCelliD (Andorra, November 2026)');
+      const before = textIn(parseManifest(old), 'es');
+      expect(before).toContain('Fuentes: estimación: OpenCellID (CC BY-SA 4.0), Copernicus DEM (Andorra, noviembre de 2026)');
+      expect(before).not.toContain('Estimation');
+    } finally {
+      setLanguage('fr');
+    }
+  });
+
   it('signale les points écartés et les sauts ignorés à la lecture du GPX', () => {
     expect(importNotes({ discarded: 0, jumps: 0 })).toEqual([]);
     expect(importNotes({ discarded: 1, jumps: 1 })).toEqual([
-      'Un point aberrant a été écarté\u00a0: position (0, 0) ou point isolé à plus de 10 km du tracé.',
-      'Le tracé fait un saut de plus de 10 km entre deux points\u00a0: ce saut n\'est compté ni dans la distance ni dans l\'analyse.',
+      'Un point aberrant a été écarté\u00a0: position (0, 0) ou point isolé à plus de 10\u00a0km du tracé.',
+      'Le tracé fait un saut de plus de 10\u00a0km entre deux points\u00a0: ce saut n\'est compté ni dans la distance ni dans l\'analyse.',
     ]);
     expect(importNotes({ discarded: 3, jumps: 2 })).toEqual([
-      '3 points aberrants ont été écartés\u00a0: position (0, 0) ou points isolés à plus de 10 km du tracé.',
-      'Le tracé fait 2 sauts de plus de 10 km entre deux points\u00a0: ces sauts ne sont comptés ni dans la distance ni dans l\'analyse.',
+      '3 points aberrants ont été écartés\u00a0: position (0, 0) ou points isolés à plus de 10\u00a0km du tracé.',
+      'Le tracé fait 2 sauts de plus de 10\u00a0km entre deux points\u00a0: ces sauts ne sont comptés ni dans la distance ni dans l\'analyse.',
     ]);
   });
 
@@ -583,16 +605,23 @@ describe('rapport en texte', () => {
     // Andorre (source estimée, internet seulement), avec le service Appels et SMS.
     const andorra = textOf(synthetic(repeat(2, 30), { country: 5, sourceType: 2 }), 'voice');
     expect(andorra).toContain('Aucune donnée pour ce service sur ce parcours.');
-    expect(andorra).toContain('Sans donnée pour ce service : 0,6 km');
-    expect(andorra).not.toContain('hors de la zone couverte');
-    // Tout le tracé hors de la zone couverte par les données.
+    // L'estimation ne dit rien des appels : rien n'est annoncé comme estimé (sources-24).
+    expect(andorra).not.toContain('couverture estimée');
+    expect(textOf(synthetic(repeat(2, 30), { country: 5, sourceType: 2 }), 'data')).toContain('Une partie du parcours repose sur une couverture estimée');
+    expect(andorra).toContain('Sans données pour ce service : 0,6 km');
+    expect(andorra).not.toMatch(/hors zone/i);
+    // Tout le tracé hors de la zone couverte par les données : « hors zone » (gpx-07).
     const outside = textOf(synthetic(repeat('out' as const, 30)), 'data');
-    expect(outside).toContain('Le tracé est entièrement hors de la zone couverte par les données.');
+    expect(outside).toContain('Le tracé est entièrement hors zone (hors des données de couverture).');
     expect(outside).not.toContain('Aucune donnée pour ce service');
+    // Une partie seulement : la longueur hors zone est dite, exclue des pourcentages.
+    const partly = textOf(synthetic([...repeat(2, 20), ...repeat('out' as const, 20)]), 'data');
+    expect(partly).toContain('Bonne couverture : 100 % (0,4 km)');
+    expect(partly).toContain('Hors zone (hors des données de couverture) : 0,4 km, exclus des pourcentages.');
     // Points tous confondus : le tracé ne mesure rien.
     const same = textOf(synthetic([3]), 'data');
     expect(same).toContain('Le tracé a une longueur nulle : tous ses points sont au même endroit.');
-    expect(same).not.toContain('hors de la zone couverte');
+    expect(same).not.toMatch(/hors zone/i);
   });
 
   it('donne une longueur cohérente avec les bornes affichées', () => {
@@ -611,9 +640,9 @@ describe('rapport en texte', () => {
       endPoint: [6.1, 45],
       bbox: [6, 45, 6.1, 45],
     });
-    expect(describeZone(zone(12430, 14070), manifest)).toBe('km 12,4 à 14,1, soit 1,7 km');
-    expect(describeZone(zone(2030, 2170), manifest)).toBe('km 2,0 à 2,2, soit 0,2 km');
-    expect(describeZone(zone(190, 410), manifest)).toBe('km 0,2 à 0,4, soit 0,2 km');
+    expect(describeZone(zone(12430, 14070), manifest)).toBe('km\u00a012,4 à 14,1, soit 1,7\u00a0km');
+    expect(describeZone(zone(2030, 2170), manifest)).toBe('km\u00a02,0 à 2,2, soit 0,2\u00a0km');
+    expect(describeZone(zone(190, 410), manifest)).toBe('km\u00a00,2 à 0,4, soit 0,2\u00a0km');
   });
 });
 

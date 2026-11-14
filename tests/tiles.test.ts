@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD, packMeta, packSlots, TILE_SIZE, unpackSlot, writePixel } from '../src/coverage/codec';
 import { LruCache } from '../src/coverage/lru';
 import { buildLevelTables } from '../src/coverage/manifest';
-import { childTile, LEVEL_COLORS, renderTile, renderUnavailable } from '../src/coverage/render';
+import { childTile, ESTIMATED_MASKED_STRIPE, LEVEL_COLORS, renderTile, renderUnavailable, UNAVAILABLE_STRIPE } from '../src/coverage/render';
 import { TileStore } from '../src/coverage/store';
 import { lonLatToTilePixel, tileToLonLat } from '../src/coverage/tilemath';
+import { sampleCoverage } from '../src/gpx/analyze';
+import { distance } from '../src/gpx/geodesy';
+import type { Sample } from '../src/gpx/resample';
 import { fixtureStore, readJsonFixture, sampleManifest } from './helpers';
 
 describe('géométrie des tuiles', () => {
@@ -102,6 +105,40 @@ describe('recolorisation des tuiles', () => {
     expect(officialAlphas.size).toBe(1);
   });
 
+  it('marque d\'un motif gris léger les zones estimées dont le niveau est masqué (sources-24)', () => {
+    const tables = buildLevelTables(manifest, { service: 'data', operators: {} });
+    // Toute une tuile en bonne couverture : estimée (Andorre) ou officielle (France).
+    const tile = (country: number, sourceType: number): Uint8ClampedArray => {
+      const d = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+      for (let i = 0; i < TILE_SIZE * TILE_SIZE; i++) writePixel(d, i, { data: [2, 2, 2, 2], country, sourceType });
+      return d;
+    };
+    const colors = (out: Uint8ClampedArray): Set<string> => {
+      const seen = new Set<string>();
+      for (let i = 0; i < 16 * TILE_SIZE; i++) seen.add(rgba(out, i).join());
+      return seen;
+    };
+    const out = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    // Par défaut, la bonne couverture n'est pas dessinée : la zone estimée garde des traits gris légers.
+    expect(renderTile(tile(5, 2), tables, { service: 'data', showAll: false }, out)).toBe(true);
+    expect(colors(out)).toEqual(new Set(['0,0,0,0', ESTIMATED_MASKED_STRIPE.join()]));
+    // Gris et peu opaques : ni une couleur de niveau, ni la tuile « données indisponibles » (voile et rayures foncées).
+    expect(ESTIMATED_MASKED_STRIPE[3]).toBeLessThan(LEVEL_COLORS[LEVEL_GOOD][3]);
+    expect(ESTIMATED_MASKED_STRIPE[3]).toBeLessThan(UNAVAILABLE_STRIPE[3]);
+    expect(ESTIMATED_MASKED_STRIPE.slice(0, 3)).not.toEqual(UNAVAILABLE_STRIPE.slice(0, 3));
+    // Même sens que les hachures des niveaux (x + y constant), pas celui des tuiles illisibles.
+    const alpha = (x: number, y: number): number => out[(y * TILE_SIZE + x) * 4 + 3];
+    for (let i = 1; i < 32; i++) expect(alpha(i, 0), `colonne ${i}`).toBe(alpha(i - 1, 1));
+    // Une zone officielle bien couverte reste transparente, comme avant.
+    expect(renderTile(tile(1, 0), tables, { service: 'data', showAll: false }, out)).toBe(false);
+    // Toute la couverture affichée : la zone estimée prend la couleur de son niveau, hachurée comme les autres.
+    renderTile(tile(5, 2), tables, { service: 'data', showAll: true }, out);
+    expect(Math.max(...[...colors(out)].map((c) => Number(c.split(',')[3])))).toBe(LEVEL_COLORS[LEVEL_GOOD][3]);
+    // Pas de donnée pour le service choisi (appels et SMS en Andorre) : rien n'est estimé, rien n'est dessiné.
+    const voice = buildLevelTables(manifest, { service: 'voice', operators: {} });
+    expect(renderTile(tile(5, 2), voice, { service: 'voice', showAll: false }, out)).toBe(false);
+  });
+
   it('agrandit une partie de tuile en plus proche voisin pour les zooms au-delà des données', () => {
     const parent = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
     for (let i = 0; i < TILE_SIZE * TILE_SIZE; i++) parent.set([i % TILE_SIZE, (i / TILE_SIZE) | 0, 7, 255], i * 4);
@@ -182,6 +219,90 @@ describe('lecture des archives PMTiles produites par le pipeline', () => {
     expect(reads.filter((r) => r.endsWith('12/2116/1479'))).toHaveLength(1);
     expect(store.peek(12, 2116, 1479)).toBe(first);
     expect(store.peek(12, 1, 1)).toBeUndefined();
+  });
+
+  it('l\'analyse d\'un tracé de 900 km n\'évince pas les tuiles affichées : un changement de réglage ne relit rien (archi-21)', async () => {
+    // Archive simulée : chaque lecture est comptée, le décodage rend une tuile de données uniforme.
+    const lues: string[] = [];
+    const store = new TileStore(
+      sampleManifest(),
+      async (_file, z, x, y) => {
+        lues.push(`${z}/${x}/${y}`);
+        return new ArrayBuffer(8);
+      },
+      async () => new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4).fill(255),
+    );
+    // Une vue au zoom 8 : 9 x 6 tuiles affichées.
+    const vue: [number, number, number][] = [];
+    for (let x = 128; x < 137; x++) for (let y = 88; y < 94; y++) vue.push([8, x, y]);
+    const afficher = (): Promise<unknown> => Promise.all(vue.map(([z, x, y]) => store.get(z, x, y)));
+    await afficher();
+    expect(lues).toHaveLength(54);
+    // Un tracé de 900 km en diagonale, des Pyrénées au Jura : bien plus de tuiles du zoom 12 que le cache n'en garde.
+    const debut = { lon: 0, lat: 42 };
+    const pas = 4500;
+    const samples: Sample[] = Array.from({ length: pas + 1 }, (_, i) => ({ lon: debut.lon + (8 * i) / pas, lat: debut.lat + (6 * i) / pas, ele: null, dist: 0, seg: 0 }));
+    for (let i = 1; i < samples.length; i++) samples[i].dist = samples[i - 1].dist + distance(samples[i - 1].lon, samples[i - 1].lat, samples[i].lon, samples[i].lat);
+    expect(samples[pas].dist).toBeGreaterThan(900_000);
+    const avant = lues.length;
+    const raw = await sampleCoverage(samples, store);
+    expect(raw.inside.every((v) => v === 1)).toBe(true);
+    expect(lues.length - avant).toBeGreaterThan(160);
+    // Changement de réglage : la couche réseau redemande les tuiles affichées, toujours en cache.
+    const apres = lues.length;
+    await afficher();
+    expect(lues.length - apres).toBe(0);
+  });
+
+  it('la carte, cadrée ensuite sur un tracé court, affiche ses tuiles sans les relire (archi-21)', async () => {
+    const lues: string[] = [];
+    const store = new TileStore(
+      sampleManifest(),
+      async (_file, z, x, y) => {
+        lues.push(`${z}/${x}/${y}`);
+        return new ArrayBuffer(8);
+      },
+      async () => new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4).fill(255),
+    );
+    // Une vue au zoom 8, puis une randonnée d'une vingtaine de kilomètres (quelques tuiles du zoom 12).
+    const vue: [number, number, number][] = [];
+    for (let x = 128; x < 137; x++) for (let y = 88; y < 94; y++) vue.push([8, x, y]);
+    await Promise.all(vue.map(([z, x, y]) => store.get(z, x, y)));
+    const samples: Sample[] = Array.from({ length: 1001 }, (_, i) => ({ lon: 6.73 + (0.17 * i) / 1000, lat: 45.7 + (0.09 * i) / 1000, ele: null, dist: i * 20, seg: 0 }));
+    lues.length = 0;
+    await sampleCoverage(samples, store);
+    const trace = lues.map((cle) => cle.split('/').map(Number) as [number, number, number]);
+    expect(trace.length).toBeGreaterThan(1);
+    // Après l'analyse, la carte zoome sur le tracé : elle trouve ses tuiles sans relire l'archive,
+    // et les tuiles de la vue précédente sont toujours en cache.
+    lues.length = 0;
+    await Promise.all(trace.map(([z, x, y]) => store.get(z, x, y)));
+    await Promise.all(vue.map(([z, x, y]) => store.get(z, x, y)));
+    expect(lues).toEqual([]);
+  });
+
+  it('une tuile lue pour l\'analyse et demandée en même temps par la carte n\'est lue qu\'une fois (archi-21)', async () => {
+    let lectures = 0;
+    let liberer = (): void => undefined;
+    const attente = new Promise<void>((resolve) => (liberer = resolve));
+    const store = new TileStore(
+      sampleManifest(),
+      async () => {
+        lectures++;
+        await attente;
+        return new ArrayBuffer(8);
+      },
+      async () => new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4).fill(255),
+    );
+    const analyse = store.getTransient(12, 2116, 1479);
+    const carte = store.get(12, 2116, 1479);
+    liberer();
+    expect(await carte).toBe(await analyse);
+    expect(lectures).toBe(1);
+    // La carte l'a demandée : elle reste en cache. Lue pour l'analyse seule, une tuile n'y entre pas.
+    expect(store.peek(12, 2116, 1479)).not.toBeUndefined();
+    await store.getTransient(12, 2117, 1479);
+    expect(store.peek(12, 2117, 1479)).toBeUndefined();
   });
 
   it('renvoie null hors des données, sans erreur', async () => {

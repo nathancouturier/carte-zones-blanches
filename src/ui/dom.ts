@@ -52,6 +52,15 @@ export function creditNodes(parts: readonly { text: string; href?: string }[]): 
   return parts.map((part) => (part.href ? externalLink(part.text, part.href) : part.text));
 }
 
+/**
+ * Mention imposée telle quelle, dans une autre langue que celle de l'interface : elle porte
+ * son attribut lang, pour qu'un lecteur d'écran la prononce dans sa langue. Sans langue connue,
+ * elle reste telle quelle.
+ */
+export function inLanguage(lang: string | undefined, content: Child): Child {
+  return lang ? h('span', { lang }, content) : content;
+}
+
 /** Texte traduit dont un nom propre (« OpenStreetMap », par exemple) devient un lien. */
 export function linkName(text: string, name: string, href: string): (Node | string)[] {
   const at = text.indexOf(name);

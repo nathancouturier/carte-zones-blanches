@@ -25,6 +25,7 @@ import {
 } from '../src/coverage/manifest';
 import { hasThresholdSlots, networkCount, slotLabel } from '../src/coverage/slotLabel';
 import { setLanguage } from '../src/i18n';
+import { estimationNote } from '../src/ui/panels';
 import { sampleManifest } from './helpers';
 
 describe('encodage des canaux', () => {
@@ -129,6 +130,77 @@ describe('lecture du manifest', () => {
     expect(suisse.sources[0].licenceLogoUrl).toBeUndefined();
   });
 
+  it('lit les traductions des textes et les antennes de l\'estimation, sans les exiger (lang-06)', () => {
+    // Manifest publié avant ces champs : rien ne manque, rien n'est inventé.
+    const [franceSans, , andorreSans] = sampleManifest().countries;
+    expect(franceSans.sources[0].nameI18n).toBeUndefined();
+    expect(franceSans.sources[0].licenceI18n).toBeUndefined();
+    expect(andorreSans.sources[0].estimation).toBeUndefined();
+    const base = JSON.parse(JSON.stringify(sampleManifest()));
+    base.countries[0].boundary = { text: 'Contours administratifs', url: 'https://exemple.test/', textI18n: { es: 'Límites administrativos', de: 'Verwaltungsgrenzen', it: 7 } };
+    Object.assign(base.countries[0].sources[0], {
+      // Une entrée mal formée (code inconnu, texte vide ou absent) est ignorée, sans rendre les données illisibles.
+      nameI18n: { es: 'Arcep, Mi red móvil', de: 'Arcep, Mein Mobilfunknetz', ca: '', 'pas une langue': 'x', it: null },
+      licenceI18n: { es: 'Licencia Abierta (Etalab)' },
+    });
+    Object.assign(base.countries[1].sources[0], { nameI18n: 'OFCOM', licenceI18n: [], estimation: { sites: 3, cells: 9 } });
+    Object.assign(base.countries[2].sources[0], { estimation: { sites: 12, cells: 41 }, attribution: 'Estimation : OpenCellID (CC BY-SA 4.0), Copernicus DEM' });
+    const [france, suisse, andorre] = parseManifest(base).countries;
+    expect(france.sources[0].nameI18n).toEqual({ es: 'Arcep, Mi red móvil', de: 'Arcep, Mein Mobilfunknetz' });
+    expect(france.sources[0].licenceI18n).toEqual({ es: 'Licencia Abierta (Etalab)' });
+    expect(france.boundary).toEqual({ text: 'Contours administratifs', url: 'https://exemple.test/', textI18n: { es: 'Límites administrativos', de: 'Verwaltungsgrenzen' } });
+    expect(suisse.sources[0].nameI18n).toBeUndefined();
+    expect(suisse.sources[0].licenceI18n).toBeUndefined();
+    expect(andorre.sources[0].estimation).toEqual({ sites: 12, cells: 41 });
+    // « Estimation : » des manifests publiés jusqu'ici : le site le dit lui-même, dans la langue choisie.
+    expect(andorre.sources[0].attribution).toBe('OpenCellID (CC BY-SA 4.0), Copernicus DEM');
+    const autres = JSON.parse(JSON.stringify(base));
+    autres.countries[0].sources[0].attribution = 'Estimation : Arcep'; // source officielle : texte gardé tel quel
+    autres.countries[2].sources[0].estimation = { sites: -1, cells: 41 };
+    const relu = parseManifest(autres);
+    expect(relu.countries[0].sources[0].attribution).toBe('Estimation : Arcep');
+    expect(relu.countries[2].sources[0].estimation).toBeUndefined();
+    autres.countries[2].sources[0].estimation = { sites: 12 };
+    expect(parseManifest(autres).countries[2].sources[0].estimation).toEqual({ sites: 12 });
+  });
+
+  it('lit la langue des mentions imposées, facultative (attribut lang des mentions en langue étrangère)', () => {
+    const base = JSON.parse(JSON.stringify(sampleManifest()));
+    // Manifest publié aujourd'hui : pas de langue, rien n'est supposé.
+    expect(parseManifest(base).countries[1].sources[0].mentionLang).toBeUndefined();
+    base.countries[1].sources[0].mentionLang = 'it';
+    base.countries[2].sources[0].mentionLang = 'en';
+    base.countries[0].sources[0].mentionLang = 'pas une langue'; // ignorée, sans rendre les données illisibles
+    base.countries[1].boundary = { text: 'Istat, Confini delle unità amministrative', lang: 'it' };
+    base.countries[2].boundary = { text: '© OpenStreetMap contributors', lang: 42 };
+    const [france, suisse, andorre] = parseManifest(base).countries;
+    expect(suisse.sources[0].mentionLang).toBe('it');
+    expect(andorre.sources[0].mentionLang).toBe('en');
+    expect(france.sources[0].mentionLang).toBeUndefined();
+    expect(suisse.boundary).toEqual({ text: 'Istat, Confini delle unità amministrative', lang: 'it' });
+    expect(andorre.boundary).toEqual({ text: '© OpenStreetMap contributors' });
+  });
+
+  it('dit combien de sites d\'antennes une source estimée connaît, quand le manifest le donne (sources-19)', () => {
+    const base = JSON.parse(JSON.stringify(sampleManifest()));
+    // Manifest publié aujourd'hui, sans ce champ : rien n'est dit.
+    expect(estimationNote(parseManifest(base).countries[2].sources[0])).toBeNull();
+    base.countries[2].sources[0].estimation = { sites: 1234, cells: 4100 };
+    base.countries[0].sources[0].estimation = { sites: 3 }; // source officielle : sans objet
+    const avec = parseManifest(base);
+    try {
+      setLanguage('fr');
+      expect(estimationNote(avec.countries[2].sources[0])?.replace(/\s/g, ' ')).toBe('1 234 sites d\'antennes connus dans ce pays. Moins il y a de sites, moins l\'estimation est fiable.');
+      expect(estimationNote(avec.countries[0].sources[0])).toBeNull();
+      setLanguage('de');
+      expect(estimationNote(avec.countries[2].sources[0])).toBe('1.234 bekannte Antennenstandorte in diesem Land. Je weniger Standorte, desto unzuverlässiger die Schätzung.');
+      base.countries[2].sources[0].estimation = { sites: 1 };
+      expect(estimationNote(parseManifest(base).countries[2].sources[0])).toBe('1 bekannter Antennenstandort in diesem Land. Je weniger Standorte, desto unzuverlässiger die Schätzung.');
+    } finally {
+      setLanguage('fr');
+    }
+  });
+
   it('nomme les emplacements : opérateur ou seuil', () => {
     const [france, suisse] = sampleManifest().countries;
     setLanguage('fr');
@@ -152,7 +224,7 @@ describe('lecture du manifest', () => {
     setLanguage('de');
     expect(slotLabel(suisse.slots[1], suisse)).toBe('Alle 3 Netze zugleich');
     setLanguage('it');
-    expect(slotLabel(italie.slots[3], italie)).toBe('Tutte e 4 le reti');
+    expect(slotLabel(italie.slots[3], italie)).toBe('Le 4 reti allo stesso tempo');
     setLanguage('fr');
     const bad = JSON.parse(JSON.stringify(sampleManifest()));
     bad.countries[1].slots[0] = { id: 'x' };

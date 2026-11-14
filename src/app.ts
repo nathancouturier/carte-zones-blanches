@@ -21,7 +21,7 @@ import {
 } from './coverage/manifest';
 import { registerCoverageProtocol, type CoverageRenderState } from './coverage/protocol';
 import { TileStore } from './coverage/store';
-import { sampleCoverage } from './gpx/analyze';
+import { estimatedFlags, sampleCoverage } from './gpx/analyze';
 import { enrichedFileName, enrichGpx } from './gpx/export';
 import { decodeGpx, GpxError, parseGpx } from './gpx/parse';
 import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/report';
@@ -522,7 +522,8 @@ export class App {
       this.mapView.setCursor(null);
       return;
     }
-    this.mapView.setTrack(trackToGeoJson(track.samples, track.report?.classes ?? null));
+    // Portions dont la couverture est estimée : en pointillé sur la carte.
+    this.mapView.setTrack(trackToGeoJson(track.samples, track.report?.classes ?? null, track.analysis ? estimatedFlags(track.analysis.raw) : null));
     const first = track.samples[0];
     const last = track.samples[track.samples.length - 1];
     this.mapView.setEndpoints([

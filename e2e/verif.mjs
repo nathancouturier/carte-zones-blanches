@@ -163,12 +163,12 @@ try {
 
     await importer(page, gpx('test-alpes.gpx'));
     const texte = await page.locator('.report-text').inputValue().catch(() => '');
-    controle('fr : le rapport liste les zones blanches avec leurs km', /Zones? blanches? \(\d+\)/.test(texte) && /km \d+,\d à \d+,\d/.test(texte), (texte.match(/Zones? blanches? \(\d+\)/) ?? [''])[0]);
+    controle('fr : le rapport liste les zones blanches avec leurs km', /Zones? blanches? \(\d+\)/.test(texte) && /km\s\d+,\d à \d+,\d/.test(texte), (texte.match(/Zones? blanches? \(\d+\)/) ?? [''])[0]);
     controle('fr : le rapport rappelle la limite des données', texte.includes('Couverture théorique, des écarts locaux sont possibles.'));
     controle('fr : le rapport texte ne garde aucune variable entre accolades', texte !== '' && !/[{}]/.test(texte), (texte.match(/.*[{}].*/) ?? [''])[0]);
     // « km 12,4 à 14,1, soit 1,7 km » : la longueur annoncée est la différence des bornes affichées.
     const nombre = (s) => Number(s.replace(',', '.'));
-    const bornes = [...texte.matchAll(/km (\d+,\d) à (\d+,\d), soit (\d+,\d) km/g)];
+    const bornes = [...texte.matchAll(/km\s(\d+,\d) à (\d+,\d), soit (\d+,\d)\skm/g)];
     const discordantes = bornes.filter(([, debut, fin, longueur]) => Math.abs(nombre(fin) - nombre(debut) - nombre(longueur)) > 0.05);
     controle('fr : bornes et longueur des zones concordent', bornes.length > 0 && discordantes.length === 0, discordantes.map((m) => m[0]).join(' | ') || `${bornes.length} zone(s)`);
     console.log('--- rapport (début) ---\n' + texte.split('\n').slice(0, 22).join('\n') + '\n-----------------------');
@@ -194,7 +194,7 @@ try {
       await page.mouse.move(boite.x + boite.width * 0.6, boite.y + boite.height / 2);
       await page.waitForTimeout(500);
       const lecture = (await page.locator('.profile__readout').textContent()) ?? '';
-      controle('fr : le profil altimétrique situe un point', /^km \d/.test(lecture) && (await page.locator('.track-cursor').count()) === 1, lecture);
+      controle('fr : le profil altimétrique situe un point', /^km\s\d/.test(lecture) && (await page.locator('.track-cursor').count()) === 1, lecture);
       await capture(page, '5b-ordinateur-fr-profil');
       // Au clavier : le profil prend le focus, les touches déplacent le curseur, la valeur et le résumé sont dits.
       await page.mouse.move(5, 5);
@@ -203,7 +203,7 @@ try {
       await page.keyboard.press('ArrowLeft');
       const clavier = { role: await profil.getAttribute('role'), valeur: (await profil.getAttribute('aria-valuetext')) ?? '', resume: (await profil.getAttribute('aria-label')) ?? '' };
       const repere = (await page.locator('.track-cursor').count()) === 1;
-      controle('fr : le profil se parcourt au clavier et se résume', clavier.role === 'slider' && /^km \d/.test(clavier.valeur) && repere && /sans couverture\.$/.test(clavier.resume), `${clavier.valeur} | ${clavier.resume}`);
+      controle('fr : le profil se parcourt au clavier et se résume', clavier.role === 'slider' && /^km\s\d/.test(clavier.valeur) && repere && /sans couverture\.$/.test(clavier.resume), `${clavier.valeur} | ${clavier.resume}`);
     } else {
       controle('fr : profil altimétrique', false, 'absent alors que le GPX a des altitudes');
     }
@@ -247,6 +247,24 @@ try {
     const exporte = enrichi ? readFileSync(await enrichi.path()).toString('utf-8') : '';
     controle('fr : GPX enrichi écrit et déclaré en UTF-8', exporte.startsWith('<?xml version="1.0" encoding="UTF-8"?>') && exporte.includes('Tour du Râteau'), exporte.slice(0, 50));
     controle('fr : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 1b. Ordinateur : import d'un GPX vu de loin, la carte se cadre ensuite sur le tracé ---------
+  // L'analyse lit les tuiles du tracé, puis la carte, cadrée dessus, les affiche : aucune n'est lue deux
+  // fois dans les archives, la carte les prend dans le cache de l'analyse (archi-21).
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '#7/45.3/6.5');
+    const lectures = [];
+    page.on('request', (r) => {
+      const adresse = new URL(r.url());
+      if (adresse.pathname.endsWith('.pmtiles')) lectures.push(`${adresse.pathname} ${r.headers().range ?? ''}`);
+    });
+    await importer(page, gpx('test-alpes.gpx'));
+    await page.waitForTimeout(3000);
+    const relues = lectures.filter((lecture, i) => lectures.indexOf(lecture) !== i);
+    controle('import : aucune tuile de couverture lue deux fois quand la carte se cadre sur le tracé', relues.length === 0, relues.length > 0 ? `${relues.length} relue(s) : ${relues[0]}` : `${lectures.length} lectures, aucune relue`);
+    controle('import : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
 
@@ -304,6 +322,21 @@ try {
       return absents.length || horsListe.length ? `manquent : ${[...absents, ...horsListe].join(', ')}` : `${noms[0]}, ${files.length} fichiers`;
     });
     controle('hors ligne : coque complète, une seule version', /^czb-coque-\w+, \d+ fichiers$/.test(coque), coque);
+    // Coque complète : la page vient d'elle, même en ligne. Une version mise en ligne entre-temps, dont
+    // index.html arriverait sans ses scripts (réseau faible), ne donne plus une page blanche.
+    const chemin = new URL(SITE).pathname;
+    const estLaPage = (url) => url.pathname === chemin || url.pathname === `${chemin}index.html`;
+    let demandes = 0;
+    const nouvelleVersion = (route) => {
+      demandes += 1;
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Nouvelle version</title><script type="module" src="assets/index-absent.js"></script>' });
+    };
+    await contexte.route(estLaPage, nouvelleVersion);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForTimeout(2500);
+    const coqueDabord = await page.evaluate(() => ({ titre: document.title, outils: document.querySelectorAll('.toolbar .tool').length }));
+    await contexte.unroute(estLaPage, nouvelleVersion);
+    controle('hors ligne : la page vient de la coque enregistrée, jamais d\'une version sans ses scripts', coqueDabord.titre === 'Carte des zones blanches' && coqueDabord.outils > 0 && demandes === 0, `${coqueDabord.titre}, document demandé ${demandes} fois au réseau`);
     await importer(page, TRACE_FRANCE);
     await page.locator('[data-focus="hors-ligne"]').scrollIntoViewIfNeeded();
     await page.click('[data-focus="hors-ligne"]');
@@ -629,12 +662,16 @@ try {
       return courte ? `${courte.textContent} | ${[...courte.querySelectorAll('a')].map((a) => a.getAttribute('href')).join(' ')}` : '';
     });
     controle('interface : mention du fond OpenStreetMap avec ses liens', mentionOsm === '© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA) | https://openstreetmap.org/copyright http://opentopomap.org https://creativecommons.org/licenses/by-sa/3.0/', mentionOsm);
+    // La mention complète, en allemand, est marquée comme telle pour les lecteurs d'écran.
+    const langueOsm = await page.evaluate(() => document.querySelector('.attribution .credit-long')?.getAttribute('lang') ?? 'aucune');
+    controle('interface : mention d\'OpenTopoMap marquée en allemand (attribut lang)', langueOsm === 'de', langueOsm);
     await page.evaluate(() => (location.hash = '#10/44.9/6.45'));
     await page.waitForTimeout(2500);
     await page.tap('.tool[data-panel="basemap"]');
     const retour = (await page.locator('.radio:has(input[value="auto"]) small').textContent()) ?? '';
     await page.tap('.icon-btn[data-role="close"]');
-    controle('interface : fond Auto hors des données, fond OpenStreetMap', /OpenTopoMap/.test(auto) && /Plan IGN/.test(retour), `${auto} | ${retour}`);
+    // L'indication du mode Auto cite OpenTopoMap : c'est le fond affiché, nommé ensuite, qui compte.
+    controle('interface : fond Auto hors des données, fond OpenStreetMap', /Fond affiché\s*:\s*OpenTopoMap/.test(auto) && /Fond affiché\s*:\s*Plan IGN/.test(retour), `${auto} | ${retour}`);
 
     controle('interface : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
@@ -647,8 +684,8 @@ try {
     const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
     const invalide = { version: 8, sources: {}, layers: [{ id: 'noms', type: 'symbol', source: 'absente', layout: { 'text-field': 'x' } }] };
     for (const [cas, repondre, attendu] of [
-      ['style sans réponse', () => undefined, /Le style du Plan IGN est injoignable/],
-      ['style refusé par la carte', (route) => route.fulfill({ json: invalide, headers: { 'access-control-allow-origin': '*' } }), /Le style du Plan IGN n'a pas pu être lu/],
+      ['style sans réponse', () => undefined, /Le Plan IGN ne se charge pas/],
+      ['style refusé par la carte', (route) => route.fulfill({ json: invalide, headers: { 'access-control-allow-origin': '*' } }), /Le Plan IGN n'a pas pu être lu/],
     ]) {
       let images = 0;
       const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42', async (c) => {
@@ -752,8 +789,23 @@ try {
       await page.evaluate(() => (location.hash = '#12/43.74/7.42'));
       await page.waitForTimeout(3500);
       const monaco = await pied();
-      const credite = monaco.texte.includes('Cell tower data from OpenCellID, licensed under CC BY-SA 4.0') && monaco.liens.includes('https://opencellid.org') && monaco.liens.includes('https://creativecommons.org/licenses/by-sa/4.0/');
-      controle('mentions : Monaco à l\'écran à côté du centre, crédit d\'OpenCellID avec ses liens', credite, monaco.texte);
+      // Le site dit « estimation » dans la langue choisie devant le crédit, en anglais, d'OpenCellID (lang-06).
+      const credite = monaco.texte.includes('estimation (Cell tower data from OpenCellID, licensed under CC BY-SA 4.0)') && monaco.liens.includes('https://opencellid.org') && monaco.liens.includes('https://creativecommons.org/licenses/by-sa/4.0/');
+      controle('mentions : Monaco à l\'écran à côté du centre, « estimation » et crédit d\'OpenCellID avec ses liens', credite, monaco.texte);
+      const anglais = await page.evaluate(() => document.querySelector('.attribution__text [lang="en"]')?.textContent ?? '');
+      controle('mentions : crédit d\'OpenCellID marqué en anglais (attribut lang)', anglais === 'Cell tower data from OpenCellID, licensed under CC BY-SA 4.0', anglais || 'aucun');
+      // Monaco est estimé en bonne couverture, que la carte ne dessine pas par défaut : de fins traits gris
+      // le signalent, et la légende le dit ; avec toute la couverture affichée, le vert hachuré suffit (sources-24).
+      await page.click('.tool[data-panel="network"]');
+      await page.waitForSelector('.legend');
+      const parDefaut = (await page.locator('.legend li').allTextContents()).join(' | ');
+      await page.click('input[data-focus="show-all"]');
+      await page.waitForTimeout(500);
+      const toutAffiche = (await page.locator('.legend li').allTextContents()).join(' | ');
+      await page.click('input[data-focus="show-all"]');
+      // « Fins traits gris » : rien à voir avec les « zones hachurées en gris » des données indisponibles.
+      const gris = 'Zone estimée avec une bonne ou très bonne couverture (fins traits gris)';
+      controle('mentions : la légende dit les traits gris des zones estimées bien couvertes', parDefaut.includes(gris) && !toutAffiche.includes(gris), parDefaut);
     }
     controle('mentions : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
@@ -809,13 +861,80 @@ try {
     await contexte.close();
   }
 
+  // --- 3b. Téléphone, espagnol : textes du manifest traduits (manifest simulé avec les champs facultatifs) --
+  // Noms des sources, licences et contours dans la langue choisie quand le manifest les traduit (lang-06).
+  {
+    const traduit = (cle, id) => `${cle} de prueba ${id}`;
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '?lang=es#9/42.6/0.9', async (c) => {
+      await c.route(/\/data\/manifest\.json(\?|$)/, async (route) => {
+        const reponse = await route.fetch();
+        const donnees = await reponse.json();
+        for (const pays of donnees.countries) {
+          if (pays.boundary) pays.boundary.textI18n = { es: traduit('Límites', pays.iso) };
+          for (const source of pays.sources) Object.assign(source, { nameI18n: { es: traduit('Nombre', source.id) }, licenceI18n: { es: traduit('Licencia', source.id) } });
+          // Antennes connues des zones estimées (sources-19).
+          for (const source of pays.sources.filter((s) => s.type === 2)) source.estimation = { sites: 12, cells: 41 };
+          // Langue des mentions imposées telles quelles (champ facultatif mentionLang).
+          for (const source of pays.sources) {
+            const langue = source.type === 2 ? 'en' : { it_agcom: 'it', es_mtd: 'es' }[source.id];
+            if (langue) source.mentionLang = langue;
+          }
+        }
+        await route.fulfill({ response: reponse, json: donnees });
+      });
+    });
+    await page.click('button[aria-label="Ajustes"]');
+    await page.click('[data-focus="sources"]');
+    await page.waitForSelector('.disclaimer--strong');
+    const panneau = await page.evaluate(() => document.querySelector('.panel__body')?.textContent ?? '');
+    const publies = manifest?.countries ?? [];
+    const attendus = publies.flatMap((pays) => [...(pays.boundary ? [traduit('Límites', pays.iso)] : []), ...pays.sources.flatMap((s) => [traduit('Nombre', s.id), traduit('Licencia', s.id)])]);
+    const absents = attendus.filter((texte) => !panneau.includes(texte));
+    const francais = publies.flatMap((pays) => pays.sources.map((s) => s.name)).filter((nom) => panneau.includes(nom));
+    controle('es : noms des sources, licences et contours traduits par le manifest', attendus.length > 0 && absents.length === 0 && francais.length === 0, [...absents, ...francais].join(' | ') || `${attendus.length} textes`);
+    // Nombre de sites d'antennes d'une source estimée, et ce qu'il dit de sa fiabilité (sources-19).
+    const estimes = publies.filter((pays) => pays.sources.some((s) => s.type === 2)).length;
+    const sites = panneau.split('12 emplazamientos de antenas conocidos en este país. Cuantos menos emplazamientos, menos fiable es la estimación.').length - 1;
+    controle('es : sites d\'antennes connus de chaque zone estimée', sites === estimes, `${sites} sur ${estimes}`);
+    // Une seule fois : les données d'origine ont été transformées pour ce site (licences CC BY, regles-02c).
+    const transformees = panneau.split('Para este sitio, los datos originales se han transformado').length - 1;
+    controle('es : transformation des données d\'origine dite une fois', transformees === 1, `${transformees} fois`);
+    // Mentions imposées dans une autre langue : attribut lang donné par le manifest, au panneau comme au pied de carte.
+    const marquees = await page.evaluate(() => ({
+      avis: [...document.querySelectorAll('.panel__body small[lang]')].map((s) => s.getAttribute('lang')),
+      pied: [...document.querySelectorAll('.attribution__text [lang]')].map((s) => `${s.getAttribute('lang')} ${s.textContent.slice(0, 24)}`),
+    }));
+    const avisAttendus = publies.flatMap((pays) => pays.sources.filter((s) => s.licenceNotice).map((s) => (s.type === 2 ? 'en' : { it_agcom: 'it', es_mtd: 'es' }[s.id] ?? 'mul')));
+    const piedEspagnol = !paysPublies.includes('ES') || marquees.pied.some((m) => m.startsWith('es Origen de los datos'));
+    controle('es : mentions en langue étrangère marquées de leur langue (attribut lang)', marquees.avis.join() === avisAttendus.join() && piedEspagnol, `${marquees.avis.join()} | ${marquees.pied.join(' ; ')}`);
+    controle('es : textes traduits, aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 3c. Sans JavaScript : le message, une phrase par langue, devant la carte vide -----
+  {
+    const contexte = await navigateur.newContext({ ...telephone, javaScriptEnabled: false });
+    const page = await contexte.newPage();
+    await page.goto(SITE, { waitUntil: 'load' });
+    const lisibles = await page.evaluate(() =>
+      [...document.querySelectorAll('noscript p')]
+        .filter((p) => {
+          const r = p.getBoundingClientRect();
+          return r.width > 0 && p.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+        })
+        .map((p) => p.lang),
+    );
+    controle('sans JavaScript : le message est lisible dans chaque langue', lisibles.join() === 'fr,ca,de,es,it', lisibles.join() || 'aucun message lisible');
+    await contexte.close();
+  }
+
   // --- 4. Ordinateur, français : les deux GPX de test, de part et d'autre d'une frontière ------
   // Chaque contrôle ne joue que si le pays étranger du tracé est publié : sinon il est annoncé comme sauté.
   {
     const cas = [
       { nom: 'test-alpes.gpx', iso: 'IT', pays: 'Italie', zoneAttendue: null },
       // Côté espagnol, l'arrivée au refuge de Góriz n'a aucun réseau 4G dans la carte du ministère.
-      { nom: 'test-pyrenees.gpx', iso: 'ES', pays: 'Espagne', zoneAttendue: /km \d+,\d à \d+,\d, soit [^\n]*, Espagne/ },
+      { nom: 'test-pyrenees.gpx', iso: 'ES', pays: 'Espagne', zoneAttendue: /km\s\d+,\d à \d+,\d, soit [^\n]*, Espagne/ },
     ];
     for (const { nom, iso, pays, zoneAttendue } of cas) {
       const fichier = echantillon(nom);
@@ -827,13 +946,41 @@ try {
       await importer(page, fichier);
       const texte = await page.locator('.report-text').inputValue();
       controle(`étranger : ${nom} traverse la France et l'${pays}`, texte.includes(`Pays traversés : France, ${pays}`), (texte.match(/Pays traversés[^\n]*/) ?? [''])[0]);
-      controle(`étranger : ${nom}, la couverture est lue des deux côtés`, new RegExp(`Opérateur : [^\\n]*\\(France\\)[^\\n]*\\(${pays}\\)`).test(texte) && !texte.includes('Hors de la zone couverte par les données'), (texte.match(/Opérateur[^\n]*/) ?? [''])[0]);
-      controle(`étranger : ${nom}, source qui dit seulement couvert ou non`, texte.includes(`${pays} : la source indique seulement si un lieu est couvert ou non.`));
+      controle(`étranger : ${nom}, la couverture est lue des deux côtés`, new RegExp(`Opérateur : [^\\n]*\\(France\\)[^\\n]*\\(${pays}\\)`).test(texte) && !texte.includes('Hors zone'), (texte.match(/Opérateur[^\n]*/) ?? [''])[0]);
+      controle(`étranger : ${nom}, source qui dit seulement couvert ou non`, texte.includes(`${pays} : les données indiquent seulement si un lieu est couvert ou non.`));
       if (zoneAttendue) controle(`étranger : ${nom}, zone blanche côté ${pays}`, zoneAttendue.test(texte), (texte.match(zoneAttendue) ?? [''])[0]);
       controle(`étranger : ${nom}, aucune erreur JavaScript`, suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
       await capture(page, `10-ordinateur-fr-${nom.replace('.gpx', '')}`);
       await contexte.close();
     }
+  }
+
+  // --- 4b. Ordinateur, français : un tracé qui sort des données (Strasbourg, puis Kehl en Allemagne) ---
+  // La partie allemande est « hors zone » dans le rapport (panneau et texte) et dans le profil (gpx-07).
+  if (paysPublies.includes('FR') && ouest <= 7.75 && 7.75 <= est && sud <= 48.57 && 48.57 <= nord) {
+    const rhin = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="verif" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Passerelle des Deux Rives</name><trkseg>
+<trkpt lat="48.5734" lon="7.7521"><ele>142</ele></trkpt><trkpt lat="48.5680" lon="7.7800"><ele>139</ele></trkpt>
+<trkpt lat="48.5684" lon="7.7990"><ele>137</ele></trkpt><trkpt lat="48.5700" lon="7.8150"><ele>138</ele></trkpt><trkpt lat="48.5740" lon="7.8300"><ele>139</ele></trkpt>
+</trkseg></trk></gpx>`);
+    const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '');
+    await importer(page, { name: 'rhin.gpx', mimeType: 'application/gpx+xml', buffer: rhin });
+    const texte = await page.locator('.report-text').inputValue();
+    const panneau = await page.evaluate(() => document.querySelector('.panel[data-panel="report"] .panel__body')?.textContent ?? '');
+    const horsZone = /Hors zone \(hors des données de couverture\) : \d+,\d km, exclus des pourcentages\./;
+    controle('hors zone : la partie hors des données est dite « hors zone », dans le texte et le panneau du rapport', horsZone.test(texte) && horsZone.test(panneau.replace(/\s/g, ' ')), (texte.match(/Hors zone[^\n]*/) ?? ['rien'])[0]);
+    const profil = page.locator('.profile__svg');
+    let lecture = '';
+    if (await profil.count()) {
+      await profil.scrollIntoViewIfNeeded();
+      const boite = await profil.boundingBox();
+      await page.mouse.move(boite.x + boite.width - 3, boite.y + boite.height / 2);
+      await page.waitForTimeout(400);
+      lecture = (await page.locator('.profile__readout').textContent()) ?? '';
+    }
+    controle('hors zone : le profil dit « hors zone » au bout du tracé', /hors zone \(hors des données de couverture\)$/.test(lecture), lecture || 'pas de profil');
+    controle('hors zone : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
   }
 } finally {
   await navigateur.close();
