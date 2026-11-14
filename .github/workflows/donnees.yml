@@ -84,19 +84,23 @@ jobs:
         run: |
           # Passage mensuel et lancement à la main sans choix : la production, telle que config.yaml la décrit.
           scope="${IN_SCOPE:-production}"; services="${IN_SERVICES:-data}"; force="${IN_FORCE:-false}"
+          demande="$scope"
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             f=pipeline/DEMANDE-DONNEES
             scope=$(sed -n 's/^scope=//p' "$f" | head -1)
             services=$(sed -n 's/^services=//p' "$f" | head -1)
             force=true
+            demande=essai
           fi
           if [ "$scope" = "production" ]; then scope="$PROD_SCOPE"; services="$PROD_SERVICES"; fi
           case "$scope" in *[!a-z0-9-]*|"") echo "scope invalide : $scope"; exit 1 ;; esac
           case "$services" in data|data,voice) ;; *) echo "services invalides : $services"; exit 1 ;; esac
           case "$force" in true|false) ;; *) force=false ;; esac
-          # On ne publie que la production, et jamais depuis un push sur une branche de travail.
+          # On ne publie que le choix « production » (passage mensuel compris), jamais un essai, même s'il a les
+          # mêmes réglages, et jamais un push sur une branche de travail. C'est aussi ce choix qui range la
+          # construction dans le groupe « production » (voir concurrency) : une seule publication à la fois.
           publish=false
-          if [ "$GITHUB_EVENT_NAME" != "push" ] && [ "$scope" = "$PROD_SCOPE" ] && [ "$services" = "$PROD_SERVICES" ]; then publish=true; fi
+          if [ "$demande" = "production" ]; then publish=true; fi
           # Un essai est toujours construit : il n'a pas de release à laquelle se comparer.
           if [ "$publish" = "false" ]; then force=true; fi
           {
