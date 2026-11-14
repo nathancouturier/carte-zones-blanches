@@ -17,6 +17,15 @@ from .fake_arcgis import FakeArcgis, Layer, box_ring
 
 STEP = 0.000346111018645788
 MOVISTAR, ORANGE, VODAFONE, XFERA = "A78923125", "A82009812", "A80907397", "A82528548"
+# Éléments ArcGIS : la carte mobile (celle de item_url) et la carte fixe, cités par la page du ministère.
+ITEM, FIXED = "0f1e2d3c4b5a69788796a5b4c3d2e1f0", "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+PAGE = "/ministerio/mapas-servicios-banda-ancha"
+
+
+def ministry_page(*items: str) -> str:
+    """Page du ministère comme la sonde l'a lue : des liens vers des expériences ArcGIS, et d'autres nombres hexadécimaux."""
+    links = "".join(f'<a href="https://experience.arcgis.com/experience/{item}" data-toast-target="https://experience.arcgis.com/experience/{item}">Mapa</a>' for item in items)
+    return f'<html><head><link rel="stylesheet" href="/estilos.css?v=00112233445566778899aabbccddeeff"></head><body>{links}<span data-x="{"ab" * 32}"></span></body></html>'
 # Maille de référence de la zone de test (vers Benasque), comptée depuis l'origine de la grille (-180, 90).
 COL0 = round((0.50 + 180) / STEP)
 ROW0 = round((90 - 42.70) / STEP)
@@ -84,7 +93,8 @@ def _config(root: Path, server_url: str, mask: Path) -> Path:
                 "name": "Mapa de Servicios de Banda Ancha Móvil 2024",
                 "attribution": "Origen de los datos: Ministerio para la Transformación Digital y de la Función Pública",
                 "licence": "Condiciones generales de reutilización",
-                "item_url": f"{server_url}/sharing/rest/content/items/abc",
+                "url": f"{server_url}{PAGE}",
+                "item_url": f"{server_url}/sharing/rest/content/items/{ITEM}",
                 "layer_url": f"{server_url}/arcgis/rest/services/InfoCob4G_2024/FeatureServer/0",
                 "region_field": "CCOM",
                 "regions": ["02", "09"],
@@ -124,7 +134,8 @@ def spain(tmp_path_factory: pytest.TempPathFactory):
     server = FakeArcgis(
         {
             "/arcgis/rest/services/InfoCob4G_2024/FeatureServer/0": layer,
-            "/sharing/rest/content/items/abc": {"id": "abc", "modified": 1778716800000},
+            f"/sharing/rest/content/items/{ITEM}": {"id": ITEM, "modified": 1778716800000},
+            PAGE: ministry_page(ITEM, FIXED),
         }
     )
     # Masque : un rectangle qui déborde un peu des données, sauf à l'est où il coupe l'entité 9.
@@ -136,7 +147,7 @@ def spain(tmp_path_factory: pytest.TempPathFactory):
     try:
         code = cli.main(["--config", str(config), "build", "--scope", "espagne", "--services", "data", "--work", str(root / "work"), "--out", str(out), "--date", "2026-11-14"])
         assert code == 0
-        yield {"out": out, "root": root, "layer": layer, "config": config, "info": info}
+        yield {"out": out, "root": root, "layer": layer, "config": config, "info": info, "server": server}
     finally:
         server.close()
         patch.undo()
@@ -167,8 +178,10 @@ def test_spain_manifest(spain: dict):
     source = country["sources"][0]
     assert source["type"] == 0 and source["levels"] == "binary" and source["perOperator"] is True
     assert source["date"] == "2024-06" and source["dataDate"] == "2024-06-30"
+    # Pas de traduction dans la configuration : pas de champ de traduction dans le manifest (un ancien site l'ignorerait).
+    assert "nameI18n" not in source and "licenceI18n" not in source and "boundary" not in country
     state = json.loads((spain["out"] / "etat-sources.json").read_text(encoding="utf-8"))
-    assert state["sources"]["es_mtd"] == {"couche": "InfoCob4G_2025_Muni", "dataLastEditDate": 1778025600000, "modified": 1778716800000, "regions": {"02": 5, "09": 1}}
+    assert state["sources"]["es_mtd"] == {"couche": "InfoCob4G_2025_Muni", "dataLastEditDate": 1778025600000, "modified": 1778716800000, "regions": {"02": 5, "09": 1}, "elements_page": sorted([ITEM, FIXED])}
 
 
 def test_spain_pixels(spain: dict):
@@ -227,6 +240,79 @@ def test_spain_working_copy_is_reused_until_the_edition_changes(spain: dict):
     report = json.loads((out3 / "rapport-construction.json").read_text(encoding="utf-8"))
     assert report["stats"]["copie_de_travail"]["es_mtd"] == "reconstruite"
     assert spain["layer"].requests - before > 6
+
+
+def test_spain_new_edition_is_detected_on_the_ministry_page(spain: dict, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    """La page du ministère ne cite plus l'élément de item_url : la détection échoue, avec ce qu'il faut mettre à jour.
+    Page illisible ou sans élément : un avertissement, et un état qui ne change pas d'une fois sur l'autre."""
+    from czb import net, release_state
+    from czb.context import load_config
+    from czb.sources import create_source
+
+    monkeypatch.setattr(net.time, "sleep", lambda s: None)
+    routes = spain["server"].routes
+    cfg = load_config(spain["config"])
+    try:
+        assert create_source("es_mtd", cfg).remote_state()["elements_page"] == sorted([ITEM, FIXED])
+        # Nouvelle édition : la page renvoie vers une autre expérience.
+        routes[PAGE] = ministry_page("c0ffee00c0ffee00c0ffee00c0ffee00", FIXED)
+        with pytest.raises(RuntimeError, match="nouvelle édition probable : mettre à jour layer_url, item_url, name et data_date de es_mtd"):
+            create_source("es_mtd", cfg).remote_state()
+        # La commande de détection du workflow échoue donc, ce qui prévient le propriétaire.
+        monkeypatch.setattr(release_state, "latest_release_state", lambda repo: ("data-2026-11-14", None))
+        with pytest.raises(RuntimeError, match="nouvelle édition probable"):
+            cli.main(["--config", str(spain["config"]), "changed", "--scope", "espagne", "--services", "data", "--repo", "proprietaire/depot"])
+        # Page sans aucun élément ArcGIS, puis page injoignable : pas d'échec, et toujours le même état.
+        capsys.readouterr()
+        routes[PAGE] = "<html><body>Página en mantenimiento</body></html>"
+        empty = create_source("es_mtd", cfg).remote_state()
+        assert "ne cite aucun élément ArcGIS" in capsys.readouterr().out
+        del routes[PAGE]
+        unreachable = create_source("es_mtd", cfg).remote_state()
+        assert "page du ministère illisible" in capsys.readouterr().out
+        assert empty == unreachable == create_source("es_mtd", cfg).remote_state()
+        assert empty["elements_page"] == []
+        # La copie de travail ne dépend pas de la page : écrite page lisible, elle sert encore page injoignable.
+        assert "elements_page" not in create_source("es_mtd", cfg).layer_state()
+        routes[PAGE] = ministry_page(ITEM, FIXED)
+        root = spain["root"]
+        build = ["--config", str(spain["config"]), "build", "--scope", "espagne", "--services", "data", "--date", "2026-11-17"]
+        assert cli.main([*build, "--work", str(root / "work-page-1"), "--out", str(root / "out-page-1")]) == 0
+        (root / "work-page-2" / "cache").mkdir(parents=True)
+        shutil.copy(root / "out-page-1" / "cache-es_mtd.tif", root / "work-page-2" / "cache")
+        del routes[PAGE]
+        assert cli.main([*build, "--work", str(root / "work-page-2"), "--out", str(root / "out-page-2")]) == 0
+        report = json.loads((root / "out-page-2" / "rapport-construction.json").read_text(encoding="utf-8"))
+        assert report["stats"]["copie_de_travail"]["es_mtd"] == "reprise"
+        assert json.loads((root / "out-page-2" / "etat-sources.json").read_text(encoding="utf-8"))["sources"]["es_mtd"]["elements_page"] == []
+    finally:
+        routes[PAGE] = ministry_page(ITEM, FIXED)
+
+
+def test_spain_ministry_page_identifiers_ignore_case(spain: dict):
+    """Un identifiant écrit en majuscules, dans la page ou dans item_url, désigne le même élément : pas d'erreur à tort,
+    et le même état (identifiants en minuscules), donc pas de reconstruction."""
+    import copy
+
+    from czb.context import load_config
+    from czb.sources import create_source
+
+    routes = spain["server"].routes
+    cfg = load_config(spain["config"])
+    upper = copy.deepcopy(cfg)
+    upper["sources"]["es_mtd"]["item_url"] = upper["sources"]["es_mtd"]["item_url"].replace(ITEM, ITEM.upper())
+    try:
+        routes[PAGE] = ministry_page(ITEM.upper(), FIXED.upper())
+        assert create_source("es_mtd", cfg).page_items() == sorted([ITEM, FIXED])
+        assert create_source("es_mtd", upper).page_items() == sorted([ITEM, FIXED])
+        routes[PAGE] = ministry_page(ITEM, FIXED)
+        assert create_source("es_mtd", upper).page_items() == sorted([ITEM, FIXED])
+        # Une autre expérience en majuscules, sans celle de item_url : c'est bien une nouvelle édition.
+        routes[PAGE] = ministry_page("C0FFEE00C0FFEE00C0FFEE00C0FFEE00", FIXED.upper())
+        with pytest.raises(RuntimeError, match="nouvelle édition probable"):
+            create_source("es_mtd", upper).page_items()
+    finally:
+        routes[PAGE] = ministry_page(ITEM, FIXED)
 
 
 def test_spain_grid_phase_is_measured(spain: dict):

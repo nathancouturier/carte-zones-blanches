@@ -194,8 +194,9 @@ jobs:
       - name: Relancer le déploiement du site
         shell: bash
         run: |
-          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}" \
-            || echo "Déploiement non relancé : deploy.yml n'est pas encore sur la branche par défaut."
+          # deploy.yml est sur la branche par défaut : si le lancement échoue, l'étape échoue et le propriétaire
+          # est prévenu (sinon les nouvelles données resteraient publiées sans que le site les prenne).
+          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}"
 
   # GitHub désactive les workflows planifiés d'un dépôt resté 60 jours sans activité. Réactiver le
   # workflow à chaque passage mensuel remet ce compteur à zéro.

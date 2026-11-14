@@ -36,9 +36,9 @@ def _srs(epsg: int) -> osr.SpatialReference:
     return srs
 
 
-def _polygon(points: list[tuple[float, float]], hole: list[tuple[float, float]] | None = None) -> ogr.Geometry:
+def _polygon(points: list[tuple[float, float]], *holes: list[tuple[float, float]]) -> ogr.Geometry:
     poly = ogr.Geometry(ogr.wkbPolygon)
-    for ring_points in [points] + ([hole] if hole else []):
+    for ring_points in [points, *holes]:
         ring = ogr.Geometry(ogr.wkbLinearRing)
         for x, y in ring_points + [ring_points[0]]:
             ring.AddPoint_2D(x, y)
@@ -55,10 +55,12 @@ def _y(row: float) -> float:
 
 
 def west_country() -> ogr.Geometry:
-    """Pays prioritaire, à l'ouest, avec une enclave de 2 km de côté qui doit rester vide."""
+    """Pays prioritaire, à l'ouest, avec deux enclaves qui doivent rester vides : l'une de 2 km de côté (400 ha),
+    l'autre de 300 m de côté (9 ha) : petite, mais bordée par ce seul pays, ce n'est pas un interstice."""
     outer = [(_x(10), _y(110)), (_x(BORDER_COL), _y(110)), (_x(BORDER_COL), _y(10)), (_x(10), _y(10))]
     enclave = [(_x(40), _y(70)), (_x(40), _y(50)), (_x(60), _y(50)), (_x(60), _y(70))]
-    return _polygon(outer, enclave)
+    small = [(_x(75), _y(91)), (_x(75), _y(88)), (_x(78), _y(88)), (_x(78), _y(91))]
+    return _polygon(outer, enclave, small)
 
 
 def east_country() -> ogr.Geometry:
@@ -209,20 +211,49 @@ def _to_mercator(geom: ogr.Geometry) -> ogr.Geometry:
     return out
 
 
+def _ground_ha(geom: ogr.Geometry) -> float:
+    x0, x1, y0, y1 = geom.GetEnvelope()
+    lat = 2 * math.atan(math.exp((y0 + y1) / 2 / 6378137.0)) - math.pi / 2
+    return geom.GetArea() * math.cos(lat) ** 2 / 1e4
+
+
 def test_fill_gaps_gives_small_holes_to_the_lower_priority_country():
     geoms = {"CH": [_to_mercator(west_country())], "IT": [_to_mercator(east_country())]}
     holes = fill_gaps(geoms, ["CH", "IT"])
-    # L'interstice de 60 ha va au pays le moins prioritaire ; l'enclave de 400 ha reste vide.
+    # L'interstice de 60 ha va au pays le moins prioritaire ; les enclaves de 400 et 9 ha restent vides.
     assert len(holes["IT"]) == 1 and holes["CH"] == []
-    x0, x1, y0, y1 = holes["IT"][0].GetEnvelope()
-    lat = 2 * math.atan(math.exp((y0 + y1) / 2 / 6378137.0)) - math.pi / 2
-    ground_ha = holes["IT"][0].GetArea() * math.cos(lat) ** 2 / 1e4
-    assert 55 < ground_ha < 65
-    # Avec un seuil plus bas, l'interstice n'est plus comblé ; avec un seuil très haut, l'enclave l'est aussi.
+    assert 55 < _ground_ha(holes["IT"][0]) < 65
+    # Avec un seuil plus bas, l'interstice n'est plus comblé. Avec un seuil très haut, les enclaves restent vides :
+    # une seule entité les borde.
     assert fill_gaps(geoms, ["CH", "IT"], max_ha=50)["IT"] == []
-    assert len(fill_gaps(geoms, ["CH", "IT"], max_ha=1000)["CH"]) == 1
+    high = fill_gaps(geoms, ["CH", "IT"], max_ha=1000)
+    assert high["CH"] == [] and len(high["IT"]) == 1
     # L'ordre de priorité décide du bénéficiaire.
     assert len(fill_gaps(geoms, ["IT", "CH"])["CH"]) == 1
+
+
+def test_fill_gaps_needs_two_mask_entities():
+    """Un trou bordé par une seule entité de contour reste vide, même petit (zone-03 : deux morceaux de Lombardie
+    enclavés dans le Piémont). Entre deux entités d'un même pays (deux régions, deux communautés), il est comblé."""
+    outer = [(_x(10), _y(110)), (_x(110), _y(110)), (_x(110), _y(10)), (_x(10), _y(10))]
+    # Une région percée d'un trou de 400 m de côté (16 ha) : l'enclave d'une région hors du périmètre.
+    region = _polygon(outer, [(_x(48), _y(52)), (_x(48), _y(48)), (_x(52), _y(48)), (_x(52), _y(52))])
+    assert fill_gaps({"IT": [_to_mercator(region)]}, ["IT"]) == {"IT": []}
+    # Deux régions voisines qui laissent entre elles le même trou, à cheval sur leur limite : c'est un interstice.
+    west = _polygon([(_x(10), _y(110)), (_x(50), _y(110)), (_x(50), _y(52)), (_x(48), _y(52)), (_x(48), _y(48)), (_x(50), _y(48)), (_x(50), _y(10)), (_x(10), _y(10))])
+    east = _polygon([(_x(50), _y(110)), (_x(110), _y(110)), (_x(110), _y(10)), (_x(50), _y(10)), (_x(50), _y(48)), (_x(52), _y(48)), (_x(52), _y(52)), (_x(50), _y(52))])
+    two = {"ES": [_to_mercator(west), _to_mercator(east)]}
+    holes = fill_gaps(two, ["ES"])
+    assert len(holes["ES"]) == 1 and 15 < _ground_ha(holes["ES"][0]) < 17
+    assert fill_gaps(two, ["ES"], max_ha=10) == {"ES": []}  # le seuil de taille vaut toujours
+    # Les deux mêmes régions en une seule entité (un multipolygone) : une seule entité borde le trou, il reste vide.
+    single = ogr.Geometry(ogr.wkbMultiPolygon)
+    single.AddGeometry(west)
+    single.AddGeometry(east)
+    assert fill_gaps({"ES": [_to_mercator(single)]}, ["ES"]) == {"ES": []}
+    # Un pays voisin qui touche le trou suffit : deux pays, deux entités.
+    holes = fill_gaps({"FR": [_to_mercator(region)], "ES": [_to_mercator(_polygon([(_x(50), _y(52)), (_x(50), _y(48)), (_x(52), _y(48)), (_x(52), _y(52))]))]}, ["FR", "ES"])
+    assert holes["FR"] == [] and len(holes["ES"]) == 1 and 7 < _ground_ha(holes["ES"][0]) < 9
 
 
 def test_mask_area_guard(border: dict, tmp_path: Path):
@@ -236,13 +267,64 @@ def test_mask_area_guard(border: dict, tmp_path: Path):
     cfg["scopes"]["ouest"] = {"countries": ["CH"]}
     ctx = BuildContext(cfg=cfg, scope_name="ouest", services=["data"], workdir=tmp_path, outdir=tmp_path / "out", grid=grid_from_config(cfg))
     geoms = load_mask_geometries(ctx)
-    # Le pays de l'ouest : 10 km sur 10 km, moins une enclave de 2 km de côté.
-    assert abs(ground_area_km2(geoms["CH"]) - 96.0) < 0.5
+    # Le pays de l'ouest : 10 km sur 10 km, moins une enclave de 2 km de côté et une autre de 300 m.
+    assert abs(ground_area_km2(geoms["CH"]) - 95.91) < 0.5
     cfg["countries"]["CH"]["mask"]["expect_area_km2"] = [90, 100]
     assert len(load_mask_geometries(ctx)["CH"]) == 1
     cfg["countries"]["CH"]["mask"]["expect_area_km2"] = [150, 200]
     with pytest.raises(RuntimeError, match="hors de l'intervalle attendu"):
         load_mask_geometries(ctx)
+
+
+OSM_LAND_AREA = """<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="test">
+ <node id="1" lat="43.70" lon="7.40" version="1"/>
+ <node id="2" lat="43.70" lon="7.42" version="1"/>
+ <node id="3" lat="43.72" lon="7.42" version="1"/>
+ <node id="4" lat="43.72" lon="7.40" version="1"/>
+ <way id="10" version="1"><nd ref="1"/><nd ref="2"/><nd ref="3"/></way>
+ <way id="11" version="1"><nd ref="3"/><nd ref="4"/><nd ref="1"/></way>
+ <relation id="36990" version="1"><member type="way" ref="10" role="outer"/><member type="way" ref="11" role="outer"/><tag k="type" v="land_area"/></relation>
+</osm>
+"""
+
+
+def test_mask_files_are_deleted_once_read(built: dict, tmp_path: Path):
+    """Chaque fichier de contour téléchargé est supprimé dès que ses géométries sont lues, avec les trois chargeurs ;
+    une nouvelle lecture le télécharge de nouveau, et « delete_after: false » le garde."""
+    import gzip
+    import zipfile
+
+    from czb.masks import LOADERS
+
+    # La construction à deux pays ne laisse aucun contour dans son dossier de travail.
+    assert not (built["root"] / "work" / "ouest.gpkg").exists() and not (built["root"] / "work" / "est.gpkg").exists()
+
+    remote, work = tmp_path / "distant", tmp_path / "travail"
+    remote.mkdir()
+    _write_mask(remote / "ouest.gpkg", west_country())
+    _write_mask(remote / "est.gpkg", east_country())
+    with zipfile.ZipFile(remote / "est.zip", "w") as archive:
+        archive.write(remote / "est.gpkg", "dossier/est.gpkg")
+    vector = {"type": "vector_file", "expect": 2, "urls": [{"url": (remote / "ouest.gpkg").as_uri(), "filename": "ouest.gpkg"}, {"url": (remote / "est.zip").as_uri(), "filename": "est.zip", "member": "dossier/est.gpkg"}]}
+    for _ in range(2):  # la seconde lecture retélécharge les fichiers supprimés
+        assert len(LOADERS["vector_file"](vector, {}, work)) == 2
+        assert list(work.iterdir()) == []
+
+    departements = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"code": code}, "geometry": {"type": "Polygon", "coordinates": [[[lon, 45.0], [lon + 0.1, 45.0], [lon + 0.1, 45.1], [lon, 45.1], [lon, 45.0]]]}} for code, lon in (("05", 6.0), ("38", 5.9), ("971", -61.5))]}
+    (remote / "departements.geojson.gz").write_bytes(gzip.compress(json.dumps(departements).encode("utf-8")))
+    etalab = {"type": "etalab_departements", "url": (remote / "departements.geojson.gz").as_uri(), "metropole_only": True}
+    assert len(LOADERS["etalab_departements"](etalab, {}, work)) == 2
+    assert list(work.iterdir()) == []
+
+    (remote / "terre.osm").write_text(OSM_LAND_AREA, encoding="utf-8")
+    land = {"type": "osm_land_area", "url": (remote / "terre.osm").as_uri(), "relation": 36990}
+    assert len(LOADERS["osm_land_area"](land, {}, work)) == 1
+    assert list(work.iterdir()) == []
+
+    kept = {"type": "vector_file", "url": (remote / "ouest.gpkg").as_uri(), "filename": "ouest.gpkg", "delete_after": False}
+    assert len(LOADERS["vector_file"](kept, {}, work)) == 1
+    assert [p.name for p in work.iterdir()] == ["ouest.gpkg"]
 
 
 def test_extrapolate_marked_takes_the_lowest_known_neighbour(tmp_path: Path):
@@ -297,6 +379,29 @@ def test_border_build_skips_the_unavailable_country(built: dict):
     assert set(state["sources"]) == {"ouest", "est", "sans_cle"}
 
 
+def test_undeclared_slots_are_always_zero(built: dict):
+    """Les deux pays ne déclarent que 2 emplacements : le manifest dit que les emplacements 2 et 3 valent 0, et c'est vrai dans chaque pixel."""
+    manifest = json.loads((built["out"] / "manifest.json").read_text(encoding="utf-8"))
+    assert [len(c["slots"]) for c in manifest["countries"]] == [2, 2]
+    assert "au-delà de cette liste, l'emplacement est inutilisé et vaut toujours 0" in manifest["encoding"]["slots"]
+    report = json.loads((built["out"] / "rapport-construction.json").read_text(encoding="utf-8"))
+    g = report["grid"]
+    reader = TileReader(built["out"], manifest)
+    try:
+        covered = 0
+        for ty in range(g["ty0"], g["ty1"] + 1):
+            for tx in range(g["tx0"], g["tx1"] + 1):
+                tile = reader.tile(12, tx, ty)
+                if tile is None:
+                    continue
+                covered += int((tile[..., 0] != 0).sum())
+                # Bits 4 à 7 des canaux R et G : emplacements 2 et 3, jamais déclarés.
+                assert not (tile[..., 0] >> 4).any() and not (tile[..., 1] >> 4).any(), f"tuile 12/{tx}/{ty}"
+        assert covered > 10_000  # les emplacements déclarés, eux, portent des niveaux
+    finally:
+        reader.close()
+
+
 def test_border_gap_is_filled_and_extrapolated(built: dict):
     manifest = json.loads((built["out"] / "manifest.json").read_text(encoding="utf-8"))
     report = json.loads((built["out"] / "rapport-construction.json").read_text(encoding="utf-8"))
@@ -330,6 +435,9 @@ def test_border_gap_is_filled_and_extrapolated(built: dict):
         # L'enclave du pays prioritaire reste hors zone, la zone sans couverture reste sans couverture.
         assert pixel(_x(50), _y(60))[3] == 0
         assert pixel(_x(30), _y(25)) == (0, 0, (1 << 4) | 2, 255)
+        # La petite enclave (9 ha) n'est pas un interstice : une seule entité la borde, elle reste hors zone.
+        assert pixel(_x(76.5), _y(89.5))[3] == 0
+        assert pixel(_x(73), _y(89.5)) == covered_ch and pixel(_x(80), _y(89.5)) == covered_ch
     finally:
         reader.close()
     assert verify(built["out"]) == 0

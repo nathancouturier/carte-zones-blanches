@@ -82,8 +82,11 @@ def _config(root: Path, remote: Path, cells_url: str) -> Path:
                 "country": "AD",
                 "type": 2,
                 "name": "Estimation : antennes OpenCellID et relief Copernicus",
-                "attribution": "OpenCellID, Copernicus",
+                # Les traductions et la mention de config.yaml (réglages communs des estimations).
+                "name_i18n": base["estimation"]["name_i18n"],
+                "attribution": base["estimation"]["attribution"],
                 "licence": "CC BY-SA 4.0",
+                "licence_i18n": base["estimation"]["licence_i18n"],
                 "cells_url": cells_url,
                 "dem_url": (remote / "mnt").as_uri() + "/dem_{ns}{lat:02d}_{ew}{lon:03d}.tif",
                 "mcc": [213],
@@ -153,6 +156,11 @@ def test_estimated_levels_follow_the_terrain(andorra: dict):
     assert country["iso"] == "AD" and country["euRoaming"] is False
     source = country["sources"][0]
     assert source["type"] == 2 and source["levels"] == "three" and source["id"] == "ad_estimation"
+    base = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.yaml").read_text(encoding="utf-8"))["estimation"]
+    assert source["nameI18n"] == base["name_i18n"] and source["licenceI18n"] == base["licence_i18n"]
+    assert source["attribution"] == "OpenCellID (CC BY-SA 4.0), Copernicus DEM"
+    # Sur combien de sites et de cellules repose l'estimation (sources-19) : le site peut l'afficher.
+    assert source["estimation"] == {"sites": 1, "cells": 4}
     stats = report["stats"]
     assert stats["estimation_cellules"]["ad_estimation"] == {"lues": 7, "retenues": 4, "par_code_reseau": {"3": 4}}
     sites = stats["estimation_sites"]["ad_estimation"]["reseaux"]
@@ -171,6 +179,7 @@ def test_estimated_levels_follow_the_terrain(andorra: dict):
 
 def test_working_copy_avoids_a_second_download(andorra: dict):
     root = andorra["root"]
+    month = json.loads((andorra["out"] / "manifest.json").read_text(encoding="utf-8"))["countries"][0]["sources"][0]["date"]
     work = root / "work2"
     (work / "cache").mkdir(parents=True)
     shutil.copy(andorra["out"] / "cache-ad_estimation.tif", work / "cache")
@@ -184,11 +193,29 @@ def test_working_copy_avoids_a_second_download(andorra: dict):
         report = json.loads((out2 / "rapport-construction.json").read_text(encoding="utf-8"))
         assert report["stats"]["copie_de_travail"]["ad_estimation"] == "reprise"
         assert verify(out2) == 0
+        # Rien n'est recalculé, mais les nombres de sites et de cellules suivent, gardés dans la copie de travail.
+        assert "estimation_sites" not in report["stats"]
+        source = json.loads((out2 / "manifest.json").read_text(encoding="utf-8"))["countries"][0]["sources"][0]
+        assert source["estimation"] == {"sites": 1, "cells": 4} and source["date"] == month
         reader, pixel, _, _ = _pixel_reader(out2)
         try:
             assert pixel(SITE[0] + 0.02, SITE[1]) == (2, 0, (2 << 4) | 5, 255)
         finally:
             reader.close()
+
+        # Copie de travail d'un mois précédent et cellules injoignables : elle est reprise, avec ses nombres.
+        work4 = root / "work4"
+        (work4 / "cache").mkdir(parents=True)
+        shutil.copy(out2 / "cache-ad_estimation.tif", work4 / "cache")
+        ds = gdal.Open(str(work4 / "cache" / "cache-ad_estimation.tif"), gdal.GA_Update)
+        ds.SetMetadataItem("CZB_MOIS", "2000-01")
+        ds = None
+        out4 = root / "out4"
+        assert cli.main(["--config", str(andorra["config"]), "build", "--scope", "andorre", "--services", "data", "--work", str(work4), "--out", str(out4), "--date", "2026-11-15"]) == 0
+        report = json.loads((out4 / "rapport-construction.json").read_text(encoding="utf-8"))
+        assert report["stats"]["copie_de_travail"]["ad_estimation"] == "reprise, ancienne"
+        source = json.loads((out4 / "manifest.json").read_text(encoding="utf-8"))["countries"][0]["sources"][0]
+        assert source["estimation"] == {"sites": 1, "cells": 4} and source["date"] == "2000-01"
 
         # Sans copie de travail ni cellules : le pays est laissé de côté, la construction échoue faute de pays.
         code = cli.main(["--config", str(andorra["config"]), "build", "--scope", "andorre", "--services", "data", "--work", str(root / "work3"), "--out", str(root / "out3"), "--date", "2026-11-15"])

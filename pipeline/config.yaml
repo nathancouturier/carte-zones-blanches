@@ -47,7 +47,15 @@ countries:
       # Mention du contour, reprise dans le manifest et affichée dans le panneau Sources.
       # Le jeu « Contours administratifs » de data.gouv.fr est déclaré sous licence ODbL (identifiant odc-odbl) ;
       # ses départements sont calculés à partir d'ADMIN EXPRESS de l'IGN (lisez-moi du projet).
-      credit: {text: "Contours administratifs, data.gouv.fr (licence ODbL), d'après ADMIN EXPRESS de l'IGN", url: "https://www.data.gouv.fr/datasets/contours-administratifs"}
+      # « text_i18n » : traduction de la mention pour le site (es, ca, it, de), recopiée dans le manifest (textI18n).
+      credit:
+        text: "Contours administratifs, data.gouv.fr (licence ODbL), d'après ADMIN EXPRESS de l'IGN"
+        url: "https://www.data.gouv.fr/datasets/contours-administratifs"
+        text_i18n:
+          es: "Contours administratifs, data.gouv.fr (licencia ODbL), a partir de ADMIN EXPRESS del IGN"
+          ca: "Contours administratifs, data.gouv.fr (llicència ODbL), a partir d'ADMIN EXPRESS de l'IGN"
+          it: "Contours administratifs, data.gouv.fr (licenza ODbL), a partire da ADMIN EXPRESS dell'IGN"
+          de: "Contours administratifs, data.gouv.fr (Lizenz ODbL), auf Grundlage von ADMIN EXPRESS des IGN"
     slots:
       - {id: orange, name: Orange, arcep: OF}
       - {id: sfr, name: SFR, arcep: SFR0}
@@ -66,7 +74,6 @@ countries:
       layer: tlm_landesgebiet
       where: "icc = 'CH'"
       expect: 1
-      delete_after: true
       # « ©swisstopo », sans espace : forme courte exacte de la liste des mentions admises par les conditions.
       credit: {text: "©swisstopo, swissBOUNDARIES3D", url: "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices"}
     # La source suisse ne dit pas quel opérateur couvre, seulement combien : les emplacements portent des seuils.
@@ -87,8 +94,14 @@ countries:
       member: Reg01012026/Reg01012026_WGS84.shp
       where: "COD_REG IN (1, 2, 7)"
       expect: 3
-      delete_after: true
-      credit: {text: "Istat, Confini delle unità amministrative a fini statistici al 1° gennaio 2026, CC BY 4.0, données modifiées", url: "https://creativecommons.org/licenses/by/4.0/deed.it"}
+      credit:
+        text: "Istat, Confini delle unità amministrative a fini statistici al 1° gennaio 2026, CC BY 4.0, données modifiées"
+        url: "https://creativecommons.org/licenses/by/4.0/deed.it"
+        text_i18n:
+          es: "Istat, Confini delle unità amministrative a fini statistici al 1° gennaio 2026, CC BY 4.0, datos modificados"
+          ca: "Istat, Confini delle unità amministrative a fini statistici al 1° gennaio 2026, CC BY 4.0, dades modificades"
+          it: "Istat, Confini delle unità amministrative a fini statistici al 1° gennaio 2026, CC BY 4.0, dati modificati"
+          de: "Istat, Confini delle unità amministrative a fini statistici al 1° gennaio 2026, CC BY 4.0, Daten verändert"
     # La source italienne donne un nombre de réseaux 4G par carré (1 à 4), sans les nommer.
     slots:
       - {id: it_1, min_operators: 1}
@@ -163,16 +176,27 @@ estimation: &estimation
   module: estimation_opencellid
   type: 2
   name: "Estimation : antennes OpenCellID et relief Copernicus DEM"
-  attribution: "Estimation : OpenCellID (CC BY-SA 4.0), Copernicus DEM"
+  name_i18n:
+    es: "Estimación: antenas de OpenCellID y relieve de Copernicus DEM"
+    ca: "Estimació: antenes d'OpenCellID i relleu de Copernicus DEM"
+    it: "Stima: antenne di OpenCellID e rilievo di Copernicus DEM"
+    de: "Schätzung: Antennen aus OpenCellID und Gelände aus Copernicus DEM"
+  # Mention sans mot français : le site dit lui-même, dans sa langue, que la zone est estimée.
+  attribution: "OpenCellID (CC BY-SA 4.0), Copernicus DEM"
   url: https://opencellid.org
   licence: CC BY-SA 4.0 (zones estimées, dérivées d'OpenCellID)
+  licence_i18n:
+    es: "CC BY-SA 4.0 (zonas estimadas, derivadas de OpenCellID)"
+    ca: "CC BY-SA 4.0 (zones estimades, derivades d'OpenCellID)"
+    it: "CC BY-SA 4.0 (zone stimate, derivate da OpenCellID)"
+    de: "CC BY-SA 4.0 (geschätzte Zonen, aus OpenCellID abgeleitet)"
   licence_url: https://creativecommons.org/licenses/by-sa/4.0/
   licence_notice: "Cell tower data from OpenCellID, licensed under CC BY-SA 4.0. Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30."
   # Page qui donne les liens de téléchargement une fois la clé envoyée.
   downloads_page: https://opencellid.org/downloads.php
   dem_url: "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM.tif"
   services:
-    data: {techno: 4G et 5G, radios: [LTE, NR]}
+    data: {techno: "4G, 5G", radios: [LTE, NR]}
   levels_kind: three          # pas de couverture, limitée, bonne : jamais « très bonne »
   antenna_height_m: 30
   mobile_height_m: 1.5
@@ -189,12 +213,21 @@ estimation: &estimation
 # ---------------------------------------------------------------------------
 # Sources de données. Un module Python par type de source dans czb/sources/.
 # Une source désigne son module par « module », ou à défaut par son propre nom.
+# Textes affichés par le site : « name » et « licence » sont en français ; « name_i18n » et « licence_i18n »
+# (es, ca, it, de) en donnent la traduction quand ils contiennent du français, recopiée dans le manifest
+# (nameI18n, licenceI18n). Les noms propres et les formules imposées par les licences ne se traduisent pas.
+# Le fichier SOURCES.md de la release reste en français.
 # ---------------------------------------------------------------------------
 sources:
   fr_arcep:
     country: FR
     type: 0             # 0 officielle par opérateur, 1 officielle agrégée, 2 estimée
     name: "Arcep, Mon réseau mobile : couvertures théoriques"
+    name_i18n:
+      es: "Arcep, Mon réseau mobile: coberturas teóricas"
+      ca: "Arcep, Mon réseau mobile: cobertures teòriques"
+      it: "Arcep, Mon réseau mobile: coperture teoriche"
+      de: "Arcep, Mon réseau mobile: theoretische Abdeckung"
     attribution: Arcep
     url: https://www.data.gouv.fr/datasets/mon-reseau-mobile
     # data.gouv.fr déclare ce jeu sous « Licence Ouverte / Open Licence » (identifiant fr-lo). L'adresse de cette
@@ -210,15 +243,25 @@ sources:
     level_field: niveau
     levels: {CL: 1, BC: 2, TBC: 3}
     levels_kind: four
-    resolution_m: 50
+    # Pas de « resolution_m » : les fichiers sont des polygones, et aucune source ne donne la résolution de ces cartes.
 
   ch_bakom:
     country: CH
     type: 1
     name: "OFCOM, atlas de la large bande : disponibilité des réseaux mobiles 4G"
+    name_i18n:
+      es: "OFCOM, atlas de la banda ancha: disponibilidad de las redes móviles 4G"
+      ca: "OFCOM, atles de la banda ampla: disponibilitat de les xarxes mòbils 4G"
+      it: "UFCOM, atlante della banda larga: disponibilità delle reti mobili 4G"
+      de: "BAKOM, Breitbandatlas: Verfügbarkeit der 4G-Mobilfunknetze"
     attribution: OFCOM
     url: https://www.bakom.admin.ch/en/broadband-atlas
     licence: Utilisation libre, source à citer (géodonnées de la Confédération)
+    licence_i18n:
+      es: "Uso libre, citando la fuente (geodatos de la Confederación)"
+      ca: "Ús lliure, citant la font (geodades de la Confederació)"
+      it: "Uso libero, citando la fonte (geodati della Confederazione)"
+      de: "Freie Nutzung mit Quellenangabe (Geodaten des Bundes)"
     licence_url: https://www.geo.admin.ch/en/general-terms-of-use-fsdi
     stac_url: "https://data.geo.admin.ch/api/stac/v0.9/collections/{collection}/items"
     services:
@@ -235,6 +278,11 @@ sources:
     country: IT
     type: 1
     name: "AGCOM, Broadband Map : couverture mobile 4G (nombre de réseaux par carré de 100 m)"
+    name_i18n:
+      es: "AGCOM, Broadband Map: cobertura móvil 4G (número de redes por cuadrado de 100 m)"
+      ca: "AGCOM, Broadband Map: cobertura mòbil 4G (nombre de xarxes per quadrat de 100 m)"
+      it: "AGCOM, Broadband Map: copertura mobile 4G (numero di reti per quadrato di 100 m)"
+      de: "AGCOM, Broadband Map: 4G-Mobilfunkabdeckung (Anzahl der Netze pro 100-m-Quadrat)"
     attribution: BroadbandMap di Agcom (CC BY 4.0)
     url: https://www.agcom.it/broadband-map
     licence: Creative Commons Attribuzione 4.0 Internazionale (CC BY 4.0)
@@ -272,6 +320,12 @@ sources:
     # ministère. La réutilisation s'appuie sur les conditions générales de réutilisation du site du ministère
     # (citer la source et la date, ne pas dénaturer) et sur la loi 11/2022, article 48 : voir docs/sources.md.
     licence: "Condiciones generales de reutilización del ministerio : source et date à citer (pas de licence propre à cette couche)"
+    # Le titre des conditions reste en espagnol ; « name » est un nom propre (ministère et titre de la carte) : pas de traduction.
+    licence_i18n:
+      es: "Condiciones generales de reutilización del ministerio: citar la fuente y la fecha (sin licencia propia para esta capa)"
+      ca: "Condiciones generales de reutilización del ministerio: cal citar la font i la data (sense llicència pròpia per a aquesta capa)"
+      it: "Condiciones generales de reutilización del ministerio: citare la fonte e la data (nessuna licenza propria per questo livello)"
+      de: "Condiciones generales de reutilización del ministerio: Quelle und Datum angeben (keine eigene Lizenz für diese Kartenebene)"
     licence_url: https://digital.gob.es/nota-legal
     item_url: https://www.arcgis.com/sharing/rest/content/items/ef9f55c81f304e5185fcdd7cecf98e7f
     layer_url: https://services-eu1.arcgis.com/3LqdsBPalJaUFvo1/arcgis/rest/services/InfoCob4G_2024/FeatureServer/0

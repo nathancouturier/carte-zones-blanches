@@ -23,12 +23,18 @@ millier de requêtes. Pour ne pas les refaire à chaque construction, le résult
 est gardé sous la forme d'une image à la maille d'origine (« copie de travail »,
 un bit par opérateur), publiée avec les données : tant que l'édition en ligne ne
 change pas, la construction suivante repart de cette image.
+
+Une nouvelle édition de la carte est publiée dans de nouveaux éléments ArcGIS,
+sans toucher à la couche lue : la détection lit donc aussi la page du ministère
+(clé « url »), qui renvoie vers la carte en cours, et s'arrête si elle ne cite
+plus l'élément de « item_url ».
 """
 
 from __future__ import annotations
 
 import json
 import math
+import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -37,6 +43,7 @@ from .. import arcgis
 from ..cache import cache_geotransform, cache_name, read_cache, write_cache
 from ..context import BuildContext
 from ..grid import mercator_to_lonlat
+from ..net import fetch_text
 from ..witness import draw_country_pixels
 from .base import Source
 
@@ -56,6 +63,12 @@ ALIGNMENT_SAMPLE = 3000
 #: points tirés au hasard tombent dans un tel éclat. Une erreur de calage ou de rastérisation en donnerait bien plus.
 CHECK_POINTS = 1200
 CHECK_TOLERANCE = 0.03
+#: Identifiant d'un élément ArcGIS (expérience, carte, couche) : 32 caractères hexadécimaux.
+ITEM_ID = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{32}(?![0-9A-Fa-f])")
+#: Liens vers ArcGIS Online : c'est là que la page du ministère cite ses cartes. Sonde ap-zone03-es-1 du 14 novembre
+#: 2026, page lue sans JavaScript : deux liens « https://experience.arcgis.com/experience/<identifiant> » (carte mobile,
+#: celle de item_url, et carte fixe), aucun autre identifiant de 32 caractères hexadécimaux dans la page.
+ARCGIS_LINK = re.compile(r"https?://[^\s\"'<>]*arcgis\.com[^\s\"'<>]*", re.IGNORECASE)
 
 
 class EsMtd(Source):
@@ -96,7 +109,8 @@ class EsMtd(Source):
             self._layer_info = info
         return self._layer_info
 
-    def remote_state(self, services: list[str] | None = None) -> dict[str, Any]:
+    def layer_state(self) -> dict[str, Any]:
+        """État de la couche lue : nom, date de modification des données, nombre d'entités par région, date de l'élément."""
         info = self.layer_info()
         editing = info.get("editingInfo") or {}
         state: dict[str, Any] = {
@@ -107,6 +121,38 @@ class EsMtd(Source):
         if self.source_cfg.get("item_url"):
             state["modified"] = arcgis.get_json(self.source_cfg["item_url"]).get("modified")
         return state
+
+    def remote_state(self, services: list[str] | None = None) -> dict[str, Any]:
+        state = self.layer_state()
+        if self.source_cfg.get("url"):
+            state["elements_page"] = self.page_items()
+        return state
+
+    def page_items(self) -> list[str]:
+        """Identifiants des éléments ArcGIS que cite la page du ministère (clé « url »), lue sans JavaScript, triés.
+
+        Une nouvelle édition de la carte paraît dans de nouveaux éléments, vers lesquels la page renvoie alors : si
+        elle cite des éléments, mais plus celui de item_url, on lève une erreur, qui fait échouer la détection et
+        prévient le propriétaire. Page illisible, ou sans identifiant : un avertissement et une liste vide, toujours
+        la même, pour que l'état ne change pas d'une détection à l'autre.
+        """
+        url = self.source_cfg["url"]
+        try:
+            page = fetch_text(url, tries=3, timeout=60)
+        except RuntimeError as exc:
+            print(f"ATTENTION : {self.source_id} : page du ministère illisible, nouvelle édition non vérifiée ({str(exc)[:200]})", flush=True)
+            return []
+        found = sorted({ident.lower() for link in ARCGIS_LINK.findall(page) for ident in ITEM_ID.findall(link)})
+        if not found:
+            print(f"ATTENTION : {self.source_id} : la page du ministère ne cite aucun élément ArcGIS ({url}), nouvelle édition non vérifiée", flush=True)
+            return []
+        item = ITEM_ID.findall(self.source_cfg.get("item_url") or "")
+        if item and item[-1].lower() not in found:
+            raise RuntimeError(
+                f"nouvelle édition probable : mettre à jour layer_url, item_url, name et data_date de {self.source_id} dans config.yaml "
+                f"(la page {url} ne cite plus l'élément {item[-1].lower()} de item_url, mais {', '.join(found)})"
+            )
+        return found
 
     # -- grille d'origine ---------------------------------------------------
 
@@ -373,7 +419,8 @@ class EsMtd(Source):
         covered = int(cfg["covered_level"])
         slots: list[dict[str, Any]] = self.country_cfg["slots"]
 
-        state = self.remote_state()
+        # La copie de travail ne dépend que de la couche lue : pas de la page du ministère, qui peut être injoignable.
+        state = self.layer_state()
         window = self.native_window(ctx)
         key = self.cache_key(state, window)
         cached = ctx.workdir / "cache" / cache_name(self.source_id)

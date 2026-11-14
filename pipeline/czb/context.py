@@ -18,6 +18,20 @@ if TYPE_CHECKING:
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
+#: Langues du site autres que le français : celles des traductions de config.yaml (clés « *_i18n »).
+LANGUAGES = ("es", "ca", "it", "de")
+
+
+def check_translations(value: Any, where: str) -> dict[str, str]:
+    """Une traduction de config.yaml : un texte non vide pour chaque langue de LANGUAGES, et rien d'autre.
+
+    Toutes les langues ou aucune : une traduction incomplète afficherait le français dans une langue sans prévenir.
+    Renvoie la traduction dans l'ordre de LANGUAGES.
+    """
+    if not isinstance(value, dict) or set(value) != set(LANGUAGES) or not all(isinstance(v, str) and v.strip() for v in value.values()):
+        raise ValueError(f"config.yaml : {where} doit donner un texte non vide pour chacune de ces langues, et seulement elles : {', '.join(LANGUAGES)} (lu : {value!r})")
+    return {lang: value[lang] for lang in LANGUAGES}
+
 
 def load_config(path: Path | None = None) -> dict[str, Any]:
     with open(path or CONFIG_PATH, encoding="utf-8") as f:
@@ -34,6 +48,14 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
         for name in country.get("sources", []):
             if name not in cfg["sources"]:
                 raise ValueError(f"config.yaml : source inconnue « {name} » pour {iso}")
+        credit = (country.get("mask") or {}).get("credit") or {}
+        if "text_i18n" in credit:
+            check_translations(credit["text_i18n"], f"countries.{iso}.mask.credit.text_i18n")
+    # Traductions vérifiées dès la lecture : une faute ne doit pas attendre la fin d'une longue construction.
+    for source_id, source in cfg["sources"].items():
+        for key in ("name_i18n", "licence_i18n"):
+            if key in source:
+                check_translations(source[key], f"sources.{source_id}.{key}")
     return cfg
 
 
