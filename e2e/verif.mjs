@@ -117,6 +117,8 @@ try {
     controle('fr : langue de la page', (await page.evaluate(() => document.documentElement.lang)) === 'fr');
     controle('fr : titre', (await page.title()) === 'Carte des zones blanches', await page.title());
     if (!HORS_LIGNE) controle('fr : fond Plan IGN chargé', ok(suivi, 'data.geopf.fr') >= 4, `${ok(suivi, 'data.geopf.fr')} réponses de data.geopf.fr`);
+    // Juste après une mise en ligne, la première lecture d'une archive peut tarder : on l'attend, 30 s au plus.
+    for (let i = 0; i < 60 && suivi.archives < 1; i++) await page.waitForTimeout(500);
     controle('fr : manifest et tuiles de couverture lus', suivi.manifest >= 1 && suivi.archives >= 1, `manifest lu ${suivi.manifest} fois, ${suivi.archives} lectures dans les archives PMTiles`);
     // La mention du fond est un lien vers ses conditions, ouvert dans un nouvel onglet (carte-4).
     const lienFond = await page.evaluate(() => {
