@@ -12,6 +12,7 @@ import {
   sampleCoverage,
   sampleSpans,
   type RawCoverage,
+  type WhiteZone,
 } from '../src/gpx/analyze';
 import { enrichedFileName, enrichGpx, WAYPOINT_TYPE } from '../src/gpx/export';
 import { distance } from '../src/gpx/geodesy';
@@ -378,6 +379,27 @@ describe('rapport en texte', () => {
     } finally {
       setLanguage('fr');
     }
+  });
+
+  it('donne une longueur cohérente avec les bornes affichées', () => {
+    const zone = (start: number, end: number): WhiteZone => ({
+      index: 1,
+      first: 0,
+      last: 1,
+      start,
+      end,
+      length: end - start,
+      eleMin: null,
+      eleMax: null,
+      countries: [],
+      estimated: false,
+      startPoint: [6, 45],
+      endPoint: [6.1, 45],
+      bbox: [6, 45, 6.1, 45],
+    });
+    expect(describeZone(zone(12430, 14070), manifest)).toBe('km 12,4 à 14,1, soit 1,7 km');
+    expect(describeZone(zone(2030, 2170), manifest)).toBe('km 2,0 à 2,2, soit 0,2 km');
+    expect(describeZone(zone(190, 410), manifest)).toBe('km 0,2 à 0,4, soit 0,2 km');
   });
 });
 

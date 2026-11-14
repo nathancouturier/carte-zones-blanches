@@ -121,6 +121,11 @@ try {
     controle('fr : le rapport liste les zones blanches avec leurs km', /Zones? blanches? \(\d+\)/.test(texte) && /km \d+,\d à \d+,\d/.test(texte), (texte.match(/Zones? blanches? \(\d+\)/) ?? [''])[0]);
     controle('fr : le rapport rappelle la limite des données', texte.includes('Couverture théorique, des écarts locaux sont possibles.'));
     controle('fr : le rapport texte ne garde aucune variable entre accolades', texte !== '' && !/[{}]/.test(texte), (texte.match(/.*[{}].*/) ?? [''])[0]);
+    // « km 12,4 à 14,1, soit 1,7 km » : la longueur annoncée est la différence des bornes affichées.
+    const nombre = (s) => Number(s.replace(',', '.'));
+    const bornes = [...texte.matchAll(/km (\d+,\d) à (\d+,\d), soit (\d+,\d) km/g)];
+    const discordantes = bornes.filter(([, debut, fin, longueur]) => Math.abs(nombre(fin) - nombre(debut) - nombre(longueur)) > 0.05);
+    controle('fr : bornes et longueur des zones concordent', bornes.length > 0 && discordantes.length === 0, discordantes.map((m) => m[0]).join(' | ') || `${bornes.length} zone(s)`);
     console.log('--- rapport (début) ---\n' + texte.split('\n').slice(0, 22).join('\n') + '\n-----------------------');
     await capture(page, '4-ordinateur-fr-rapport');
     const zone = page.locator('.zone').first();

@@ -114,11 +114,15 @@ function plain(text: string): string {
 
 /** « km 12,4 à 14,1, soit 1,7 km, altitude 1 850 à 2 100 m, Italie, estimée ». */
 export function describeZone(zone: WhiteZone, manifest: Manifest): string {
+  // Bornes arrondies à 100 m (la décimale affichée), puis longueur tirée de ces bornes :
+  // arrondie à part, elle pourrait contredire la soustraction que fait le lecteur.
+  const start = Math.round(zone.start / 100) * 100;
+  const end = Math.round(zone.end / 100) * 100;
   const parts = [
     t('report.zoneRange', {
-      start: formatKm(zone.start),
-      end: formatKm(zone.end),
-      length: formatKm(zone.length),
+      start: formatKm(start),
+      end: formatKm(end),
+      length: formatKm(end - start),
     }),
   ];
   if (zone.eleMin !== null && zone.eleMax !== null) {
