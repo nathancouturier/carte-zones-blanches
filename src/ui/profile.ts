@@ -6,7 +6,7 @@
 
 import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD } from '../coverage/codec';
 import { LEVEL_SOLID } from '../coverage/render';
-import { CLASS_OUTSIDE, CLASS_UNKNOWN } from '../gpx/analyze';
+import { CLASS_OUTSIDE, CLASS_UNKNOWN, enoughElevation } from '../gpx/analyze';
 import { LEVEL_KEYS } from '../gpx/report';
 import type { Sample } from '../gpx/resample';
 import { formatKm, formatNumber, t } from '../i18n';
@@ -26,9 +26,9 @@ export interface ProfileColumn {
   /** Distances de début et de fin, en mètres. */
   start: number;
   end: number;
-  /** Altitudes au début et à la fin de la colonne. */
-  eleStart: number;
-  eleEnd: number;
+  /** Altitudes au début et à la fin de la colonne, null là où le GPX n'en donne pas. */
+  eleStart: number | null;
+  eleEnd: number | null;
   /** Classe de couverture retenue : la pire de la portion. */
   cls: number;
 }
@@ -54,11 +54,11 @@ function severity(cls: number): number {
 
 /**
  * Regroupe les points du tracé en colonnes de largeur égale en distance.
- * Renvoie un tableau vide si le tracé n'a pas d'altitude.
+ * Renvoie un tableau vide si trop peu de points ont une altitude.
  */
 export function profileColumns(samples: readonly Sample[], classes: Uint8Array | null, maxColumns: number = MAX_COLUMNS): ProfileColumn[] {
   const n = samples.length;
-  if (n < 2 || samples.some((s) => s.ele === null)) return [];
+  if (n < 2 || !enoughElevation(samples)) return [];
   const total = samples[n - 1].dist;
   if (!(total > 0)) return [];
   const count = Math.max(1, Math.min(maxColumns, n - 1));
@@ -84,8 +84,8 @@ export function profileColumns(samples: readonly Sample[], classes: Uint8Array |
       last: i,
       start: samples[first].dist,
       end: samples[i].dist,
-      eleStart: samples[first].ele as number,
-      eleEnd: samples[i].ele as number,
+      eleStart: samples[first].ele,
+      eleEnd: samples[i].ele,
       cls,
     });
     if (i >= n - 1) break;
@@ -110,7 +110,7 @@ export interface ProfileOptions {
   onHover: (index: number | null) => void;
 }
 
-/** Construit le profil. Renvoie null si le tracé n'a pas d'altitude. */
+/** Construit le profil. Renvoie null si trop peu de points ont une altitude. */
 export function elevationProfile(options: ProfileOptions): HTMLElement | null {
   const { samples, classes } = options;
   const columns = profileColumns(samples, classes);
@@ -118,9 +118,9 @@ export function elevationProfile(options: ProfileOptions): HTMLElement | null {
   let min = Infinity;
   let max = -Infinity;
   for (const s of samples) {
-    const ele = s.ele as number;
-    if (ele < min) min = ele;
-    if (ele > max) max = ele;
+    if (s.ele === null) continue;
+    if (s.ele < min) min = s.ele;
+    if (s.ele > max) max = s.ele;
   }
   // Une marge verticale évite un profil plat écrasé sur le bord, et un relief minuscule exagéré.
   const span = Math.max(max - min, 50);
@@ -140,21 +140,31 @@ export function elevationProfile(options: ProfileOptions): HTMLElement | null {
     role: 'img',
     'aria-label': t('profile.label', { min: formatNumber(Math.round(min)), max: formatNumber(Math.round(max)) }),
   });
+  // Ligne de crête, pour que le relief reste lisible quelle que soit la couleur.
+  // Là où l'altitude manque (début ou fin d'un segment du GPX), le profil laisse un vide.
+  let crest = '';
+  let drawing = false; // vrai tant que la ligne de crête continue sans vide
   for (const column of columns) {
+    if (column.eleStart === null || column.eleEnd === null) {
+      drawing = false;
+      continue;
+    }
     const x0 = x(column.start).toFixed(2);
     const x1 = x(column.end).toFixed(2);
+    const y0 = y(column.eleStart).toFixed(2);
+    const y1 = y(column.eleEnd).toFixed(2);
     root.appendChild(
       svg('polygon', {
-        points: `${x0},${base} ${x0},${y(column.eleStart).toFixed(2)} ${x1},${y(column.eleEnd).toFixed(2)} ${x1},${base}`,
+        points: `${x0},${base} ${x0},${y0} ${x1},${y1} ${x1},${base}`,
         fill: colorOf(column.cls),
         stroke: colorOf(column.cls),
         'stroke-width': 0.6,
       }),
     );
+    crest += `${drawing ? '' : `M${x0},${y0} `}L${x1},${y1} `;
+    drawing = true;
   }
-  // Ligne de crête, pour que le relief reste lisible quelle que soit la couleur.
-  const crest = columns.map((c, i) => `${i === 0 ? `M${x(c.start).toFixed(2)},${y(c.eleStart).toFixed(2)} ` : ''}L${x(c.end).toFixed(2)},${y(c.eleEnd).toFixed(2)}`).join(' ');
-  root.appendChild(svg('path', { d: crest, fill: 'none', stroke: '#1b2733', 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }));
+  root.appendChild(svg('path', { d: crest.trim(), fill: 'none', stroke: '#1b2733', 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }));
   const cursor = svg('line', { x1: 0, x2: 0, y1: PAD.top, y2: base, stroke: '#111827', 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke', visibility: 'hidden' });
   root.appendChild(cursor);
 
@@ -206,7 +216,8 @@ export function elevationProfile(options: ProfileOptions): HTMLElement | null {
     cursor.setAttribute('x1', String(px));
     cursor.setAttribute('x2', String(px));
     cursor.setAttribute('visibility', 'visible');
-    const parts = [t('profile.at', { km: formatKm(sample.dist), ele: formatNumber(Math.round(sample.ele as number)) })];
+    const km = formatKm(sample.dist);
+    const parts = [sample.ele === null ? t('profile.atNoElevation', { km }) : t('profile.at', { km, ele: formatNumber(Math.round(sample.ele)) })];
     const cls = classes ? classes[index] : -1;
     if (LEVEL_KEYS[cls]) parts.push(t(LEVEL_KEYS[cls]));
     else if (cls === CLASS_OUTSIDE) parts.push(t('profile.outside'));

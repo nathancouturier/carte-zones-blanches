@@ -45,8 +45,17 @@ describe('profil altimétrique', () => {
   it('fonctionne avant l\'analyse et refuse un tracé sans altitude', () => {
     expect(profileColumns(track(10), null)).toHaveLength(9);
     expect(profileColumns(track(10), null)[0].cls).toBe(-1);
-    expect(profileColumns(track(10, (i) => (i === 4 ? null : 1000)), null)).toEqual([]);
+    expect(profileColumns(track(10, () => null), null)).toEqual([]);
+    // Trop peu de points avec une altitude : pas de profil.
+    expect(profileColumns(track(10, (i) => (i < 4 ? 1000 : null)), null)).toEqual([]);
     expect(profileColumns(track(1), null)).toEqual([]);
     expect(profileColumns([], null)).toEqual([]);
+  });
+
+  it('garde le profil quand quelques altitudes manquent, sans les inventer', () => {
+    // Les deux premiers points n'ont pas d'altitude (avant le premier point connu du GPX).
+    const columns = profileColumns(track(10, (i) => (i < 2 ? null : 1000 + i)), null);
+    expect(columns).toHaveLength(9);
+    expect(columns.map((c) => [c.eleStart, c.eleEnd]).slice(0, 3)).toEqual([[null, null], [null, 1002], [1002, 1003]]);
   });
 });

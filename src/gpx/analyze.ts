@@ -9,6 +9,7 @@
 // service refait le classement sans rien relire.
 
 import {
+  ELEVATION_MIN_SHARE,
   ELEVATION_THRESHOLD_M,
   SAMPLING_CONCURRENCY,
   SEGMENT_JOIN_MAX_M,
@@ -266,6 +267,8 @@ export function findWhiteZones(
         if (classes[i] === LEVEL_NONE && unpackSourceType(raw.meta[i]) === SOURCE_ESTIMATED) estimated = true;
       }
     }
+    // L'altitude de la zone n'est annoncée que si la plupart de ses points en ont une.
+    const withElevation = enoughElevation(samples, run.first, run.last);
     zones.push({
       index: zones.length + 1,
       first: run.first,
@@ -273,8 +276,8 @@ export function findWhiteZones(
       start: startDist,
       end: endDist,
       length,
-      eleMin,
-      eleMax,
+      eleMin: withElevation ? eleMin : null,
+      eleMax: withElevation ? eleMax : null,
       countries,
       estimated,
       startPoint: [samples[run.first].lon, samples[run.first].lat],
@@ -315,10 +318,22 @@ export interface ElevationGain {
 }
 
 /**
+ * Vrai si assez de points, du premier au dernier indiqués, ont une altitude pour
+ * l'annoncer : au moins deux, et plus que la part ELEVATION_MIN_SHARE.
+ */
+export function enoughElevation(samples: readonly Sample[], first = 0, last = samples.length - 1): boolean {
+  let known = 0;
+  for (let i = first; i <= last; i++) if (samples[i].ele !== null) known++;
+  return known >= 2 && known > (last - first + 1) * ELEVATION_MIN_SHARE;
+}
+
+/**
  * Dénivelé positif et négatif cumulés. Les variations inférieures au seuil
- * sont ignorées, sinon le bruit du GPS gonfle le total.
+ * sont ignorées, sinon le bruit du GPS gonfle le total. Les points sans
+ * altitude sont sautés ; s'il y en a trop, rien n'est annoncé.
  */
 export function elevationGain(samples: readonly Sample[], threshold: number = ELEVATION_THRESHOLD_M): ElevationGain | null {
+  if (!enoughElevation(samples)) return null;
   let reference: number | null = null;
   let ascent = 0;
   let descent = 0;
@@ -326,7 +341,7 @@ export function elevationGain(samples: readonly Sample[], threshold: number = EL
   let max = -Infinity;
   let seg = -1;
   for (const s of samples) {
-    if (s.ele === null) return null;
+    if (s.ele === null) continue;
     min = Math.min(min, s.ele);
     max = Math.max(max, s.ele);
     if (reference === null || s.seg !== seg) {

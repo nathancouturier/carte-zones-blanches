@@ -178,6 +178,7 @@
   "profile.label": "Höhenprofil der Route, {min} bis {max} m",
   "profile.hint": "Fahre mit der Maus über das Profil oder tippe darauf, um einen Punkt auf der Karte zu sehen.",
   "profile.at": "km {km}, {ele} m",
+  "profile.atNoElevation": "km {km}, Höhe unbekannt",
   "profile.outside": "außerhalb des Datengebiets",
   "profile.unknown": "keine Daten für diesen Dienst",
   "network.allNOperators": "Alle {count} Netze zugleich",

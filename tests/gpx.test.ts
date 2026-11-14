@@ -20,6 +20,7 @@ import { decodeGpx, GpxError, parseGpx } from '../src/gpx/parse';
 import { analyzeTrack, buildReport, describeZone, reportText, zoneWaypoints } from '../src/gpx/report';
 import { resample, trackLength, type Sample } from '../src/gpx/resample';
 import { availableLanguages, setLanguage } from '../src/i18n';
+import { profileColumns } from '../src/ui/profile';
 import { fixtureStore, sampleManifest, xmlParser, xmlTools } from './helpers';
 
 const GPX_HEAD = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">';
@@ -201,10 +202,52 @@ describe('rééchantillonnage', () => {
   it('refuse un pas nul', () => {
     expect(() => resample(north, 0)).toThrow(RangeError);
   });
+
+  it('interpole les altitudes manquantes entre les points connus', () => {
+    const gaps = [[
+      { lon: 6, lat: 45, ele: 1000 },
+      { lon: 6, lat: 45.0045, ele: null }, // à mi-chemin
+      { lon: 6, lat: 45.009, ele: 1100 },
+    ]];
+    const samples = resample(gaps, 20);
+    expect(samples.every((s) => s.ele !== null)).toBe(true);
+    const total = samples[samples.length - 1].dist;
+    for (const s of samples) expect(s.ele).toBeCloseTo(1000 + (100 * s.dist) / total, 6);
+  });
+
+  it('n\'invente pas d\'altitude avant le premier point connu ni après le dernier', () => {
+    const ends = [[
+      { lon: 6, lat: 45, ele: null },
+      { lon: 6, lat: 45.0045, ele: 1000 },
+      { lon: 6, lat: 45.009, ele: 1100 },
+      { lon: 6, lat: 45.0135, ele: null },
+    ]];
+    const firstKnown = trackLength([ends[0].slice(0, 2)]);
+    const lastKnown = trackLength([ends[0].slice(0, 3)]);
+    for (const s of resample(ends, 20)) {
+      expect(s.ele === null, `${s.dist} m`).toBe(s.dist < firstKnown || s.dist > lastKnown);
+    }
+  });
+
+  it('garde le dénivelé et le profil quand une seule altitude manque', () => {
+    // Trace de 40 points, dont un seul sans <ele>.
+    const trkpts = Array.from({ length: 40 }, (_, i) => {
+      const ele = i === 17 ? '' : `<ele>${1000 + i * 10}</ele>`;
+      return `<trkpt lat="${(44.6 + i * 0.001).toFixed(4)}" lon="6.1000">${ele}</trkpt>`;
+    }).join('');
+    const parsed = parseGpx(`${GPX_HEAD}<trk><trkseg>${trkpts}</trkseg></trk></gpx>`, xmlParser);
+    expect(parsed.hasElevation).toBe(false);
+    const samples = resample(parsed.segments);
+    expect(samples.every((s) => s.ele !== null)).toBe(true);
+    const gain = elevationGain(samples);
+    expect(gain).toMatchObject({ descent: 0, min: 1000, max: 1390 });
+    expect(gain?.ascent).toBeGreaterThan(385); // le seuil de 5 m peut laisser les derniers mètres de côté
+    expect(profileColumns(samples, null).length).toBeGreaterThan(0);
+  });
 });
 
 /** Fabrique un tracé rectiligne et sa couverture à partir d'une liste de classes par point (pas de 20 m). */
-function synthetic(levels: (number | 'out')[], options: { country?: number; sourceType?: number; ele?: (i: number) => number } = {}): { samples: Sample[]; raw: RawCoverage } {
+function synthetic(levels: (number | 'out')[], options: { country?: number; sourceType?: number; ele?: (i: number) => number | null } = {}): { samples: Sample[]; raw: RawCoverage } {
   const n = levels.length;
   const samples: Sample[] = levels.map((_, i) => ({ lon: 6 + i * 0.00025, lat: 45, ele: options.ele ? options.ele(i) : null, dist: i * 20, seg: 0 }));
   const raw: RawCoverage = { data: new Uint8Array(n), voice: new Uint8Array(n), meta: new Uint8Array(n), inside: new Uint8Array(n) };
@@ -319,6 +362,17 @@ describe('regroupement en zones blanches', () => {
     }
   });
 
+  it('n\'annonce l\'altitude d\'une zone que si la plupart de ses points en ont une', () => {
+    // Seul le départ a une altitude : la zone n'a pas d'altitude.
+    const lone = synthetic([...repeat(0, 11), ...repeat(3, 5)], { ele: (i) => (i === 0 ? 1000 : null) });
+    const zone = findWhiteZones(lone.samples, classify(lone.raw, tables, 'data'), lone.raw)[0];
+    expect([zone.eleMin, zone.eleMax]).toEqual([null, null]);
+    // 8 points sur 11 ont une altitude : elle est annoncée, calculée sur ces points.
+    const most = synthetic([...repeat(0, 11), ...repeat(3, 5)], { ele: (i) => (i < 8 ? 1000 + i : null) });
+    const known = findWhiteZones(most.samples, classify(most.raw, tables, 'data'), most.raw)[0];
+    expect([known.eleMin, known.eleMax]).toEqual([1000, 1007]);
+  });
+
   it('marque les zones estimées et liste les pays', () => {
     const { samples, raw } = synthetic(repeat(0, 10), { country: 5, sourceType: 2 });
     const zones = findWhiteZones(samples, classify(raw, tables, 'data'), raw);
@@ -368,6 +422,14 @@ describe('statistiques du parcours', () => {
     const gain = elevationGain(samples, 5);
     expect(gain).toEqual({ ascent: 100, descent: 60, min: 1000, max: 1100 });
     expect(elevationGain(synthetic(repeat(3, 4)).samples)).toBeNull();
+  });
+
+  it('calcule le dénivelé sur les points qui ont une altitude, jamais sur trop peu', () => {
+    const start = [null, null, 1000, 1010, 1020, 1030, 1040, 1050, 1060, 1070];
+    expect(elevationGain(synthetic(repeat(3, 10), { ele: (i) => start[i] }).samples)).toEqual({ ascent: 70, descent: 0, min: 1000, max: 1070 });
+    // Seul le départ a une altitude, ou le tracé se réduit à un point : rien n'est annoncé.
+    expect(elevationGain(synthetic(repeat(3, 10), { ele: (i) => (i === 0 ? 1000 : null) }).samples)).toBeNull();
+    expect(elevationGain(synthetic([3], { ele: () => 1000 }).samples)).toBeNull();
   });
 
   it('liste les pays dans l\'ordre du parcours', () => {

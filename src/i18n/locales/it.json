@@ -178,6 +178,7 @@
   "profile.label": "Profilo altimetrico del percorso, da {min} a {max} m",
   "profile.hint": "Passa il cursore o tocca il profilo per individuare un punto sulla mappa.",
   "profile.at": "km {km}, {ele} m",
+  "profile.atNoElevation": "km {km}, quota sconosciuta",
   "profile.outside": "fuori dalla zona dei dati",
   "profile.unknown": "nessun dato per questo servizio",
   "network.allNOperators": "Tutte e {count} le reti",

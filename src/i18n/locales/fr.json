@@ -178,6 +178,7 @@
   "profile.label": "Profil altimétrique du tracé, de {min} à {max} m d'altitude",
   "profile.hint": "Survolez ou touchez le profil pour situer un point sur la carte.",
   "profile.at": "km {km}, {ele} m",
+  "profile.atNoElevation": "km {km}, altitude inconnue",
   "profile.outside": "hors de la zone de données",
   "profile.unknown": "pas de donnée pour ce service",
   "network.allNOperators": "Les {count} réseaux à la fois",

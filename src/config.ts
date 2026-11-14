@@ -26,6 +26,12 @@ export const WHITE_ZONE_MERGE_GAP_M = 50;
 export const SEGMENT_JOIN_MAX_M = 50;
 /** Seuil du calcul du dénivelé : les variations plus petites sont ignorées (bruit du GPS), en mètres. */
 export const ELEVATION_THRESHOLD_M = 5;
+/**
+ * Part des points qui doivent avoir une altitude (lue dans le GPX ou interpolée
+ * entre deux points connus) pour annoncer un dénivelé, un profil ou l'altitude
+ * d'une zone blanche. Au-dessous, le chiffre reposerait sur trop peu de points.
+ */
+export const ELEVATION_MIN_SHARE = 0.5;
 /** Taille maximale d'un fichier GPX accepté, en octets. */
 export const MAX_GPX_BYTES = 40 * 1024 * 1024;
 /** Nombre de tuiles lues en parallèle pendant l'analyse. */
