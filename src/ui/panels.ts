@@ -52,6 +52,22 @@ function section(title: string | null, ...children: Node_[]): HTMLElement {
   return h('section', { class: 'block' }, title ? h('h3', { class: 'block__title' }, title) : null, children as never);
 }
 
+/** Sections repliables ouvertes ou fermées par l'utilisateur : son choix survit aux rendus du panneau. */
+const openDetails = new Map<string, boolean>();
+
+/** Section repliable « key », ouverte par défaut si « defaultOpen », puis comme l'utilisateur l'a laissée. */
+function details(key: string, className: string, defaultOpen: boolean, ...children: Node_[]): HTMLElement {
+  return h(
+    'details',
+    {
+      class: className,
+      open: openDetails.get(key) ?? defaultOpen,
+      ontoggle: (event: Event) => openDetails.set(key, (event.currentTarget as HTMLDetailsElement).open),
+    },
+    children as never,
+  );
+}
+
 function note(text: string, kind: 'info' | 'warning' = 'info'): HTMLElement {
   return h('p', { class: `note note--${kind}` }, icon(kind === 'warning' ? ICONS.warning : ICONS.info, 18), h('span', null, text));
 }
@@ -178,9 +194,10 @@ export function networkPanel(app: App): Node_[] {
   );
   if (multiCountry) {
     parts.push(
-      h(
-        'details',
-        { class: 'block details', open: abroad.some((c) => network.operators[c.iso]) },
+      details(
+        'abroad',
+        'block details',
+        abroad.some((c) => network.operators[c.iso]),
         h('summary', { dataset: { focus: 'abroad' } }, t('network.abroad')),
         h('p', { class: 'hint' }, t('network.abroadHint')),
         abroad.map((country) => operatorSelect(app, country)),
@@ -546,9 +563,10 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
         h('button', { type: 'button', class: 'btn', dataset: { focus: 'copier' }, onclick: () => void app.copyReport() }, icon(ICONS.copy, 20), t('report.copy')),
       ),
       h('p', { class: 'hint' }, t('report.downloadHint')),
-      h(
+      details(
+        'texte',
         'details',
-        { class: 'details' },
+        false,
         h('summary', { dataset: { focus: 'texte' } }, t('report.textTitle')),
         h('textarea', { class: 'report-text', readonly: true, rows: '12', 'aria-label': t('report.textTitle'), onfocus: (event: Event) => (event.target as HTMLTextAreaElement).select() }, text),
       ),
