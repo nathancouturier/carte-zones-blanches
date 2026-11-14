@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { packMeta, SOURCE_ESTIMATED, SOURCE_OFFICIAL_OPERATOR } from '../src/coverage/codec';
-import { CLASS_OUTSIDE } from '../src/gpx/analyze';
+import { CLASS_OUTSIDE, estimatedFlags } from '../src/gpx/analyze';
 import type { Sample } from '../src/gpx/resample';
 import { DEFAULT_LANG, setLanguage } from '../src/i18n';
-import { estimatedFlags, profileColumns, profileKeyIndex, profilePointText, profileSummary } from '../src/ui/profile';
+import { profileColumns, profileKeyIndex, profilePointText, profileSummary } from '../src/ui/profile';
 
 function track(n: number, ele: (i: number) => number | null = (i) => 1000 + i): Sample[] {
   return Array.from({ length: n }, (_, i) => ({ lon: 6 + i * 0.00025, lat: 45, ele: ele(i), dist: i * 20, seg: 0 }));

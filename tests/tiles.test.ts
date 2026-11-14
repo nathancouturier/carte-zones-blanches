@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LEVEL_GOOD, LEVEL_LIMITED, LEVEL_NONE, LEVEL_VERY_GOOD, packMeta, packSlots, TILE_SIZE, unpackSlot, writePixel } from '../src/coverage/codec';
 import { LruCache } from '../src/coverage/lru';
 import { buildLevelTables } from '../src/coverage/manifest';
-import { childTile, LEVEL_COLORS, renderTile, renderUnavailable } from '../src/coverage/render';
+import { childTile, ESTIMATED_MASKED_STRIPE, LEVEL_COLORS, renderTile, renderUnavailable, UNAVAILABLE_STRIPE } from '../src/coverage/render';
 import { TileStore } from '../src/coverage/store';
 import { lonLatToTilePixel, tileToLonLat } from '../src/coverage/tilemath';
 import { fixtureStore, readJsonFixture, sampleManifest } from './helpers';
@@ -100,6 +100,40 @@ describe('recolorisation des tuiles', () => {
     const officialAlphas = new Set<number>();
     for (let i = 0; i < 64; i++) officialAlphas.add(out[i * 4 + 3]);
     expect(officialAlphas.size).toBe(1);
+  });
+
+  it('marque d\'un motif gris léger les zones estimées dont le niveau est masqué (sources-24)', () => {
+    const tables = buildLevelTables(manifest, { service: 'data', operators: {} });
+    // Toute une tuile en bonne couverture : estimée (Andorre) ou officielle (France).
+    const tile = (country: number, sourceType: number): Uint8ClampedArray => {
+      const d = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+      for (let i = 0; i < TILE_SIZE * TILE_SIZE; i++) writePixel(d, i, { data: [2, 2, 2, 2], country, sourceType });
+      return d;
+    };
+    const colors = (out: Uint8ClampedArray): Set<string> => {
+      const seen = new Set<string>();
+      for (let i = 0; i < 16 * TILE_SIZE; i++) seen.add(rgba(out, i).join());
+      return seen;
+    };
+    const out = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    // Par défaut, la bonne couverture n'est pas dessinée : la zone estimée garde des traits gris légers.
+    expect(renderTile(tile(5, 2), tables, { service: 'data', showAll: false }, out)).toBe(true);
+    expect(colors(out)).toEqual(new Set(['0,0,0,0', ESTIMATED_MASKED_STRIPE.join()]));
+    // Gris et peu opaques : ni une couleur de niveau, ni la tuile « données indisponibles » (voile et rayures foncées).
+    expect(ESTIMATED_MASKED_STRIPE[3]).toBeLessThan(LEVEL_COLORS[LEVEL_GOOD][3]);
+    expect(ESTIMATED_MASKED_STRIPE[3]).toBeLessThan(UNAVAILABLE_STRIPE[3]);
+    expect(ESTIMATED_MASKED_STRIPE.slice(0, 3)).not.toEqual(UNAVAILABLE_STRIPE.slice(0, 3));
+    // Même sens que les hachures des niveaux (x + y constant), pas celui des tuiles illisibles.
+    const alpha = (x: number, y: number): number => out[(y * TILE_SIZE + x) * 4 + 3];
+    for (let i = 1; i < 32; i++) expect(alpha(i, 0), `colonne ${i}`).toBe(alpha(i - 1, 1));
+    // Une zone officielle bien couverte reste transparente, comme avant.
+    expect(renderTile(tile(1, 0), tables, { service: 'data', showAll: false }, out)).toBe(false);
+    // Toute la couverture affichée : la zone estimée prend la couleur de son niveau, hachurée comme les autres.
+    renderTile(tile(5, 2), tables, { service: 'data', showAll: true }, out);
+    expect(Math.max(...[...colors(out)].map((c) => Number(c.split(',')[3])))).toBe(LEVEL_COLORS[LEVEL_GOOD][3]);
+    // Pas de donnée pour le service choisi (appels et SMS en Andorre) : rien n'est estimé, rien n'est dessiné.
+    const voice = buildLevelTables(manifest, { service: 'voice', operators: {} });
+    expect(renderTile(tile(5, 2), voice, { service: 'voice', showAll: false }, out)).toBe(false);
   });
 
   it('agrandit une partie de tuile en plus proche voisin pour les zooms au-delà des données', () => {

@@ -141,7 +141,7 @@ function operatorSelect(app: App, country: ManifestCountry): HTMLElement {
 function legend(app: App): HTMLElement {
   const { network, manifest } = app.state;
   const levels = network.showAll ? LEVELS : [LEVEL_NONE, LEVEL_LIMITED];
-  const hasEstimated = manifest?.countries.some((c) => c.sources.some((s) => s.type === SOURCE_ESTIMATED)) ?? false;
+  const hasEstimated = manifest?.countries.some((c) => c.sources.some((s) => s.type === SOURCE_ESTIMATED && s.services.includes(network.service))) ?? false;
   return h(
     'ul',
     { class: 'legend' },
@@ -149,6 +149,8 @@ function legend(app: App): HTMLElement {
       h('li', null, h('span', { class: 'swatch', style: { background: LEVEL_SOLID[level] } }), t(LEVEL_KEYS[level])),
     ),
     hasEstimated ? h('li', null, h('span', { class: 'swatch swatch--hatch' }), t('legend.estimated')) : null,
+    // Bonne couverture non dessinée : dans une zone estimée, de fins traits gris la signalent quand même.
+    hasEstimated && !network.showAll ? h('li', null, h('span', { class: 'swatch swatch--estimated-good' }), t('legend.estimatedGood')) : null,
   );
 }
 
@@ -499,7 +501,7 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
       note(t('network.serviceMissing', { service: t(`service.${network.service}`), countries: report.missingService.map((c) => countryName(c.iso)).join(', ') })),
     );
   }
-  if (report.estimated) parts.push(note(t('report.estimatedWarning')));
+  if (report.estimated) parts.push(note(`${t('report.estimatedWarning')} ${t('report.estimatedTrack')}`));
   if (report.binaryCountries.length > 0) {
     parts.push(note(t('report.binaryNote', { countries: report.binaryCountries.map((c) => countryName(c.iso)).join(', ') })));
   }

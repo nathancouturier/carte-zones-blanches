@@ -155,8 +155,19 @@ function trackLayers(): LayerSpecification[] {
       id: 'trace-couleur',
       type: 'line',
       source: TRACK_SOURCE,
+      filter: ['!=', ['get', 'e'], 1],
       layout: round,
       paint: { 'line-color': TRACK_COLOR, 'line-width': 4.5 },
+    },
+    // Portions dont la couverture est estimée : même couleur, en pointillé sur le liseré blanc.
+    // Bouts carrés : des bouts ronds combleraient les vides entre les tirets.
+    {
+      id: 'trace-estimee',
+      type: 'line',
+      source: TRACK_SOURCE,
+      filter: ['==', ['get', 'e'], 1],
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: { 'line-color': TRACK_COLOR, 'line-width': 4.5, 'line-dasharray': [2, 1.2] },
     },
   ];
 }

@@ -605,6 +605,9 @@ describe('rapport en texte', () => {
     // Andorre (source estimée, internet seulement), avec le service Appels et SMS.
     const andorra = textOf(synthetic(repeat(2, 30), { country: 5, sourceType: 2 }), 'voice');
     expect(andorra).toContain('Aucune donnée pour ce service sur ce parcours.');
+    // L'estimation ne dit rien des appels : rien n'est annoncé comme estimé (sources-24).
+    expect(andorra).not.toContain('couverture estimée');
+    expect(textOf(synthetic(repeat(2, 30), { country: 5, sourceType: 2 }), 'data')).toContain('Une partie du parcours repose sur une couverture estimée');
     expect(andorra).toContain('Sans données pour ce service : 0,6 km');
     expect(andorra).not.toMatch(/hors zone/i);
     // Tout le tracé hors de la zone couverte par les données : « hors zone » (gpx-07).

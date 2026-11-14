@@ -634,6 +634,11 @@ input[type="range"] {
   background: repeating-linear-gradient(-45deg, #d62828 0 3px, #f3b4b4 3px 6px);
 }
 
+/* Zone estimée dont la bonne couverture n'est pas dessinée : fins traits gris, comme sur la carte. */
+.swatch--estimated-good {
+  background: repeating-linear-gradient(-45deg, rgba(75, 85, 99, 0.55) 0 2px, #ffffff 2px 6px);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

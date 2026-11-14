@@ -61,7 +61,7 @@ export interface Report {
   nonEuCountries: ManifestCountry[];
   /** Vrai si au moins un pays traversé a un opérateur précis sélectionné. */
   specificOperator: boolean;
-  /** Vrai si une partie du parcours repose sur une source estimée. */
+  /** Vrai si une partie du parcours repose sur une source estimée, pour le service choisi. */
   estimated: boolean;
   /** Pays traversés qui n'ont pas de données pour le service choisi. */
   missingService: ManifestCountry[];
@@ -91,7 +91,7 @@ export function buildReport(analysis: TrackAnalysis, manifest: Manifest, setting
     countries,
     nonEuCountries: countries.filter((c) => !c.euRoaming),
     specificOperator: countries.some((c) => effectiveOperator(c, settings) !== null),
-    estimated: hasEstimatedData(analysis.raw),
+    estimated: hasEstimatedData(analysis.raw, classes),
     missingService: countries.filter((c) => !countryHasService(c, settings.service)),
     binaryCountries: countries.filter((c) => c.sources.some((source) => source.levels === 'binary' && source.services.includes(settings.service))),
   };

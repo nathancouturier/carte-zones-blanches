@@ -10,6 +10,7 @@ import {
   OSM_COPYRIGHT_URL,
   type Credit,
 } from '../src/map/basemaps';
+import { CLASS_OUTSIDE, CLASS_UNKNOWN } from '../src/gpx/analyze';
 import { buildStyle, COVERAGE_LAYER } from '../src/map/style';
 import { EMPTY_COLLECTION, trackToGeoJson, zoneToGeoJson } from '../src/map/trackGeojson';
 import { mergePlaces, parseIgnCompletion, parsePhoton, searchPlaces, type Place, type SearchResult } from '../src/search/geocode';
@@ -226,7 +227,7 @@ describe('fonds de carte et style', () => {
     };
     const style = buildStyle({ basemap: 'ign-classique', vectorStyle, hillshade: true, coverage, track: EMPTY_COLLECTION, zone: EMPTY_COLLECTION });
     const ids = style.layers.map((l) => l.id);
-    expect(ids).toEqual(['fond-uni', 'fond', 'courbes', 'estompage', COVERAGE_LAYER, 'cotes', 'routes', 'noms', 'zone-halo', 'zone-jaune', 'trace-lisere', 'trace-couleur']);
+    expect(ids).toEqual(['fond-uni', 'fond', 'courbes', 'estompage', COVERAGE_LAYER, 'cotes', 'routes', 'noms', 'zone-halo', 'zone-jaune', 'trace-lisere', 'trace-couleur', 'trace-estimee']);
     const layer = style.layers.find((l) => l.id === COVERAGE_LAYER)!;
     expect(layer.paint).toMatchObject({ 'raster-resampling': 'nearest', 'raster-opacity': 0.6 });
     expect(style.glyphs).toBe(vectorStyle.glyphs);
@@ -235,7 +236,7 @@ describe('fonds de carte et style', () => {
 
   it('bâtit un style raster, avec ou sans couche réseau', () => {
     const style = buildStyle({ basemap: 'swisstopo', vectorStyle: null, hillshade: false, coverage, track: EMPTY_COLLECTION, zone: EMPTY_COLLECTION });
-    expect(style.layers.map((l) => l.id)).toEqual(['fond-uni', 'fond', COVERAGE_LAYER, 'zone-halo', 'zone-jaune', 'trace-lisere', 'trace-couleur']);
+    expect(style.layers.map((l) => l.id)).toEqual(['fond-uni', 'fond', COVERAGE_LAYER, 'zone-halo', 'zone-jaune', 'trace-lisere', 'trace-couleur', 'trace-estimee']);
     expect(style.sources.fond).toMatchObject({ type: 'raster', maxzoom: 18 });
     const bare = buildStyle({ basemap: 'osm', vectorStyle: null, hillshade: false, coverage: null, track: EMPTY_COLLECTION, zone: EMPTY_COLLECTION });
     expect(bare.layers.some((l) => l.id === COVERAGE_LAYER)).toBe(false);
@@ -252,5 +253,24 @@ describe('fonds de carte et style', () => {
     expect(coords).toEqual([3, 2, 2]); // la première portion va jusqu'au point où la couleur change
     expect(trackToGeoJson(samples, null).features).toHaveLength(2); // sans analyse : une ligne par segment
     expect(zoneToGeoJson(samples, null)).toBe(EMPTY_COLLECTION);
+  });
+
+  it('distingue les portions du tracé dont la couverture est estimée, en pointillé (sources-24)', () => {
+    const samples: Sample[] = [0, 1, 2, 3, 4, 5].map((i) => ({ lon: 6 + i * 0.001, lat: 45, ele: null, dist: i * 20, seg: 0 }));
+    // Même couleur, mais les points 3 et 4 sont estimés ; le dernier, hors des données, ne l'est pas.
+    const fc = trackToGeoJson(samples, new Uint8Array([2, 2, 2, 2, 2, CLASS_OUTSIDE]), new Uint8Array([0, 0, 0, 1, 1, 1]));
+    expect(fc.features.map((f) => [f.properties?.c, f.properties?.e])).toEqual([[2, 0], [2, 1]]);
+    // Chaque portion va jusqu'au point où l'aspect change : pas de trou (un point seul ne fait pas de ligne).
+    expect(fc.features.map((f) => (f.geometry as GeoJSON.LineString).coordinates.length)).toEqual([4, 3]);
+    // Sans couverture lue pour ce service (appels en Andorre), rien n'est estimé : pas de pointillé.
+    expect(trackToGeoJson(samples, new Uint8Array(6).fill(CLASS_UNKNOWN), new Uint8Array(6).fill(1)).features.map((f) => f.properties?.e)).toEqual([0]);
+    // Le style dessine en pointillé les portions estimées, en trait plein les autres.
+    const style = buildStyle({ basemap: 'osm', vectorStyle: null, hillshade: false, coverage: null, track: fc, zone: EMPTY_COLLECTION });
+    const plein = style.layers.find((l) => l.id === 'trace-couleur') as { filter?: unknown; paint?: Record<string, unknown> };
+    const pointille = style.layers.find((l) => l.id === 'trace-estimee') as { filter?: unknown; paint?: Record<string, unknown> };
+    expect(plein.filter).toEqual(['!=', ['get', 'e'], 1]);
+    expect(pointille.filter).toEqual(['==', ['get', 'e'], 1]);
+    expect(pointille.paint?.['line-dasharray']).toBeDefined();
+    expect(pointille.paint?.['line-color']).toEqual(plein.paint?.['line-color']);
   });
 });

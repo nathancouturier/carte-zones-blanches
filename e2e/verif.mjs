@@ -754,6 +754,17 @@ try {
       // Le site dit « estimation » dans la langue choisie devant le crédit, en anglais, d'OpenCellID (lang-06).
       const credite = monaco.texte.includes('estimation (Cell tower data from OpenCellID, licensed under CC BY-SA 4.0)') && monaco.liens.includes('https://opencellid.org') && monaco.liens.includes('https://creativecommons.org/licenses/by-sa/4.0/');
       controle('mentions : Monaco à l\'écran à côté du centre, « estimation » et crédit d\'OpenCellID avec ses liens', credite, monaco.texte);
+      // Monaco est estimé en bonne couverture, que la carte ne dessine pas par défaut : de fins traits gris
+      // le signalent, et la légende le dit ; avec toute la couverture affichée, le vert hachuré suffit (sources-24).
+      await page.click('.tool[data-panel="network"]');
+      await page.waitForSelector('.legend');
+      const parDefaut = (await page.locator('.legend li').allTextContents()).join(' | ');
+      await page.click('input[data-focus="show-all"]');
+      await page.waitForTimeout(500);
+      const toutAffiche = (await page.locator('.legend li').allTextContents()).join(' | ');
+      await page.click('input[data-focus="show-all"]');
+      const gris = 'Zone estimée avec une bonne ou très bonne couverture (hachures grises)';
+      controle('mentions : la légende dit les traits gris des zones estimées bien couvertes', parDefaut.includes(gris) && !toutAffiche.includes(gris), parDefaut);
     }
     controle('mentions : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();

@@ -1,23 +1,28 @@
 // GeoJSON du tracé pour l'affichage : une ligne par portion de même couverture.
 
+import { LEVEL_VERY_GOOD } from '../coverage/codec';
 import type { WhiteZone } from '../gpx/analyze';
 import type { Sample } from '../gpx/resample';
 
 export const EMPTY_COLLECTION: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /**
- * Découpe le tracé en lignes de classe constante. « classes » peut être absent
- * tant que l'analyse n'est pas faite : le tracé est alors d'une seule couleur.
+ * Découpe le tracé en lignes d'aspect constant : classe de couverture (propriété
+ * « c ») et couverture estimée ou non (« e », 1 pour une portion estimée, dessinée
+ * en pointillé). « classes » peut être absent tant que l'analyse n'est pas faite :
+ * le tracé est alors d'une seule couleur. « estimated » vaut 1 pour les points dont
+ * la couverture vient d'une source estimée ; seuls ceux qui ont un niveau comptent.
  */
-export function trackToGeoJson(samples: readonly Sample[], classes: Uint8Array | null): GeoJSON.FeatureCollection {
+export function trackToGeoJson(samples: readonly Sample[], classes: Uint8Array | null, estimated: Uint8Array | null = null): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
   let coords: [number, number][] = [];
   let current = -1;
+  let currentEstimated = 0;
   const flush = (): void => {
     if (coords.length >= 2) {
       features.push({
         type: 'Feature',
-        properties: { c: current },
+        properties: { c: current, e: currentEstimated },
         geometry: { type: 'LineString', coordinates: coords },
       });
     }
@@ -26,15 +31,18 @@ export function trackToGeoJson(samples: readonly Sample[], classes: Uint8Array |
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i];
     const c = classes ? classes[i] : -1;
+    const e = estimated?.[i] && c >= 0 && c <= LEVEL_VERY_GOOD ? 1 : 0;
     const newSegment = i > 0 && samples[i - 1].seg !== s.seg;
     if (i === 0 || newSegment) {
       flush();
       current = c;
-    } else if (c !== current) {
+      currentEstimated = e;
+    } else if (c !== current || e !== currentEstimated) {
       // La portion précédente va jusqu'à ce point : pas de trou entre deux couleurs.
       coords.push([s.lon, s.lat]);
       flush();
       current = c;
+      currentEstimated = e;
     }
     coords.push([s.lon, s.lat]);
   }
