@@ -1,18 +1,23 @@
 # Construit les tuiles de couverture et les publie dans une release data-AAAA-MM-JJ.
 # Se lance à la main et une fois par mois. Ne reconstruit que si une source a changé
-# (nouveau trimestre Arcep, nouvelle version d'une source étrangère).
+# (nouveau trimestre Arcep, nouvelle édition d'une source étrangère).
+#
+# Seule la « production » (périmètre et services de pipeline/config.yaml, section production)
+# est publiée et mise en ligne. Tout autre périmètre est un essai : il est construit et
+# vérifié, son résultat est gardé 7 jours en artefact, mais il ne remplace jamais les
+# données du site.
 name: Données
 
 on:
   workflow_dispatch:
     inputs:
       scope:
-        description: "Périmètre (voir pipeline/config.yaml)"
+        description: "Périmètre : production (celui du site) ou un périmètre d'essai, jamais publié"
         type: choice
-        options: [complet, france, hautes-alpes]
-        default: complet
+        options: [production, complet, frontieres, france, suisse, italie, espagne, andorre-monaco, hautes-alpes]
+        default: production
       services:
-        description: "Services à construire : data ou data,voice"
+        description: "Services d'un essai : data ou data,voice (ignoré pour la production)"
         type: string
         default: data
       force:
@@ -21,13 +26,14 @@ on:
         default: false
   schedule:
     - cron: "23 3 5 * *" # le 5 de chaque mois à 3 h 23 UTC
-  # Depuis une branche de travail : modifier pipeline/DEMANDE-DONNEES et pousser.
+  # Depuis une branche de travail : modifier pipeline/DEMANDE-DONNEES et pousser (toujours un essai).
   push:
     branches: ["claude/**"]
     paths: ["pipeline/DEMANDE-DONNEES"]
 
+# Une seule construction de production à la fois ; les essais lancés à la main ne se gênent pas.
 concurrency:
-  group: donnees
+  group: donnees-${{ (github.event_name == 'workflow_dispatch' && inputs.scope != 'production') && github.run_id || 'production' }}
   cancel-in-progress: false
 
 permissions:
@@ -38,42 +44,18 @@ jobs:
     name: Construire
     runs-on: ubuntu-latest
     container: ghcr.io/osgeo/gdal:ubuntu-small-3.13.3
-    timeout-minutes: 300
+    timeout-minutes: 340
     outputs:
       changed: ${{ steps.detect.outputs.changed }}
       date: ${{ steps.params.outputs.date }}
       scope: ${{ steps.params.outputs.scope }}
+      services: ${{ steps.params.outputs.services }}
+      publish: ${{ steps.params.outputs.publish }}
     env:
       GITHUB_TOKEN: ${{ github.token }}
       OPENCELLID_TOKEN: ${{ secrets.OPENCELLID_TOKEN }}
     steps:
       - uses: actions/checkout@v5
-
-      - name: Paramètres
-        id: params
-        shell: bash
-        env:
-          IN_SCOPE: ${{ inputs.scope }}
-          IN_SERVICES: ${{ inputs.services }}
-          IN_FORCE: ${{ inputs.force }}
-        run: |
-          scope="${IN_SCOPE:-complet}"; services="${IN_SERVICES:-data}"; force="${IN_FORCE:-false}"
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            f=pipeline/DEMANDE-DONNEES
-            scope=$(sed -n 's/^scope=//p' "$f" | head -1)
-            services=$(sed -n 's/^services=//p' "$f" | head -1)
-            force=$(sed -n 's/^force=//p' "$f" | head -1)
-          fi
-          case "$scope" in *[!a-z0-9-]*|"") echo "scope invalide : $scope"; exit 1 ;; esac
-          case "$services" in data|data,voice) ;; *) echo "services invalides : $services"; exit 1 ;; esac
-          case "$force" in true|false) ;; *) force=false ;; esac
-          {
-            echo "scope=$scope"
-            echo "services=$services"
-            echo "force=$force"
-            echo "date=$(date -u +%F)"
-          } >> "$GITHUB_OUTPUT"
-          echo "Périmètre : $scope, services : $services, forcé : $force"
 
       - name: Outils
         shell: bash
@@ -83,6 +65,47 @@ jobs:
           python3 -m pip install --break-system-packages -q -r pipeline/requirements.txt
           gdalinfo --version
           python3 -c "import numpy, PIL, pmtiles, yaml; print('numpy', numpy.__version__, 'pillow', PIL.__version__)"
+
+      - name: Production (config.yaml)
+        id: production
+        working-directory: pipeline
+        run: python3 -m czb.cli production
+
+      - name: Paramètres
+        id: params
+        shell: bash
+        env:
+          IN_SCOPE: ${{ inputs.scope }}
+          IN_SERVICES: ${{ inputs.services }}
+          IN_FORCE: ${{ inputs.force }}
+          PROD_SCOPE: ${{ steps.production.outputs.prod_scope }}
+          PROD_SERVICES: ${{ steps.production.outputs.prod_services }}
+        run: |
+          # Passage mensuel et lancement à la main sans choix : la production, telle que config.yaml la décrit.
+          scope="${IN_SCOPE:-production}"; services="${IN_SERVICES:-data}"; force="${IN_FORCE:-false}"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            f=pipeline/DEMANDE-DONNEES
+            scope=$(sed -n 's/^scope=//p' "$f" | head -1)
+            services=$(sed -n 's/^services=//p' "$f" | head -1)
+            force=true
+          fi
+          if [ "$scope" = "production" ]; then scope="$PROD_SCOPE"; services="$PROD_SERVICES"; fi
+          case "$scope" in *[!a-z0-9-]*|"") echo "scope invalide : $scope"; exit 1 ;; esac
+          case "$services" in data|data,voice) ;; *) echo "services invalides : $services"; exit 1 ;; esac
+          case "$force" in true|false) ;; *) force=false ;; esac
+          # On ne publie que la production, et jamais depuis un push sur une branche de travail.
+          publish=false
+          if [ "$GITHUB_EVENT_NAME" != "push" ] && [ "$scope" = "$PROD_SCOPE" ] && [ "$services" = "$PROD_SERVICES" ]; then publish=true; fi
+          # Un essai est toujours construit : il n'a pas de release à laquelle se comparer.
+          if [ "$publish" = "false" ]; then force=true; fi
+          {
+            echo "scope=$scope"
+            echo "services=$services"
+            echo "force=$force"
+            echo "publish=$publish"
+            echo "date=$(date -u +%F)"
+          } >> "$GITHUB_OUTPUT"
+          echo "Périmètre : $scope, services : $services, forcé : $force, publication : $publish"
 
       - name: Tests du pipeline (données synthétiques)
         working-directory: pipeline
@@ -96,6 +119,11 @@ jobs:
           extra=""
           if [ "${{ steps.params.outputs.force }}" = "true" ]; then extra="--force"; fi
           python3 -m czb.cli changed --repo "$GITHUB_REPOSITORY" --scope "${{ steps.params.outputs.scope }}" --services "${{ steps.params.outputs.services }}" $extra
+
+      - name: Copies de travail de la dernière release
+        if: steps.detect.outputs.changed == 'true'
+        working-directory: pipeline
+        run: python3 -m czb.cli fetch-cache --repo "$GITHUB_REPOSITORY" --work work
 
       - name: Construire les tuiles
         if: steps.detect.outputs.changed == 'true'
@@ -120,7 +148,7 @@ jobs:
   publier:
     name: Publier la release
     needs: construire
-    if: needs.construire.outputs.changed == 'true'
+    if: needs.construire.outputs.changed == 'true' && needs.construire.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -147,9 +175,10 @@ jobs:
           {
             echo "Tuiles de couverture mobile (PMTiles) et manifest, générés par le workflow Données."
             echo
-            echo "- Périmètre : ${{ needs.construire.outputs.scope }}"
-            echo "- Taille totale : $(du -ch out/*.pmtiles | tail -1 | cut -f1)"
+            echo "- Périmètre : ${{ needs.construire.outputs.scope }} (${{ needs.construire.outputs.services }})"
+            echo "- Taille des tuiles : $(du -ch out/*.pmtiles | tail -1 | cut -f1)"
             echo "- Sources, dates et licences : voir manifest.json et docs/sources.md"
+            echo "- Les fichiers cache-*.tif sont des copies de travail reprises par la construction suivante ; le site ne les utilise pas."
           } > notes.md
           # Pas d'option --target : l'étiquette est posée sur la branche par défaut. Le jeton d'Actions n'a pas
           # le droit de créer une étiquette sur un commit dont les workflows diffèrent de ceux de cette branche.
@@ -173,3 +202,17 @@ jobs:
         run: |
           gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}" \
             || echo "Déploiement non relancé : deploy.yml n'est pas encore sur la branche par défaut."
+
+  # GitHub désactive les workflows planifiés d'un dépôt resté 60 jours sans activité. Réactiver le
+  # workflow à chaque passage mensuel remet ce compteur à zéro.
+  garder-actif:
+    name: Garder le passage mensuel actif
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Réactiver ce workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/donnees.yml/enable" && echo "Workflow Données réactivé."

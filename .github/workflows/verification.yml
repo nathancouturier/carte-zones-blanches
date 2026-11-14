@@ -1,5 +1,5 @@
 # Vérifie le site déployé dans un vrai navigateur : ordinateur et vue mobile, plusieurs langues.
-# Se lance après chaque déploiement, et à la main.
+# Appelé par deploy.yml après chaque mise en ligne, et lançable à la main.
 name: Vérification
 
 on:
@@ -9,9 +9,13 @@ on:
         description: "Adresse du site à vérifier"
         type: string
         default: "https://nathancouturier.github.io/carte-zones-blanches/"
-  workflow_run:
-    workflows: ["Déploiement"]
-    types: [completed]
+  workflow_call:
+    inputs:
+      url:
+        description: "Adresse du site à vérifier"
+        type: string
+        required: false
+        default: "https://nathancouturier.github.io/carte-zones-blanches/"
   # Depuis une branche de travail : modifier e2e/DEMANDE et pousser.
   push:
     branches: ["claude/**"]
@@ -23,7 +27,6 @@ permissions:
 jobs:
   verification:
     name: Navigateur
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

@@ -62,10 +62,15 @@ jobs:
           echo "Release de données : $tag"
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir public/data --pattern '*.pmtiles' --pattern 'manifest.json'
           ls -la public/data
-          # Toutes les archives citées par le manifest doivent être là.
-          for f in $(jq -r '.archives[].file' public/data/manifest.json); do
+          # Le manifest doit être là et lisible, avec toutes les archives qu'il cite. Sinon on échoue :
+          # le site déjà en ligne garde ses données.
+          test -s public/data/manifest.json || { echo "::error::manifest.json absent de la release $tag"; exit 1; }
+          jq -e '.archives | length > 0' public/data/manifest.json >/dev/null || { echo "::error::manifest.json illisible ou sans archive dans la release $tag"; exit 1; }
+          jq -r '.archives[].file' public/data/manifest.json > archives.txt
+          while read -r f; do
             [ -s "public/data/$f" ] || { echo "::error::Archive absente de la release $tag : $f"; exit 1; }
-          done
+          done < archives.txt
+          rm archives.txt
 
       - name: Construire
         run: npm run build
@@ -73,12 +78,12 @@ jobs:
       - name: Contrôle des tailles
         shell: bash
         run: |
-          # Chaque fichier doit rester sous 95 Mo, et le site complet sous 900 Mo.
-          gros=$(find dist -type f -size +95M)
-          if [ -n "$gros" ]; then echo "Fichier(s) de plus de 95 Mo : $gros"; exit 1; fi
-          total=$(du -sm dist | cut -f1)
-          echo "Taille du site : ${total} Mo"
-          if [ "$total" -gt 900 ]; then echo "Le site dépasse 900 Mo"; exit 1; fi
+          # Chaque fichier doit rester sous 95 Mo, et le site complet sous 900 Mo (en millions d'octets, comme le pipeline).
+          gros=$(find dist -type f -size +94999999c)
+          if [ -n "$gros" ]; then echo "::error::Fichier(s) de 95 Mo ou plus : $gros"; exit 1; fi
+          total=$(find dist -type f -printf '%s\n' | awk '{ s += $1 } END { print s + 0 }')
+          echo "Taille du site : $((total / 1000000)) Mo"
+          if [ "$total" -gt 900000000 ]; then echo "::error::Le site dépasse 900 Mo"; exit 1; fi
 
       - uses: actions/configure-pages@v5
 
@@ -96,3 +101,9 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # Contrôle du site en ligne dans un vrai navigateur (ordinateur, téléphone, plusieurs langues).
+  verifier:
+    name: Vérifier le site en ligne
+    needs: deploy
+    uses: ./.github/workflows/verification.yml

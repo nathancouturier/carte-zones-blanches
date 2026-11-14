@@ -1,4 +1,3 @@
-scope=hautes-alpes
-services=data,voice
-force=true
-# essai 3 : publication corrigée
+scope=italie
+services=data
+# essai : jamais publié (voir .github/workflows/donnees.yml)

@@ -39,11 +39,14 @@ function gpx(nom) {
 async function ouvrir(navigateur, options, chemin) {
   const contexte = await navigateur.newContext(options);
   const page = await contexte.newPage();
-  const suivi = { reponses: new Map(), erreurs: [], echecs: new Map() };
+  const suivi = { reponses: new Map(), erreurs: [], echecs: new Map(), manifest: 0, archives: 0 };
   page.on('response', (r) => {
-    const hote = new URL(r.url()).host;
-    const cle = `${hote} ${r.status() < 400 ? 'ok' : 'ko'}`;
+    const adresse = new URL(r.url());
+    const cle = `${adresse.host} ${r.status() < 400 ? 'ok' : 'ko'}`;
     suivi.reponses.set(cle, (suivi.reponses.get(cle) ?? 0) + 1);
+    // Données de couverture : le manifest (200) et les lectures partielles des archives PMTiles (200 ou 206).
+    if (adresse.pathname.endsWith('/data/manifest.json') && r.status() === 200) suivi.manifest += 1;
+    if (adresse.pathname.endsWith('.pmtiles') && (r.status() === 200 || r.status() === 206)) suivi.archives += 1;
   });
   page.on('requestfailed', (r) => {
     const hote = new URL(r.url()).host;
@@ -79,7 +82,6 @@ async function importer(page, fichier) {
 const navigateur = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const ordinateur = { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 };
 const telephone = { viewport: { width: 412, height: 915 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36' };
-const hoteSite = new URL(SITE).host;
 
 try {
   // --- 1. Ordinateur, français : carte, réseau, recherche, GPX ------------------
@@ -88,7 +90,7 @@ try {
     controle('fr : langue de la page', (await page.evaluate(() => document.documentElement.lang)) === 'fr');
     controle('fr : titre', (await page.title()) === 'Carte des zones blanches', await page.title());
     if (!HORS_LIGNE) controle('fr : fond Plan IGN chargé', ok(suivi, 'data.geopf.fr') >= 4, `${ok(suivi, 'data.geopf.fr')} réponses de data.geopf.fr`);
-    controle('fr : manifest et tuiles de couverture lus', ok(suivi, hoteSite) >= 3, `${ok(suivi, hoteSite)} réponses du site`);
+    controle('fr : manifest et tuiles de couverture lus', suivi.manifest >= 1 && suivi.archives >= 1, `manifest lu ${suivi.manifest} fois, ${suivi.archives} lectures dans les archives PMTiles`);
     await capture(page, '1-ordinateur-fr-carte');
 
     await page.click('[data-panel="network"]');
