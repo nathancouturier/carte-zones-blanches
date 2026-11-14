@@ -40,6 +40,10 @@ const GPX_DIFFICILE = Buffer.from(`
 <gpx:trkpt lat="44.9170" lon="6.4160"/><gpx:trkpt lat="44.9380" lon="6.4000"><gpx:ele>2542</gpx:ele></gpx:trkpt>
 </gpx:trkseg></gpx:trk></gpx:gpx>`, 'latin1');
 
+// Tracé entièrement en France : le mode hors ligne y précharge le Plan IGN, fond du mode Automatique.
+// (Un tracé qui passe à l'étranger peut tomber sur un fond qu'on ne précharge pas, comme OpenTopoMap.)
+const TRACE_FRANCE = { name: 'vallouise.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(GPX_SECOURS) };
+
 function gpx(nom) {
   const chemin = fileURLToPath(new URL(`../samples/${nom}`, import.meta.url));
   if (existsSync(chemin)) return { name: nom, mimeType: 'application/gpx+xml', buffer: readFileSync(chemin) };
@@ -239,7 +243,7 @@ try {
       return true;
     });
     controle('hors ligne : Service Worker enregistré', controleParSw);
-    await importer(page, gpx('test-alpes.gpx'));
+    await importer(page, TRACE_FRANCE);
     await page.locator('[data-focus="hors-ligne"]').scrollIntoViewIfNeeded();
     await page.click('[data-focus="hors-ligne"]');
     const pret = await page.waitForSelector('.offline-ready', { timeout: 180000 }).then(() => true, () => false);
