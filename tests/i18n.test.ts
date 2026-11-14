@@ -173,6 +173,20 @@ describe('nombres, distances et dates selon la langue', () => {
     expect(formatDataDate('2026-11-13')).toBe('13 novembre 2026');
   });
 
+  it('formate les pourcentages selon la langue, la décimale décidée après arrondi', () => {
+    setLanguage('fr');
+    expect(formatPercent(0.0997).replace(/\s/g, ' ')).toBe('10 %'); // et non « 10,0 % »
+    expect(formatPercent(0.0994).replace(/\s/g, ' ')).toBe('9,9 %');
+    expect(formatPercent(0).replace(/\s/g, ' ')).toBe('0 %');
+    expect(formatPercent(1).replace(/\s/g, ' ')).toBe('100 %');
+    setLanguage('it');
+    expect(formatPercent(0.53)).toBe('53%');
+    setLanguage('de');
+    expect(formatPercent(0.034).replace(/\s/g, ' ')).toBe('3,4 %');
+    setLanguage('es');
+    expect(formatPercent(0.53).replace(/\s/g, ' ')).toBe('53 %');
+  });
+
   it('formate dans les autres langues', () => {
     setLanguage('de');
     expect(formatKm(12449)).toBe('12,4');

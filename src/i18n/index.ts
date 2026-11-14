@@ -173,11 +173,12 @@ export function hasKey(key: string): boolean {
 
 const formatters = new Map<string, Intl.NumberFormat>();
 
-function numberFormat(digits: number): Intl.NumberFormat {
-  const id = `${getLocale()}|${digits}`;
+function numberFormat(digits: number, style: 'decimal' | 'percent' = 'decimal'): Intl.NumberFormat {
+  const id = `${getLocale()}|${digits}|${style}`;
   let nf = formatters.get(id);
   if (!nf) {
     nf = new Intl.NumberFormat(getLocale(), {
+      style,
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
     });
@@ -205,10 +206,13 @@ export function formatMeters(meters: number): string {
   return `${formatNumber(Math.round(meters))} m`;
 }
 
+/**
+ * Pourcentage selon la langue (« 53 % », « 53% » en italien), avec une décimale
+ * sous 10 %. La décimale se décide sur la valeur arrondie : 9,97 % s'écrit « 10 % ».
+ */
 export function formatPercent(ratio: number): string {
-  const pct = ratio * 100;
-  const digits = pct > 0 && pct < 10 ? 1 : 0;
-  return `${formatNumber(pct, digits)} %`;
+  const digits = ratio > 0 && Math.round(ratio * 1000) < 100 ? 1 : 0;
+  return numberFormat(digits, 'percent').format(ratio);
 }
 
 /** Nom d'un pays dans la langue courante, à partir de son code ISO à deux lettres. */
