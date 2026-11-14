@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "description": "Carte des zones blanches (réseau mobile) pour préparer ses randonnées : France, Corse, Alpes et Pyrénées.",
-  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
