@@ -55,6 +55,9 @@ CELL_COLUMNS = ["radio", "mcc", "net", "area", "cell", "unit", "lon", "lat", "ra
 KNOWN_RADIOS = {"GSM", "UMTS", "LTE", "NR", "CDMA"}
 CACHE_FORMAT = 1
 MONTH_ITEM = "CZB_MOIS"
+#: Nombre de sites et de cellules sur lesquels repose l'estimation, gardé dans la copie de travail : une construction
+#: qui la reprend sans recalculer peut encore le donner au manifest.
+COUNTS_ITEM = "CZB_COMPTES"
 #: Marge autour du pays pour retenir une cellule, en mètres : un fichier de pays peut contenir des cellules voisines.
 CELL_MARGIN_M = 2000.0
 #: Les bords de la fenêtre de calcul tombent sur des multiples de ce nombre de pixels (environ 1,7 km).
@@ -367,7 +370,7 @@ class EstimationOpenCellId(Source):
         return dt.date.today().strftime("%Y-%m")
 
     @staticmethod
-    def _cached_month(path: Path) -> str | None:
+    def _cached_item(path: Path, item: str) -> str | None:
         from osgeo import gdal
 
         if not path.exists():
@@ -376,7 +379,27 @@ class EstimationOpenCellId(Source):
             ds = gdal.Open(str(path))
         except RuntimeError:
             return None
-        return ds.GetMetadataItem(MONTH_ITEM) if ds is not None else None
+        return ds.GetMetadataItem(item) if ds is not None else None
+
+    @classmethod
+    def _cached_month(cls, path: Path) -> str | None:
+        return cls._cached_item(path, MONTH_ITEM)
+
+    @classmethod
+    def _cached_counts(cls, path: Path) -> dict[str, int] | None:
+        """Sites et cellules de l'estimation gardée dans la copie de travail (absents d'une copie plus ancienne que ce champ)."""
+        try:
+            counts = json.loads(cls._cached_item(path, COUNTS_ITEM) or "null")
+        except ValueError:
+            return None
+        if not isinstance(counts, dict) or set(counts) != {"sites", "cells"} or not all(isinstance(v, int) for v in counts.values()):
+            return None
+        return counts
+
+    @staticmethod
+    def site_counts(site_stats: dict[str, dict[str, Any]]) -> dict[str, int]:
+        """Sites et cellules sur lesquels repose l'estimation, tous emplacements confondus (statistiques de compute)."""
+        return {"sites": sum(int(s["sites"]) for s in site_stats.values()), "cells": sum(int(s["cellules"]) for s in site_stats.values())}
 
     def window(self, ctx: BuildContext) -> tuple[int, int, int, int]:
         """Fenêtre de calcul (col0, row0, largeur, hauteur) sur la grille : le pays, élargi de la portée des antennes."""
@@ -467,14 +490,17 @@ class EstimationOpenCellId(Source):
         stored_month = self._cached_month(cached) if stored is not None else None
         month = self.month()
         levels = None
+        counts: dict[str, int] | None = None
         problem = self._cells_error
         if stored is not None and stored_month == month:
             levels = stored
+            counts = self._cached_counts(cached)
             print(f"  - copie de travail du mois reprise ({cached.name})", flush=True)
             origin = "reprise"
         elif problem is None:
             try:
                 levels = self.compute(ctx, window, services)
+                counts = self.site_counts(ctx.stats["estimation_sites"][self.source_id])
                 origin = "reconstruite"
             except SourceUnavailable as exc:
                 problem = str(exc)
@@ -483,6 +509,7 @@ class EstimationOpenCellId(Source):
                 raise SourceUnavailable(problem or "estimation impossible")
             # Mieux vaut l'estimation d'un mois précédent que pas de pays du tout.
             levels, month = stored, stored_month
+            counts = self._cached_counts(cached)
             print(f"  - estimation impossible cette fois-ci ({problem}) : copie de travail de {stored_month} reprise", flush=True)
             origin = "reprise, ancienne"
         ctx.stats.setdefault("copie_de_travail", {})[self.source_id] = origin
@@ -490,6 +517,8 @@ class EstimationOpenCellId(Source):
         write_cache(out_path, levels, gt, 3857, key, "une bande par emplacement d'opérateur ; niveau estimé 0 (pas de couverture), 1 (limitée) ou 2 (bonne)")
         ds = gdal.Open(str(out_path), gdal.GA_Update)
         ds.SetMetadataItem(MONTH_ITEM, month)
+        if counts is not None:
+            ds.SetMetadataItem(COUNTS_ITEM, json.dumps(counts, sort_keys=True))
         ds = None
 
         # La fenêtre de calcul est alignée sur la grille : on recopie sa partie commune avec la grille, sans rééchantillonner.
@@ -507,7 +536,8 @@ class EstimationOpenCellId(Source):
             ctx.stats.setdefault("estimation_parts", {})[f"{self.source_id}:{slot['id']}"] = shares
             self._witnesses(ctx, level, window, service, index, slot, rng)
         layers.flush()
-        return {"date": month}
+        # Sur combien de sites et de cellules repose l'estimation : le site peut le dire (12 sites pour l'Andorre).
+        return {"date": month, **({"estimation": counts} if counts is not None else {})}
 
     # -- points témoins -------------------------------------------------------
 

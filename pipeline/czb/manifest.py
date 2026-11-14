@@ -63,6 +63,9 @@ def build_manifest(ctx: BuildContext, archives: list[dict[str, Any]], generated:
                     entry[field] = check_translations(scfg[key], f"sources.{source_id}.{key}")
             if info.get("data_date"):
                 entry["dataDate"] = info["data_date"]
+            # Source estimée : nombre de sites et de cellules sur lesquels repose l'estimation (absent s'il n'est pas connu).
+            if info.get("estimation"):
+                entry["estimation"] = {"sites": int(info["estimation"]["sites"]), "cells": int(info["estimation"]["cells"])}
             # Mentions que certaines licences demandent d'afficher telles quelles (logo de l'AGCOM, formule d'OpenCellID).
             if scfg.get("licence_notice"):
                 entry["licenceNotice"] = scfg["licence_notice"]
