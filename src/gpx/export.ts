@@ -90,9 +90,10 @@ export function enrichGpx(xml: string, waypoints: readonly ExtraWaypoint[], tool
     else root.appendChild(wpt);
   }
 
-  let text = tools.serialize(doc);
-  if (!/^\s*<\?xml/.test(text)) text = `<?xml version="1.0" encoding="UTF-8"?>\n${text}`;
-  return text;
+  // Le fichier produit est toujours en UTF-8 : la déclaration d'origine (encoding="ISO-8859-1"
+  // par exemple), que le sérialiseur recopie, ferait mal lire les accents. On la remplace.
+  const text = tools.serialize(doc).replace(/^\s*<\?xml\s[^>]*\?>\s*/, '');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${text}`;
 }
 
 /** Nom du fichier exporté : « rando.gpx » devient « rando-zones-blanches.gpx ». */

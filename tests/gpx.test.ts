@@ -16,7 +16,7 @@ import {
 } from '../src/gpx/analyze';
 import { enrichedFileName, enrichGpx, WAYPOINT_TYPE } from '../src/gpx/export';
 import { distance } from '../src/gpx/geodesy';
-import { GpxError, parseGpx } from '../src/gpx/parse';
+import { decodeGpx, GpxError, parseGpx } from '../src/gpx/parse';
 import { analyzeTrack, buildReport, describeZone, reportText, zoneWaypoints } from '../src/gpx/report';
 import { resample, trackLength, type Sample } from '../src/gpx/resample';
 import { availableLanguages, setLanguage } from '../src/i18n';
@@ -121,6 +121,29 @@ describe('lecture du GPX', () => {
     expect(code('<html><body>pas un gpx</body></html>')).toBe('invalid');
     expect(code(`${GPX_HEAD}<wpt lat="44" lon="6"><name>Seul</name></wpt></gpx>`)).toBe('empty');
     expect(code(`${GPX_HEAD}<trk><trkseg><trkpt lat="44" lon="6"/></trkseg></trk></gpx>`)).toBe('empty');
+  });
+});
+
+describe('encodage du fichier', () => {
+  const named = trackGpx.replace('Tour du lac', 'Tour du Râteau');
+  const latin1 = named.replace('encoding="UTF-8"', 'encoding="ISO-8859-1"');
+
+  it('décode selon l\'encodage de la déclaration XML', () => {
+    expect(parseGpx(decodeGpx(Buffer.from(latin1, 'latin1')), xmlParser).name).toBe('Tour du Râteau');
+    expect(parseGpx(decodeGpx(Buffer.from(named.replace('UTF-8', 'windows-1252'), 'latin1')), xmlParser).name).toBe('Tour du Râteau');
+  });
+
+  it('donne la priorité à la marque d\'ordre des octets', () => {
+    const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(named, 'utf16le')]);
+    expect(parseGpx(decodeGpx(utf16), xmlParser).name).toBe('Tour du Râteau');
+    const utf8 = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(latin1, 'utf8')]);
+    expect(decodeGpx(utf8).startsWith('<?xml')).toBe(true);
+    expect(parseGpx(decodeGpx(utf8), xmlParser).name).toBe('Tour du Râteau');
+  });
+
+  it('lit en UTF-8 sans déclaration d\'encodage, ou si l\'encodage est inconnu', () => {
+    expect(parseGpx(decodeGpx(Buffer.from(named.replace(' encoding="UTF-8"', ''), 'utf8')), xmlParser).name).toBe('Tour du Râteau');
+    expect(parseGpx(decodeGpx(Buffer.from(named.replace('UTF-8', 'x-inconnu'), 'utf8')), xmlParser).name).toBe('Tour du Râteau');
   });
 });
 
@@ -476,6 +499,17 @@ describe('export du GPX enrichi', () => {
     const twice = enrichGpx(once, [waypoints[0]], xmlTools);
     const doc = xmlTools.parse(twice);
     expect(doc.getElementsByTagName('wpt')).toHaveLength(2); // Parking + 1 point
+  });
+
+  it('déclare toujours l\'UTF-8, l\'encodage du fichier produit', () => {
+    const latin1 = trackGpx.replace('encoding="UTF-8"', 'encoding="ISO-8859-1"').replace('Tour du lac', 'Tour du Râteau');
+    const out = enrichGpx(latin1, waypoints, xmlTools);
+    expect(out.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+    expect(out).not.toContain('ISO-8859-1');
+    expect(out.match(/<\?xml\s/g)).toHaveLength(1);
+    expect(parseGpx(out, xmlParser).name).toBe('Tour du Râteau');
+    // Sans déclaration dans le fichier d'origine, on en ajoute une.
+    expect(enrichGpx(trackGpx.replace(/^<\?xml[^>]*>\n/, ''), waypoints, xmlTools).startsWith('<?xml version="1.0" encoding="UTF-8"?>\n<gpx')).toBe(true);
   });
 
   it('garde le préfixe d\'espace de noms du fichier d\'origine', () => {

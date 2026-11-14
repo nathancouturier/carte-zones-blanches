@@ -36,6 +36,27 @@ export interface XmlParser {
 }
 
 /**
+ * Décode les octets d'un fichier GPX. L'encodage vient de la marque d'ordre des
+ * octets (BOM) s'il y en a une, sinon de la déclaration XML (encoding="ISO-8859-1"
+ * par exemple), sinon c'est l'UTF-8, l'encodage par défaut du XML.
+ */
+export function decodeGpx(bytes: Uint8Array): string {
+  let label = 'utf-8';
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) label = 'utf-16be';
+  else if (bytes[0] === 0xff && bytes[1] === 0xfe) label = 'utf-16le';
+  else if (!(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf)) {
+    // Sans BOM, la déclaration s'écrit en ASCII : on la lit sur les premiers octets.
+    const head = new TextDecoder('windows-1252').decode(bytes.subarray(0, 512));
+    label = /^\s*<\?xml\s[^>]*?encoding\s*=\s*["']([A-Za-z0-9._:-]+)["']/.exec(head)?.[1] ?? label;
+  }
+  try {
+    return new TextDecoder(label).decode(bytes); // le BOM éventuel est retiré au passage
+  } catch {
+    return new TextDecoder('utf-8').decode(bytes); // encodage inconnu du navigateur
+  }
+}
+
+/**
  * Retire les blancs et la marque d'ordre des octets (BOM) qui précèdent parfois
  * la déclaration XML (sortie de certains scripts) : le navigateur refuserait le fichier.
  */
