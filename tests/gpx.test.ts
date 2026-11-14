@@ -132,6 +132,16 @@ describe('lecture du GPX', () => {
     expect([route.discarded, route.jumps]).toEqual([1, 0]);
   });
 
+  it('garde telle quelle une trace dessinée aux points tous espacés de plus de 10 km', () => {
+    // Pas une trace GPS avec des erreurs de position : il ne resterait rien, et le fichier serait
+    // refusé comme « sans trace ni route ».
+    const trace = `${GPX_HEAD}<trk><trkseg>${[44.6, 44.71, 44.82, 44.93].map((lat) => `<trkpt lat="${lat}" lon="6.1"/>`).join('')}</trkseg></trk></gpx>`;
+    const sparse = parseGpx(trace, xmlParser);
+    expect(sparse.segments.map((s) => s.length)).toEqual([4]);
+    expect([sparse.discarded, sparse.jumps]).toEqual([0, 0]);
+    expect(trackLength(sparse.segments)).toBeGreaterThan(36_000);
+  });
+
   it('accepte des blancs ou une marque d\'ordre des octets avant la déclaration XML', () => {
     for (const before of ['\n', '\r\n  ', '\uFEFF', '\uFEFF\n']) {
       expect(parseGpx(before + trackGpx, xmlParser).name, JSON.stringify(before)).toBe('Tour du lac');
