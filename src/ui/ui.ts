@@ -24,9 +24,22 @@ const PANEL_TITLES: Record<PanelId, string> = {
 
 const DESKTOP = '(min-width: 900px)';
 
+/** Boutons de la barre du bas, dans l'ordre. Le bouton Rapport n'apparaît qu'après l'import d'un tracé. */
+const TOOLS: { id: PanelId; icon: string; label: string }[] = [
+  { id: 'network', icon: ICONS.network, label: 'toolbar.network' },
+  { id: 'basemap', icon: ICONS.layers, label: 'toolbar.basemap' },
+  { id: 'gpx', icon: ICONS.upload, label: 'toolbar.gpx' },
+  { id: 'report', icon: ICONS.report, label: 'toolbar.report' },
+];
+
 export class Ui {
   private readonly toolbar: HTMLElement;
   private readonly topbar: HTMLElement;
+  // Les boutons des barres sont créés une fois et mis à jour : recréés, ils perdraient le focus clavier.
+  private readonly tools: HTMLButtonElement[];
+  private readonly searchButton: HTMLButtonElement;
+  private readonly locateButton: HTMLButtonElement;
+  private readonly settingsButton: HTMLButtonElement;
   private readonly panel: HTMLElement;
   private readonly panelTitle: HTMLElement;
   private readonly panelBody: HTMLElement;
@@ -83,10 +96,17 @@ export class Ui {
     });
     this.searchResults = h('ul', { class: 'search__results', role: 'listbox' });
     this.searchBox = h('div', { class: 'search', hidden: true, role: 'search' }, this.searchInput, this.searchResults);
-    this.topbar = h('div', { class: 'topbar' });
-    this.toolbar = h('nav', { class: 'toolbar' });
+    this.searchButton = h('button', { type: 'button', class: 'fab', onclick: () => (this.searchOpen ? this.closeSearch() : this.openSearch()) });
+    this.locateButton = h('button', { type: 'button', class: 'fab', onclick: () => this.app.locate() }, icon(ICONS.locate));
+    this.settingsButton = h('button', { type: 'button', class: 'fab', onclick: () => this.app.openPanel('settings') }, icon(ICONS.settings));
+    this.topbar = h('div', { class: 'topbar' }, this.searchButton, this.searchBox, h('div', { class: 'topbar__spacer' }), this.locateButton, this.settingsButton);
+    this.tools = TOOLS.map(({ id, icon: path }) =>
+      h('button', { type: 'button', class: 'tool', dataset: { panel: id }, onclick: () => this.app.openPanel(id) }, icon(path), h('span')),
+    );
+    this.toolbar = h('nav', { class: 'toolbar' }, this.tools);
 
-    this.panelTitle = h('h2', { class: 'panel__title', id: 'panel-title' });
+    // tabindex -1 : le titre reçoit le focus à l'ouverture du panneau, sans entrer dans l'ordre de tabulation.
+    this.panelTitle = h('h2', { class: 'panel__title', id: 'panel-title', tabindex: '-1' });
     this.panelBody = h('div', { class: 'panel__body', id: 'panel-body' });
     this.panelBack = h('button', { type: 'button', class: 'icon-btn', onclick: () => this.app.openPanel('settings') }, icon(ICONS.back));
     this.panelCollapse = h('button', { type: 'button', class: 'icon-btn panel__collapse', 'aria-controls': 'panel-body', onclick: () => this.toggleCollapsed() });
@@ -134,6 +154,24 @@ export class Ui {
   // -- rendu ----------------------------------------------------------------
 
   private onState(state: AppState, previous: AppState): void {
+    this.render(state, previous);
+    // Panneau fermé (Échap, Fermer) alors que le focus y était : il revient au bouton de ce panneau.
+    if (previous.panel && !state.panel && this.focusLost()) this.panelButton(previous.panel)?.focus();
+  }
+
+  /** Vrai si le focus clavier n'est plus nulle part : sur la page, ou dans le panneau masqué. */
+  private focusLost(): boolean {
+    const active = document.activeElement;
+    return !active || active === document.body || (this.panel.hidden && this.panel.contains(active));
+  }
+
+  /** Bouton qui ouvre un panneau : celui de la barre du bas, ou la roue dentée. */
+  private panelButton(panel: PanelId): HTMLButtonElement | undefined {
+    if (panel === 'settings' || panel === 'sources') return this.settingsButton;
+    return this.tools.find((button) => button.dataset.panel === panel && !button.hidden);
+  }
+
+  private render(state: AppState, previous: AppState): void {
     // Pendant l'analyse, seul l'avancement change : on ne refait pas tout le panneau.
     const onlyProgress = (Object.keys(state) as (keyof AppState)[]).every((key) => key === 'progress' || state[key] === previous[key]);
     if (onlyProgress) {
@@ -185,22 +223,16 @@ export class Ui {
   }
 
   private renderTopbar(): void {
-    const searchBtn = h(
-      'button',
-      { type: 'button', class: 'fab', 'aria-label': t('action.search'), title: t('action.search'), 'aria-expanded': String(this.searchOpen), onclick: () => (this.searchOpen ? this.closeSearch() : this.openSearch()) },
-      icon(this.searchOpen ? ICONS.close : ICONS.search),
-    );
-    const settingsBtn = h(
-      'button',
-      { type: 'button', class: `fab${this.isPanel('settings', 'sources') ? ' fab--on' : ''}`, 'aria-label': t('action.settings'), title: t('action.settings'), onclick: () => this.app.openPanel('settings') },
-      icon(ICONS.settings),
-    );
-    const locateBtn = h(
-      'button',
-      { type: 'button', class: 'fab', 'aria-label': t('action.locate'), title: t('action.locate'), onclick: () => this.app.locate() },
-      icon(ICONS.locate),
-    );
-    setChildren(this.topbar, searchBtn, this.searchBox, h('div', { class: 'topbar__spacer' }), locateBtn, settingsBtn);
+    const label = (button: HTMLButtonElement, key: string): void => {
+      button.setAttribute('aria-label', t(key));
+      button.title = t(key);
+    };
+    label(this.searchButton, 'action.search');
+    this.searchButton.setAttribute('aria-expanded', String(this.searchOpen));
+    setChildren(this.searchButton, icon(this.searchOpen ? ICONS.close : ICONS.search));
+    label(this.locateButton, 'action.locate');
+    label(this.settingsButton, 'action.settings');
+    this.settingsButton.classList.toggle('fab--on', this.isPanel('settings', 'sources'));
   }
 
   private isPanel(...ids: PanelId[]): boolean {
@@ -210,21 +242,14 @@ export class Ui {
 
   private renderToolbar(): void {
     const { panel, track, trackStatus } = this.app.state;
-    const button = (id: PanelId, iconPath: string, label: string, extra = ''): HTMLElement =>
-      h(
-        'button',
-        { type: 'button', class: `tool${panel === id ? ' tool--on' : ''}${extra}`, 'aria-pressed': String(panel === id), dataset: { panel: id }, onclick: () => this.app.openPanel(id) },
-        icon(iconPath),
-        h('span', null, label),
-      );
-    setChildren(
-      this.toolbar,
-      button('network', ICONS.network, t('toolbar.network')),
-      button('basemap', ICONS.layers, t('toolbar.basemap')),
-      button('gpx', ICONS.upload, t('toolbar.gpx'), trackStatus === 'analyzing' || trackStatus === 'reading' ? ' tool--busy' : ''),
-      // Le bouton Rapport n'apparaît qu'après l'import d'un tracé.
-      track ? button('report', ICONS.report, t('toolbar.report')) : null,
-    );
+    TOOLS.forEach(({ id, label }, i) => {
+      const button = this.tools[i];
+      button.classList.toggle('tool--on', panel === id);
+      button.setAttribute('aria-pressed', String(panel === id));
+      button.querySelector('span')!.textContent = t(label);
+      if (id === 'gpx') button.classList.toggle('tool--busy', trackStatus === 'analyzing' || trackStatus === 'reading');
+      if (id === 'report') button.hidden = !track;
+    });
     this.toolbar.setAttribute('aria-label', t('toolbar.label'));
   }
 
@@ -269,8 +294,11 @@ export class Ui {
     setChildren(this.panelBody, content as never);
     this.panel.hidden = false;
     this.panelBody.scrollTop = scroll;
-    if (active) this.panelBody.querySelector<HTMLElement>(`[data-focus="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
-    else if (opened) this.panelTitle.focus?.();
+    // Panneau qui s'ouvre : le focus va sur son titre (lu par les lecteurs d'écran), sauf pendant une
+    // saisie dans la recherche. Sinon, l'élément actif est retrouvé dans le nouveau rendu.
+    if (opened) {
+      if (!this.searchBox.contains(document.activeElement)) this.panelTitle.focus({ preventScroll: true });
+    } else if (active) this.panelBody.querySelector<HTMLElement>(`[data-focus="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
     this.renderTopbar();
   }
 
@@ -386,6 +414,8 @@ export class Ui {
   }
 
   private closeSearch(): void {
+    // Le focus était dans la recherche : il revient à la loupe.
+    const hadFocus = this.searchBox.contains(document.activeElement);
     this.searchOpen = false;
     this.searchBox.hidden = true;
     this.searchInput.value = '';
@@ -394,6 +424,7 @@ export class Ui {
     this.pickFirst = false;
     setChildren(this.searchResults);
     this.renderTopbar();
+    if (hadFocus) this.searchButton.focus();
   }
 
   private onSearchInput(): void {

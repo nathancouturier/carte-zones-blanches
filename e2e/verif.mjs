@@ -208,7 +208,8 @@ try {
   {
     const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '?lang=de#11/46.02/7.75');
     controle('de : langue de la page', (await page.evaluate(() => document.documentElement.lang)) === 'de');
-    const outils = await page.locator('.toolbar .tool span').allTextContents();
+    // Le bouton Rapport existe déjà, masqué tant qu'aucun tracé n'est importé.
+    const outils = await page.locator('.toolbar .tool:not([hidden]) span').allTextContents();
     controle('de : barre d\'outils traduite', outils.join('|') === 'Netz|Karte|GPX importieren', outils.join('|'));
     if (!HORS_LIGNE) {
       await page.click('[data-panel="basemap"]');
