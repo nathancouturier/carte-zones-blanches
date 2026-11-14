@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 function info(archives: string[]): OfflineInfo {
-  return { name: 'Essai', date: '2026-11-14T10:00:00Z', archives, generated: '2026-11-14', basemap: null, coverageTiles: 1, basemapTiles: 0, failed: 0 };
+  return { name: 'Essai', date: '2026-11-14T10:00:00Z', complete: true, persisted: true, archives, generated: '2026-11-14', basemap: null, coverageTiles: 1, basemapTiles: 0, failed: 0 };
 }
 
 describe('édition des données enregistrées', () => {

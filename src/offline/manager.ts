@@ -4,12 +4,15 @@
 //   1. rien pour le site lui-même : le Service Worker en a enregistré la coque
 //      entière à son installation (public/sw.js) ; on vérifie seulement qu'elle
 //      est complète, sans quoi rien ne s'ouvrirait sans réseau ;
-//   2. les tuiles de couverture du couloir du tracé (lues dans les archives PMTiles),
+//   2. le GPX lui-même et le manifest des données, pour les retrouver sans réseau ;
+//   3. les tuiles de couverture du couloir du tracé (lues dans les archives PMTiles),
 //      rangées sous le nom de leur archive : celles d'une autre édition des données
 //      ne sont jamais relues avec ce manifest ;
-//   3. les tuiles du fond de carte affiché, si son fournisseur l'autorise, dans la
-//      limite qu'il tolère (voir src/map/basemaps.ts et docs/sources.md) ;
-//   4. le GPX lui-même et le manifest des données, pour les retrouver sans réseau.
+//   4. les tuiles du fond de carte affiché, si son fournisseur l'autorise, dans la
+//      limite qu'il tolère (voir src/map/basemaps.ts et docs/sources.md).
+// Un seul tracé à la fois : ce qui ne lui sert pas est effacé au début. L'information
+// sur l'enregistrement est écrite dès le début, marquée incomplète jusqu'à la fin :
+// interrompu, annulé ou en échec, il reste visible et peut être repris ou supprimé.
 // Tout reste dans le navigateur (Cache API). Rien n'est envoyé.
 
 import { NETWORK_TIMEOUT_MS } from '../config';
@@ -45,6 +48,10 @@ export interface OfflineInfo {
   name: string;
   /** Date de préparation (ISO). */
   date: string;
+  /** Faux tant que l'enregistrement n'est pas allé au bout (en cours, interrompu, annulé, en échec). */
+  complete: boolean;
+  /** Vrai si le navigateur a promis de ne pas effacer ces données quand la place manque. */
+  persisted: boolean;
   /** Édition des données enregistrées : noms des archives du manifest de la préparation. */
   archives: string[];
   /** Date de ces données (manifest.generated). */
@@ -93,7 +100,8 @@ function manifestKey(base: string): string {
 
 /** Erreur de préparation dont la cause est expliquée à l'utilisateur. */
 export class OfflineError extends Error {
-  constructor(readonly code: 'shell') {
+  /** shell : la coque du site manque ; quota : plus de place dans le navigateur. */
+  constructor(readonly code: 'shell' | 'quota') {
     super(`Hors ligne : ${code}`);
   }
 }
@@ -123,96 +131,132 @@ export function basemapCorridor(samples: readonly Sample[], policy: PreloadPolic
 
 /** Enregistre tout ce qu'il faut pour suivre le tracé sans réseau. */
 export async function prepareOffline(base: string, options: PrepareOptions): Promise<OfflineInfo> {
-  const cache = await caches.open(OFFLINE_CACHE);
-  const { manifest } = options;
-  const coverage = coverageCorridor(options.samples, manifest.tiles.maxzoom);
+  const { manifest, signal } = options;
+  // Le navigateur gardera-t-il ces données s'il manque de place ? On le demande avant de télécharger.
+  const persisted = await requestPersistence();
+  // 1. La coque du site, enregistrée par le Service Worker : sans elle, rien ne s'ouvrirait sans réseau.
+  if (!(await waitForShell(base))) throw new OfflineError('shell');
+  signal?.throwIfAborted();
+
+  const coverage = coverageCorridor(options.samples, manifest.tiles.maxzoom).flatMap((tile) => {
+    const file = archiveForTile(manifest, tile.z, tile.x, tile.y)?.file;
+    return file ? [{ ...tile, file, key: coverageTileKey(base, file, tile.z, tile.x, tile.y) }] : [];
+  });
   const plan = options.basemap ? basemapCorridor(options.samples, options.basemap.policy) : { tiles: [], maxZoom: 0, reduced: false };
   const template = options.basemap?.tileTemplates[0];
   const basemapUrls = template ? plan.tiles.map((tile) => tileUrl(template, tile)) : [];
   const extras = options.basemap?.policy.allowed ? options.basemap.extraUrls : [];
-  const total = coverage.length + basemapUrls.length + extras.length + 1;
-  let done = 0;
-  const step = (): void => options.onProgress(++done, total);
-  options.onProgress(0, total);
-
-  // 1. La coque du site, enregistrée par le Service Worker : sans elle, rien ne s'ouvrirait sans réseau.
-  if (!(await waitForShell(base))) throw new OfflineError('shell');
-
-  // 2. Tuiles de couverture : une entrée par tuile, vide si la tuile n'existe pas, sous le nom de son archive.
-  await pool(
-    coverage,
-    async (tile) => {
-      const file = archiveForTile(manifest, tile.z, tile.x, tile.y)?.file;
-      if (file) {
-        const key = coverageTileKey(base, file, tile.z, tile.x, tile.y);
-        // Déjà enregistrée (mise à jour, reprise) : même archive, donc mêmes octets.
-        if (!(await cache.match(key, IGNORE_VARY))) {
-          const bytes = await options.readArchive(file, tile.z, tile.x, tile.y);
-          const headers = { 'content-type': 'application/octet-stream', 'x-czb-vide': bytes ? '0' : '1' };
-          await cache.put(key, new Response(bytes ?? new ArrayBuffer(0), { headers }));
-        }
-      }
-      step();
-    },
-    options.signal,
-  );
-
-  // 3. Fond de carte : seulement si le fournisseur l'autorise.
-  let failed = 0;
-  let storedTiles = 0;
-  await pool(
-    [...extras.map((url) => ({ url, tile: false })), ...basemapUrls.map((url) => ({ url, tile: true }))],
-    async ({ url, tile }) => {
-      try {
-        let stored = !!(await cache.match(url, IGNORE_VARY));
-        if (!stored) {
-          const response = await fetch(url, { mode: 'cors', credentials: 'omit', signal: options.signal });
-          if (response.ok) {
-            await cache.put(url, response);
-            stored = true;
-          }
-        }
-        if (!stored) failed++;
-        else if (tile) storedTiles++;
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') throw error;
-        failed++;
-      }
-      step();
-    },
-    options.signal,
-  );
-
-  // 4. Le tracé lui-même, et le manifest qui va avec les tuiles de couverture enregistrées.
-  await cache.put(
-    trackKey(base),
-    new Response(options.gpxText, { headers: { 'content-type': 'application/gpx+xml', 'x-czb-nom': encodeURIComponent(options.fileName) } }),
-  );
-  await cache.put(manifestKey(base), new Response(JSON.stringify(manifest), { headers: { 'content-type': 'application/json', [LOCAL_COPY_HEADER]: '1' } }));
-  step();
-
   const info: OfflineInfo = {
     name: options.trackName,
     date: new Date().toISOString(),
+    complete: false,
+    persisted,
     archives: manifest.archives.map((archive) => archive.file),
     generated: manifest.generated,
     basemap: options.basemap?.policy.allowed ? options.basemap.id : null,
     coverageTiles: coverage.length,
-    basemapTiles: storedTiles,
-    failed,
+    basemapTiles: 0,
+    failed: 0,
   };
+  // Écrite avant toute donnée : même interrompu, l'enregistrement reste visible, donc supprimable.
+  saveInfo(info);
+
+  const cache = await caches.open(OFFLINE_CACHE);
+  // Un seul tracé à la fois : ce qui ne sert pas à celui-ci (tracé précédent, autre édition des
+  // données) est effacé ; ce qui resservira est gardé (mise à jour, reprise après une coupure).
+  const keep = new Set([trackKey(base), manifestKey(base), ...coverage.map((tile) => tile.key), ...extras, ...basemapUrls].map((url) => new URL(url, location.href).href));
+  for (const request of await cache.keys()) if (!keep.has(request.url)) await cache.delete(request);
+
+  const total = 1 + coverage.length + basemapUrls.length + extras.length;
+  let done = 0;
+  const step = (): void => options.onProgress(++done, total);
+  options.onProgress(0, total);
+  try {
+    // 2. Le tracé et le manifest qui va avec les tuiles de couverture : d'abord, pour qu'un
+    //    enregistrement interrompu puisse être repris.
+    await cache.put(
+      trackKey(base),
+      new Response(options.gpxText, { headers: { 'content-type': 'application/gpx+xml', 'x-czb-nom': encodeURIComponent(options.fileName) } }),
+    );
+    await cache.put(manifestKey(base), new Response(JSON.stringify(manifest), { headers: { 'content-type': 'application/json', [LOCAL_COPY_HEADER]: '1' } }));
+    step();
+
+    // 3. Tuiles de couverture : une entrée par tuile, vide si la tuile n'existe pas, sous le nom de son archive.
+    await pool(
+      coverage,
+      async (tile) => {
+        // Déjà enregistrée (mise à jour, reprise) : même archive, donc mêmes octets.
+        if (!(await cache.match(tile.key, IGNORE_VARY))) {
+          const bytes = await options.readArchive(tile.file, tile.z, tile.x, tile.y);
+          const headers = { 'content-type': 'application/octet-stream', 'x-czb-vide': bytes ? '0' : '1' };
+          await cache.put(tile.key, new Response(bytes ?? new ArrayBuffer(0), { headers }));
+        }
+        step();
+      },
+      signal,
+    );
+
+    // 4. Fond de carte : seulement si le fournisseur l'autorise.
+    await pool(
+      [...extras.map((url) => ({ url, tile: false })), ...basemapUrls.map((url) => ({ url, tile: true }))],
+      async ({ url, tile }) => {
+        try {
+          let stored = !!(await cache.match(url, IGNORE_VARY));
+          if (!stored) {
+            const response = await fetch(url, { mode: 'cors', credentials: 'omit', signal });
+            if (response.ok) {
+              await cache.put(url, response);
+              stored = true;
+            }
+          }
+          if (!stored) info.failed++;
+          else if (tile) info.basemapTiles++;
+        } catch (error) {
+          if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'QuotaExceededError')) throw error;
+          info.failed++;
+        }
+        step();
+      },
+      signal,
+    );
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'QuotaExceededError') throw new OfflineError('quota');
+    throw error;
+  }
+  signal?.throwIfAborted();
+  info.complete = true;
+  saveInfo(info);
+  return info;
+}
+
+function saveInfo(info: OfflineInfo): void {
   try {
     localStorage.setItem(INFO_KEY, JSON.stringify(info));
   } catch {
-    // sans importance : l'information sert seulement à l'affichage
+    // stockage bloqué : l'interface ne saura pas qu'un tracé est enregistré
   }
-  // On demande au navigateur de ne pas effacer ces données s'il manque de place.
+}
+
+/** Demande au navigateur de ne pas effacer ces données quand la place manque. Vrai s'il l'a promis. */
+async function requestPersistence(): Promise<boolean> {
   try {
-    await navigator.storage?.persist?.();
+    const storage = navigator.storage;
+    if (!storage?.persist) return false;
+    if (await storage.persisted?.()) return true;
+    return (await storage.persist()) === true;
   } catch {
-    // facultatif
+    return false;
   }
-  return info;
+}
+
+/** Vrai si le tracé enregistré est toujours dans le cache (le navigateur a pu effacer les données). */
+export async function offlineDataPresent(base: string): Promise<boolean> {
+  if (typeof caches === 'undefined') return false;
+  try {
+    return !!(await (await caches.open(OFFLINE_CACHE)).match(trackKey(base), IGNORE_VARY));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -257,6 +301,8 @@ export function offlineInfo(): OfflineInfo | null {
     // Enregistrement d'une version précédente du site, sans édition des données : il est à refaire.
     if (!Array.isArray(info.archives)) info.archives = [];
     if (typeof info.generated !== 'string') info.generated = '';
+    info.complete = info.complete === true;
+    info.persisted = info.persisted === true;
     return info;
   } catch {
     return null;

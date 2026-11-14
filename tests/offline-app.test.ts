@@ -58,8 +58,12 @@ const net = {
   pmtiles: null as null | 'up' | 'down' | 'hang',
   manifest: manifestA as unknown,
   pmCalls: 0,
+  /** Les lectures d'archive échouent à partir de cet appel (coupure en pleine préparation). */
+  pmFailFrom: Infinity,
+  /** Journal des appels, pour vérifier leur ordre. */
+  log: null as string[] | null,
 };
-const nav = { onLine: true, serviceWorker: {}, storage: { persist: async () => true }, userAgent: 'test' };
+const nav = { onLine: true, serviceWorker: {}, storage: { persist: async (): Promise<boolean> => true }, userAgent: 'test' };
 let caches: FakeCaches;
 let ls: Map<string, string>;
 
@@ -81,7 +85,10 @@ beforeEach(() => {
   net.pmtiles = null;
   net.manifest = manifestA;
   net.pmCalls = 0;
+  net.pmFailFrom = Infinity;
+  net.log = null;
   nav.onLine = true;
+  nav.storage = { persist: async () => true };
   caches = makeCaches();
   ls = new Map();
   vi.stubGlobal('caches', caches);
@@ -101,6 +108,8 @@ beforeEach(() => {
     }
     if (url.includes('.pmtiles')) {
       net.pmCalls++;
+      net.log?.push('archive');
+      if (net.pmCalls >= net.pmFailFrom) throw new TypeError('Failed to fetch');
       const mode = net.pmtiles ?? net.mode;
       if (mode === 'hang') return never();
       if (mode === 'down') throw new TypeError('Failed to fetch');
@@ -124,10 +133,11 @@ const essai = gpxFile('Essai', 44.55, 6.0);
 /** Un autre tracé, à une vingtaine de kilomètres : hors du couloir du premier. */
 const ailleurs = gpxFile('Ailleurs', 44.35, 5.7);
 
-async function newApp() {
+async function newApp(toast: (message: string) => void = () => undefined) {
   const { App } = await import('../src/app');
   const { Store, initialState } = await import('../src/state');
   const app = new App(new Store(initialState()), {} as HTMLElement);
+  app.setHooks({ toast, padding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) });
   await app.start();
   await wait(300); // updateView part 200 ms après le démarrage
   return app;
@@ -202,5 +212,87 @@ describe('hors ligne, dans l\'application', () => {
     expect(app.state.trackError).toBeNull();
     expect(app.state.track?.analysis).not.toBeNull();
     expect(net.pmCalls).toBeGreaterThan(before);
+  });
+});
+
+const OFFLINE = 'czb-hors-ligne-v1';
+const coverageEntries = (): string[] => caches.urls(OFFLINE).filter((u) => u.includes('/hors-ligne/couverture/'));
+
+describe('cycle de vie de l\'enregistrement hors ligne', () => {
+  it('un nouveau tracé remplace le précédent : rien ne reste de l\'ancien (hl-8)', async () => {
+    const app = await prepared();
+    expect(coverageEntries()).toHaveLength(app.state.offline.info!.coverageTiles);
+    await app.importGpx(ailleurs);
+    await app.prepareOffline();
+    expect(app.state.offline.info?.name).toBe('Ailleurs');
+    expect(coverageEntries()).toHaveLength(app.state.offline.info!.coverageTiles);
+    const { storedTrack } = await import('../src/offline/manager');
+    expect((await storedTrack(import.meta.env.BASE_URL))?.fileName).toBe('Ailleurs.gpx');
+  });
+
+  it('une préparation interrompue laisse un enregistrement incomplet, que l\'on peut supprimer (hl-8)', async () => {
+    const app = await newApp();
+    await app.importGpx(essai);
+    net.pmFailFrom = net.pmCalls + 4; // coupure au milieu des tuiles de couverture
+    await app.prepareOffline();
+    expect(app.state.offline.status).toBe('error');
+    expect(app.state.offline.info).not.toBeNull();
+    expect(app.state.offline.info?.complete).toBe(false);
+    expect(caches.urls(OFFLINE).length).toBeGreaterThan(0);
+    await app.clearOfflineData();
+    expect(caches.urls(OFFLINE)).toEqual([]);
+    expect(app.state.offline.info).toBeNull();
+  });
+
+  it('Annuler arrête l\'enregistrement en cours ; retirer ou remplacer le tracé aussi (hl-8)', async () => {
+    const app = await newApp();
+    await app.importGpx(essai);
+    net.pmtiles = 'hang';
+    void app.prepareOffline();
+    await wait(50);
+    expect(app.state.offline.status).toBe('preparing');
+    app.cancelOffline();
+    expect(app.state.offline.status).toBe('idle');
+    expect(app.state.offline.info?.complete).toBe(false);
+    void app.prepareOffline();
+    await wait(50);
+    app.removeTrack();
+    expect(app.state.offline.status).toBe('idle');
+    net.pmtiles = null;
+    await app.importGpx(essai);
+    net.pmtiles = 'hang';
+    void app.prepareOffline();
+    await wait(50);
+    net.pmtiles = null;
+    await app.importGpx(ailleurs);
+    expect(app.state.offline.status).toBe('idle');
+  });
+
+  it('demande le stockage persistant avant de télécharger, et garde la réponse (hl-9)', async () => {
+    const app = await newApp();
+    await app.importGpx(essai);
+    const log: string[] = [];
+    net.log = log;
+    nav.storage = {
+      persist: async () => {
+        log.push('persist');
+        return false;
+      },
+    };
+    await app.prepareOffline();
+    expect(log[0]).toBe('persist');
+    expect(log).toContain('archive');
+    expect(app.state.offline.info?.complete).toBe(true);
+    expect(app.state.offline.info?.persisted).toBe(false);
+  });
+
+  it('au démarrage, oublie un enregistrement dont le navigateur a effacé les données, et le dit (hl-9)', async () => {
+    await prepared();
+    await caches.delete(OFFLINE); // le navigateur a fait de la place
+    const toasts: string[] = [];
+    const app = await newApp((message) => toasts.push(message));
+    await wait(100);
+    expect(app.state.offline.info).toBeNull();
+    expect(toasts.join(' | ')).toContain('Essai');
   });
 });

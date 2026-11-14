@@ -262,6 +262,16 @@ try {
     controle('hors ligne : le tracé est enregistré', pret && /tuiles de couverture/.test(bilan), bilan);
     if (!HORS_LIGNE) controle('hors ligne : le fond Plan IGN est enregistré', /et \d[\d\s\u202f]* tuiles de fond/.test(bilan), bilan);
     await capture(page, '8b-telephone-fr-hors-ligne-pret');
+    // La suppression des données hors ligne demande confirmation : refusée, rien n'est effacé.
+    const confirmations = [];
+    page.once('dialog', async (d) => {
+      confirmations.push(d.message());
+      await d.dismiss();
+    });
+    await page.click('[data-focus="hors-ligne-effacer"]');
+    await page.waitForTimeout(800);
+    const garde = (await page.locator('.offline-ready').count()) === 1;
+    controle('hors ligne : la suppression demande confirmation', confirmations.length === 1 && /^Supprimer le tracé/.test(confirmations[0]) && garde, confirmations[0] ?? 'aucune confirmation');
 
     // Coupure du réseau, puis rechargement complet de la page.
     const servies = [];

@@ -27,7 +27,7 @@ import { analyzeTrack, buildReport, reportText, zoneWaypoints } from './gpx/repo
 import { resample } from './gpx/resample';
 import { getLanguage, setLanguage, t } from './i18n';
 import { autoBasemap, basemapPack, BASEMAPS, type BasemapChoice, type BasemapId } from './map/basemaps';
-import { clearOffline, LOCAL_COPY_HEADER, OfflineError, offlineSupported, prepareOffline, storedTrack, withStoredTiles } from './offline/manager';
+import { clearOffline, LOCAL_COPY_HEADER, offlineDataPresent, OfflineError, offlineInfo, offlineSupported, prepareOffline, storedTrack, withStoredTiles } from './offline/manager';
 import { MapView, type Padding } from './map/mapView';
 import { samplesBounds, trackToGeoJson, zoneToGeoJson, EMPTY_COLLECTION } from './map/trackGeojson';
 import {
@@ -89,6 +89,7 @@ export class App {
 
   async start(): Promise<void> {
     void this.applyStyle();
+    void this.checkOfflineData();
     await this.loadManifest();
   }
 
@@ -310,6 +311,8 @@ export class App {
     }
     if (seq !== this.importSeq) return;
 
+    // Un nouveau tracé remplace le précédent : son enregistrement hors ligne en cours s'arrête.
+    this.cancelOffline();
     // Le tracé s'affiche tout de suite, d'une seule couleur, et la carte zoome dessus.
     this.store.set({ track, selectedZone: null, trackStatus: this.tileStore ? 'analyzing' : 'ready', panel: this.tileStore ? this.state.panel : 'report' });
     this.showTrack(track);
@@ -393,6 +396,7 @@ export class App {
 
   removeTrack(): void {
     this.importSeq++;
+    this.cancelOffline();
     this.store.set({ track: null, trackStatus: 'idle', trackError: null, selectedZone: null, panel: this.state.panel === 'report' ? 'gpx' : this.state.panel });
     this.showTrack(null);
   }
@@ -437,25 +441,53 @@ export class App {
         },
         signal: abort.signal,
       });
+      this.offlineAbort = null;
       this.store.set({ offline: { status: 'idle', progress: 1, info } });
     } catch (error) {
       if (abort.signal.aborted) return;
+      this.offlineAbort = null;
       console.warn('Préparation du hors ligne :', error);
-      this.store.set({ offline: { ...this.state.offline, status: 'error', progress: 0, error: error instanceof OfflineError ? error.code : undefined } });
+      // L'enregistrement provisoire reste affiché, incomplet : il peut être repris ou supprimé.
+      this.store.set({ offline: { status: 'error', progress: 0, error: error instanceof OfflineError ? error.code : undefined, info: offlineInfo() } });
     }
+  }
+
+  /** Arrête l'enregistrement en cours. Ce qui est déjà enregistré reste, marqué incomplet. */
+  cancelOffline(): void {
+    if (!this.offlineAbort) return;
+    this.offlineAbort.abort();
+    this.offlineAbort = null;
+    if (this.state.offline.status === 'preparing') this.store.set({ offline: { status: 'idle', progress: 0, info: offlineInfo() } });
   }
 
   async clearOfflineData(): Promise<void> {
     this.offlineAbort?.abort();
+    this.offlineAbort = null;
     await clearOffline();
     this.store.set({ offline: { status: 'idle', progress: 0, info: null } });
     this.hooks.toast(t('offline.cleared'));
   }
 
+  /** Au démarrage : si le navigateur a effacé les données hors ligne, on oublie l'enregistrement et on le dit. */
+  private async checkOfflineData(): Promise<void> {
+    const info = this.state.offline.info;
+    if (info && !(await offlineDataPresent(import.meta.env.BASE_URL))) await this.forgetLostOfflineData(info.name);
+  }
+
+  private async forgetLostOfflineData(name: string): Promise<void> {
+    await clearOffline();
+    this.store.set({ offline: { status: 'idle', progress: 0, info: null } });
+    this.hooks.toast(t('offline.lost', { name }));
+  }
+
   /** Recharge le tracé enregistré pour le hors ligne. */
   async restoreOfflineTrack(): Promise<void> {
     const stored = await storedTrack(import.meta.env.BASE_URL);
-    if (!stored) return;
+    if (!stored) {
+      const info = this.state.offline.info;
+      if (info) await this.forgetLostOfflineData(info.name);
+      return;
+    }
     await this.importGpxText(stored.text, stored.fileName);
     const name = this.state.track?.parsed.name ?? stored.fileName;
     if (this.state.track) this.hooks.toast(t('offline.restored', { name }));

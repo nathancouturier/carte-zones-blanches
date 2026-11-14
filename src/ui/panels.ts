@@ -327,6 +327,7 @@ export function gpxPanel(app: App, chooseFile: () => void): Node_[] {
           { class: 'actions' },
           h('button', { type: 'button', class: 'btn', dataset: { focus: 'reprendre' }, onclick: () => void app.restoreOfflineTrack() }, icon(ICONS.report, 20), t('offline.resume', { name: stored.name })),
         ),
+        clearOfflineButton(app),
       );
     }
   }
@@ -570,11 +571,18 @@ function offlineSection(app: App): Node_ {
   if (offline.status === 'preparing') {
     parts.push(
       h('div', { class: 'progress', role: 'status' }, h('span', null, t('offline.preparing')), h('progress', { max: '1', value: String(offline.progress), dataset: { role: 'offline-progress' } })),
+      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', dataset: { focus: 'hors-ligne-annuler' }, onclick: () => app.cancelOffline() }, t('offline.cancel'))),
     );
   } else {
-    if (offline.status === 'error') parts.push(note(offline.error === 'shell' ? t('offline.shellMissing') : t('offline.error'), 'warning'));
+    if (offline.status === 'error') {
+      const reason = offline.error === 'shell' ? t('offline.shellMissing') : offline.error === 'quota' ? t('offline.quota') : t('offline.error');
+      parts.push(note(reason, 'warning'));
+    }
     const info = offline.info;
-    if (info) {
+    const sameTrack = info?.name === (track.parsed.name ?? track.fileName);
+    // Interrompu, annulé ou en échec : on le dit, plutôt que « Prêt ».
+    if (info && !info.complete) parts.push(note(t('offline.incomplete', { name: info.name }), 'warning'));
+    else if (info) {
       parts.push(
         h(
           'p',
@@ -587,7 +595,9 @@ function offlineSection(app: App): Node_ {
       if (info.failed > 0) parts.push(note(t('offline.failed', { count: info.failed }), 'warning'));
       // Données publiées depuis : l'enregistrement garde les siennes (et leur manifest), à mettre à jour.
       if (app.state.manifest && offlineOutdated(info, app.state.manifest)) parts.push(note(t('offline.outdated', { date: formatDataDate(info.date.slice(0, 10)) }), 'warning'));
+      if (!info.persisted) parts.push(note(t('offline.notPersisted'), 'warning'));
     }
+    if (info && !sameTrack) parts.push(h('p', { class: 'hint' }, t('offline.replaces', { name: info.name })));
     parts.push(
       h(
         'div',
@@ -596,15 +606,34 @@ function offlineSection(app: App): Node_ {
           'button',
           { type: 'button', class: 'btn', dataset: { focus: 'hors-ligne' }, onclick: () => void app.prepareOffline() },
           icon(ICONS.download, 20),
-          info ? t('offline.update') : t('offline.prepare'),
+          !info || !sameTrack ? t('offline.prepare') : info.complete ? t('offline.update') : t('offline.resumePreparation'),
         ),
-        info
-          ? h('button', { type: 'button', class: 'btn btn--danger', dataset: { focus: 'hors-ligne-effacer' }, onclick: () => void app.clearOfflineData() }, icon(ICONS.trash, 20), t('offline.clear'))
-          : null,
       ),
+      info ? clearOfflineButton(app) : null,
     );
   }
   return section(t('offline.heading'), parts);
+}
+
+/** Suppression des données hors ligne : à l'écart des autres boutons, et confirmée (sans réseau, rien ne se retélécharge). */
+function clearOfflineButton(app: App): HTMLElement {
+  return h(
+    'div',
+    { class: 'actions actions--apart' },
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn--danger',
+        dataset: { focus: 'hors-ligne-effacer' },
+        onclick: () => {
+          if (window.confirm(t('offline.clearConfirm'))) void app.clearOfflineData();
+        },
+      },
+      icon(ICONS.trash, 20),
+      t('offline.clear'),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------

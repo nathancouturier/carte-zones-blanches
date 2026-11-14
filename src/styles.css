@@ -1001,3 +1001,8 @@ input[type="range"] {
     transition: none !important;
   }
 }
+
+/* Mode hors ligne : la suppression des données, à l'écart des autres boutons. */
+.actions--apart {
+  margin-top: 24px;
+}
