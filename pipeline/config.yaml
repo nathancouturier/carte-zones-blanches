@@ -256,7 +256,10 @@ sources:
     name: "Ministerio para la Transformación Digital y de la Función Pública, Mapa de Servicios de Banda Ancha Móvil 2024 (4G)"
     attribution: "Origen de los datos: Ministerio para la Transformación Digital y de la Función Pública"
     url: https://digital.gob.es/telecomunicaciones-infraestructuras-digitales/areas-interes/banda-ancha/informacion-cobertura/mapas-servicios-banda-ancha
-    licence: Condiciones generales de reutilización (réutilisation libre, source et date à citer)
+    # Aucune licence n'est attachée à la couche elle-même, et elle n'est pas dans le portail de données ouvertes du
+    # ministère. La réutilisation s'appuie sur les conditions générales de réutilisation du site du ministère
+    # (citer la source et la date, ne pas dénaturer) et sur la loi 11/2022, article 48 : voir docs/sources.md.
+    licence: "Condiciones generales de reutilización del ministerio : source et date à citer (pas de licence propre à cette couche)"
     licence_url: https://digital.gob.es/nota-legal
     item_url: https://www.arcgis.com/sharing/rest/content/items/ef9f55c81f304e5185fcdd7cecf98e7f
     layer_url: https://services-eu1.arcgis.com/3LqdsBPalJaUFvo1/arcgis/rest/services/InfoCob4G_2024/FeatureServer/0
