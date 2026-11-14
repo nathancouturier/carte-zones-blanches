@@ -8,11 +8,11 @@ import { isAbortError } from '../coverage/abort';
 import { SOURCE_ESTIMATED } from '../coverage/codec';
 import { countryByIso } from '../coverage/manifest';
 import { getLanguage, onLanguageChange, t, tParts } from '../i18n';
-import { BASEMAPS, ESTIMATED_CREDIT, HILLSHADE, OSM_COPYRIGHT_URL } from '../map/basemaps';
+import { BASEMAPS, ESTIMATED_CREDIT, ESTIMATED_CREDIT_LANG, HILLSHADE, OSM_COPYRIGHT_URL } from '../map/basemaps';
 import type { Padding } from '../map/mapView';
 import { searchPlaces, type Place, type SearchResult } from '../search/geocode';
 import type { AppState, PanelId } from '../state';
-import { creditNodes, h, icon, ICONS, linkName, setChildren, type Child } from './dom';
+import { creditNodes, h, icon, ICONS, inLanguage, linkName, setChildren, type Child } from './dom';
 import { basemapPanel, gpxPanel, networkPanel, reportPanel, settingsPanel, sourcesPanel } from './panels';
 
 const PANEL_TITLES: Record<PanelId, string> = {
@@ -356,15 +356,17 @@ export class Ui {
   private renderAttribution(): void {
     const { activeBasemap, basemap, manifest, visibleCountries, network } = this.app.state;
     const fond = BASEMAPS[activeBasemap];
-    // Mention du fond avec ses liens ; sur téléphone, sa forme courte quand le fournisseur en admet une.
+    // Mention du fond avec ses liens, dans sa langue (attribut lang) ; sur téléphone, sa forme courte
+    // quand le fournisseur en admet une (des noms propres, sans langue).
     const basemaps: Child[] = [
       fond.shortAttribution
-        ? [h('span', { class: 'credit-long' }, creditNodes(fond.attribution)), h('span', { class: 'credit-short' }, creditNodes(fond.shortAttribution))]
-        : creditNodes(fond.attribution),
+        ? [h('span', { class: 'credit-long', lang: fond.attributionLang }, creditNodes(fond.attribution)), h('span', { class: 'credit-short' }, creditNodes(fond.shortAttribution))]
+        : inLanguage(fond.attributionLang, creditNodes(fond.attribution)),
     ];
     if (basemap.hillshade && HILLSHADE.attribution !== fond.attribution) basemaps.push(', ', creditNodes(HILLSHADE.attribution));
-    // Mentions des données de couverture des pays à l'écran (textes du manifest, affichés tels quels).
-    const coverage: string[] = [];
+    // Mentions des données de couverture des pays à l'écran (textes du manifest, affichés tels quels,
+    // avec leur langue quand le manifest la donne).
+    const coverage: { text: string; lang?: string }[] = [];
     let estimated = false;
     if (manifest) {
       for (const iso of visibleCountries) {
@@ -373,13 +375,13 @@ export class Ui {
           if (!source.services.includes(network.service)) continue;
           // Zones estimées : le crédit qu'OpenCellID demande à côté de la carte, avec ses liens.
           if (source.type === SOURCE_ESTIMATED) estimated = true;
-          else if (!coverage.includes(source.attribution)) coverage.push(source.attribution);
+          else if (!coverage.some((mention) => mention.text === source.attribution)) coverage.push({ text: source.attribution, lang: source.mentionLang });
         }
       }
     }
-    const coverageNodes: Child[] = coverage.map((text, i) => (i > 0 ? `, ${text}` : text));
-    // Le site dit « estimation » dans la langue choisie, devant le crédit d'OpenCellID.
-    if (estimated) coverageNodes.push(coverage.length > 0 ? ', ' : null, tParts<Child>('attribution.estimated', { credit: creditNodes(ESTIMATED_CREDIT) }));
+    const coverageNodes: Child[] = coverage.map((mention, i) => [i > 0 ? ', ' : null, inLanguage(mention.lang, mention.text)]);
+    // Le site dit « estimation » dans la langue choisie, devant le crédit d'OpenCellID, en anglais.
+    if (estimated) coverageNodes.push(coverage.length > 0 ? ', ' : null, tParts<Child>('attribution.estimated', { credit: inLanguage(ESTIMATED_CREDIT_LANG, creditNodes(ESTIMATED_CREDIT)) }));
     const text: Child[] = [tParts<Child>('attribution.basemap', { names: basemaps })];
     // Une ligne par groupe : la mention d'OpenTopoMap contient elle-même une barre « | ».
     if (coverageNodes.length > 0) text.push(h('br'), tParts<Child>('attribution.coverage', { names: coverageNodes }));

@@ -43,6 +43,8 @@ interface BasemapBase {
   attribution: Credit;
   /** Forme courte admise par le fournisseur, pour le pied de carte sur téléphone. */
   shortAttribution?: Credit;
+  /** Langue de la mention (code BCP 47), quand elle n'est pas faite que de noms propres. */
+  attributionLang?: string;
   /** Préchargement pour le mode hors ligne, selon les conditions du fournisseur (voir docs/sources.md). */
   offline: PreloadPolicy;
 }
@@ -114,6 +116,8 @@ export const ESTIMATED_CREDIT: Credit = [
   { text: ', licensed under ' },
   { text: 'CC BY-SA 4.0', href: 'https://creativecommons.org/licenses/by-sa/4.0/' },
 ];
+/** Le crédit d'OpenCellID est en anglais. */
+export const ESTIMATED_CREDIT_LANG = 'en';
 
 export const BASEMAPS: Record<BasemapId, Basemap> = {
   'ign-classique': {
@@ -168,7 +172,8 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     id: 'osm',
     kind: 'raster',
     labelKey: 'basemap.osm',
-    // La mention demandée par OpenTopoMap, et sa forme courte quand la place manque.
+    // La mention demandée par OpenTopoMap, en allemand, et sa forme courte quand la place manque.
+    attributionLang: 'de',
     attribution: [
       { text: 'Kartendaten: © ' },
       OSM_DATA,

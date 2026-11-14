@@ -69,6 +69,11 @@ export interface ManifestSource {
   licenceUrl?: string;
   /** Mention que la licence demande d'afficher telle quelle (non traduite). */
   licenceNotice?: string;
+  /**
+   * Langue (code BCP 47, « it », « es »...) des mentions imposées telles quelles, attribution
+   * et licenceNotice, quand le manifest la donne : elles portent alors un attribut lang.
+   */
+  mentionLang?: string;
   /** Logo que la licence demande d'afficher : chemin d'un fichier du site, relatif à sa racine. */
   licenceLogo?: string;
   /** Adresse vers laquelle le logo de licence renvoie (https). */
@@ -112,7 +117,7 @@ export interface ManifestCountry {
    * Mention du contour du pays (source et licence), en français, avec un lien éventuel
    * (https) et ses traductions facultatives.
    */
-  boundary?: { text: string; url?: string; textI18n?: TextTranslations };
+  boundary?: { text: string; url?: string; textI18n?: TextTranslations; /** Langue du texte d'origine (facultatif). */ lang?: string };
   sources: ManifestSource[];
 }
 
@@ -193,6 +198,14 @@ function int(value: unknown, where: string, min: number, max: number): number {
   return value;
 }
 
+/** Code de langue BCP 47 simple (« it », « es », « pt-BR »). */
+const LANG_CODE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
+
+/** Code de langue lu dans le manifest, ou undefined s'il manque ou s'il est mal formé. */
+function langCode(value: unknown): string | undefined {
+  return typeof value === 'string' && LANG_CODE.test(value) ? value : undefined;
+}
+
 /**
  * Traductions facultatives d'un texte, par code de langue. Les données publiées avant elles
  * n'en ont pas : une entrée mal formée est ignorée, elle ne rend pas les données illisibles.
@@ -200,7 +213,7 @@ function int(value: unknown, where: string, min: number, max: number): number {
 function translations(value: unknown): TextTranslations | undefined {
   if (!isObject(value)) return undefined;
   const kept = Object.entries(value).filter(
-    (entry): entry is [string, string] => /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(entry[0]) && typeof entry[1] === 'string' && entry[1].trim() !== '',
+    (entry): entry is [string, string] => LANG_CODE.test(entry[0]) && typeof entry[1] === 'string' && entry[1].trim() !== '',
   );
   return kept.length > 0 ? Object.fromEntries(kept) : undefined;
 }
@@ -329,6 +342,8 @@ export function parseManifest(raw: unknown): Manifest {
       const licenceUrl = httpsUrl(s.licenceUrl);
       if (licenceUrl) source.licenceUrl = licenceUrl;
       if (typeof s.licenceNotice === 'string' && s.licenceNotice !== '') source.licenceNotice = s.licenceNotice;
+      const mentionLang = langCode(s.mentionLang);
+      if (mentionLang) source.mentionLang = mentionLang;
       // Un chemin simple à l'intérieur du site : jamais une adresse externe.
       if (typeof s.licenceLogo === 'string' && /^[a-z0-9][a-z0-9/_.-]*\.(?:png|jpe?g|svg|webp)$/i.test(s.licenceLogo) && !s.licenceLogo.includes('..')) {
         source.licenceLogo = s.licenceLogo;
@@ -354,6 +369,8 @@ export function parseManifest(raw: unknown): Manifest {
       if (url) boundary.url = url;
       const textI18n = translations(c.boundary.textI18n);
       if (textI18n) boundary.textI18n = textI18n;
+      const lang = langCode(c.boundary.lang);
+      if (lang) boundary.lang = lang;
       country.boundary = boundary;
     }
     return country;

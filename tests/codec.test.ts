@@ -164,6 +164,23 @@ describe('lecture du manifest', () => {
     expect(parseManifest(autres).countries[2].sources[0].estimation).toEqual({ sites: 12 });
   });
 
+  it('lit la langue des mentions imposées, facultative (attribut lang des mentions en langue étrangère)', () => {
+    const base = JSON.parse(JSON.stringify(sampleManifest()));
+    // Manifest publié aujourd'hui : pas de langue, rien n'est supposé.
+    expect(parseManifest(base).countries[1].sources[0].mentionLang).toBeUndefined();
+    base.countries[1].sources[0].mentionLang = 'it';
+    base.countries[2].sources[0].mentionLang = 'en';
+    base.countries[0].sources[0].mentionLang = 'pas une langue'; // ignorée, sans rendre les données illisibles
+    base.countries[1].boundary = { text: 'Istat, Confini delle unità amministrative', lang: 'it' };
+    base.countries[2].boundary = { text: '© OpenStreetMap contributors', lang: 42 };
+    const [france, suisse, andorre] = parseManifest(base).countries;
+    expect(suisse.sources[0].mentionLang).toBe('it');
+    expect(andorre.sources[0].mentionLang).toBe('en');
+    expect(france.sources[0].mentionLang).toBeUndefined();
+    expect(suisse.boundary).toEqual({ text: 'Istat, Confini delle unità amministrative', lang: 'it' });
+    expect(andorre.boundary).toEqual({ text: '© OpenStreetMap contributors' });
+  });
+
   it('dit combien de sites d\'antennes une source estimée connaît, quand le manifest le donne (sources-19)', () => {
     const base = JSON.parse(JSON.stringify(sampleManifest()));
     // Manifest publié aujourd'hui, sans ce champ : rien n'est dit.

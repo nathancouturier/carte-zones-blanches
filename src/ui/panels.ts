@@ -33,7 +33,7 @@ import {
 import { BASEMAP_ORDER, BASEMAPS, HILLSHADE, OSM_COPYRIGHT_URL, type BasemapChoice, type Credit } from '../map/basemaps';
 import { OUTSIDE_COLOR } from '../map/style';
 import { offlineOutdated, offlineSupported, type BasemapRecord } from '../offline/manager';
-import { creditNodes, externalLink, h, icon, ICONS, linkName } from './dom';
+import { creditNodes, externalLink, h, icon, ICONS, inLanguage, linkName } from './dom';
 import { elevationProfile } from './profile';
 
 type Node_ = Node | string | null | false | undefined | Node_[];
@@ -712,6 +712,12 @@ function maybeLink(label: string, url?: string): Node_ {
   return url ? externalLink(label, url) : label;
 }
 
+/** Mention du contour d'un pays : traduite si le manifest le permet, sinon le texte d'origine, dans sa langue. */
+function boundaryMention(boundary: NonNullable<ManifestCountry['boundary']>): Node_ {
+  const text = localized(boundary.text, boundary.textI18n);
+  return inLanguage(text === boundary.text ? boundary.lang : undefined, maybeLink(text, boundary.url)) as Node_;
+}
+
 /**
  * Antennes connues d'une source estimée, et ce que leur nombre dit de sa fiabilité.
  * null quand le manifest ne les compte pas (données publiées avant ce champ).
@@ -723,7 +729,8 @@ export function estimationNote(source: ManifestSource): string | null {
 
 /** Logo que la licence demande d'afficher ; il renvoie vers l'adresse indiquée par le manifest, s'il y en a une. */
 function licenceLogo(source: ManifestSource): Node_ {
-  const image = h('img', { class: 'licence-logo', src: `${import.meta.env.BASE_URL}${source.licenceLogo}`, alt: source.attribution, loading: 'lazy' });
+  // Le texte de remplacement est la mention de la source : dans sa langue, quand le manifest la donne.
+  const image = h('img', { class: 'licence-logo', src: `${import.meta.env.BASE_URL}${source.licenceLogo}`, alt: source.attribution, lang: source.mentionLang, loading: 'lazy' });
   return source.licenceLogoUrl ? h('a', { href: source.licenceLogoUrl, target: '_blank', rel: 'noopener noreferrer', class: 'licence-logo__link' }, image) : image;
 }
 
@@ -772,8 +779,9 @@ export function sourcesPanel(app: App): Node_[] {
                   'dd',
                   null,
                   maybeLink(localized(source.licence, source.licenceI18n), source.licenceUrl),
-                  // Mention et logo que la licence demande d'afficher tels quels (dans la langue de la source).
-                  source.licenceNotice ? [h('br'), h('small', { lang: 'mul' }, source.licenceNotice)] : null,
+                  // Mention et logo que la licence demande d'afficher tels quels, dans la langue de la source
+                  // (donnée par le manifest ; à défaut, « mul » : langue non précisée).
+                  source.licenceNotice ? [h('br'), h('small', { lang: source.mentionLang ?? 'mul' }, source.licenceNotice)] : null,
                   source.licenceLogo ? [h('br'), licenceLogo(source)] : null,
                 ),
               ),
@@ -783,10 +791,9 @@ export function sourcesPanel(app: App): Node_[] {
               estimationNote(source) ? h('p', { class: 'hint' }, estimationNote(source)) : null,
             ),
           ),
-          // Contour qui dit quels pixels appartiennent au pays : sa mention, telle que le manifest la donne.
-          country.boundary
-            ? h('p', { class: 'hint' }, tParts<Node_>('sources.boundary', { boundary: maybeLink(localized(country.boundary.text, country.boundary.textI18n), country.boundary.url) }))
-            : null,
+          // Contour qui dit quels pixels appartiennent au pays : sa mention, telle que le manifest la donne
+          // (traduite, ou dans sa langue d'origine avec son attribut lang).
+          country.boundary ? h('p', { class: 'hint' }, tParts<Node_>('sources.boundary', { boundary: boundaryMention(country.boundary) })) : null,
           operatorNames(country).length > 0 ? h('p', { class: 'hint' }, t('sources.operators', { operators: operatorNames(country).join(', ') })) : null,
           country.euRoaming ? null : h('p', { class: 'hint' }, t('report.roamingWarning', { country: countryName(country.iso) })),
         ),
@@ -804,11 +811,17 @@ export function sourcesPanel(app: App): Node_[] {
 
   // « Plan IGN classique : © IGN » ; la ponctuation suit la langue (« Plan IGN klassisch: © IGN »),
   // la mention reste celle du fournisseur, avec ses liens.
-  const credit = (name: string, attribution: Credit): HTMLElement => h('li', null, tParts<Node_>('sources.basemapItem', { name, attribution: creditNodes(attribution) }));
+  const credit = (name: string, attribution: Credit, lang?: string): HTMLElement =>
+    h('li', null, tParts<Node_>('sources.basemapItem', { name, attribution: inLanguage(lang, creditNodes(attribution)) as Node_ }));
   parts.push(
     section(
       t('sources.basemaps'),
-      h('ul', { class: 'plain' }, BASEMAP_ORDER.map((id) => credit(t(BASEMAPS[id].labelKey), BASEMAPS[id].attribution)), credit(t('basemap.hillshade'), HILLSHADE.attribution)),
+      h(
+        'ul',
+        { class: 'plain' },
+        BASEMAP_ORDER.map((id) => credit(t(BASEMAPS[id].labelKey), BASEMAPS[id].attribution, BASEMAPS[id].attributionLang)),
+        credit(t('basemap.hillshade'), HILLSHADE.attribution),
+      ),
     ),
     section(
       t('sources.search'),

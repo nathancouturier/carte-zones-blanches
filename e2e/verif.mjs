@@ -642,6 +642,9 @@ try {
       return courte ? `${courte.textContent} | ${[...courte.querySelectorAll('a')].map((a) => a.getAttribute('href')).join(' ')}` : '';
     });
     controle('interface : mention du fond OpenStreetMap avec ses liens', mentionOsm === '© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA) | https://openstreetmap.org/copyright http://opentopomap.org https://creativecommons.org/licenses/by-sa/3.0/', mentionOsm);
+    // La mention complète, en allemand, est marquée comme telle pour les lecteurs d'écran.
+    const langueOsm = await page.evaluate(() => document.querySelector('.attribution .credit-long')?.getAttribute('lang') ?? 'aucune');
+    controle('interface : mention d\'OpenTopoMap marquée en allemand (attribut lang)', langueOsm === 'de', langueOsm);
     await page.evaluate(() => (location.hash = '#10/44.9/6.45'));
     await page.waitForTimeout(2500);
     await page.tap('.tool[data-panel="basemap"]');
@@ -769,6 +772,8 @@ try {
       // Le site dit « estimation » dans la langue choisie devant le crédit, en anglais, d'OpenCellID (lang-06).
       const credite = monaco.texte.includes('estimation (Cell tower data from OpenCellID, licensed under CC BY-SA 4.0)') && monaco.liens.includes('https://opencellid.org') && monaco.liens.includes('https://creativecommons.org/licenses/by-sa/4.0/');
       controle('mentions : Monaco à l\'écran à côté du centre, « estimation » et crédit d\'OpenCellID avec ses liens', credite, monaco.texte);
+      const anglais = await page.evaluate(() => document.querySelector('.attribution__text [lang="en"]')?.textContent ?? '');
+      controle('mentions : crédit d\'OpenCellID marqué en anglais (attribut lang)', anglais === 'Cell tower data from OpenCellID, licensed under CC BY-SA 4.0', anglais || 'aucun');
       // Monaco est estimé en bonne couverture, que la carte ne dessine pas par défaut : de fins traits gris
       // le signalent, et la légende le dit ; avec toute la couverture affichée, le vert hachuré suffit (sources-24).
       await page.click('.tool[data-panel="network"]');
@@ -848,6 +853,11 @@ try {
           for (const source of pays.sources) Object.assign(source, { nameI18n: { es: traduit('Nombre', source.id) }, licenceI18n: { es: traduit('Licencia', source.id) } });
           // Antennes connues des zones estimées (sources-19).
           for (const source of pays.sources.filter((s) => s.type === 2)) source.estimation = { sites: 12, cells: 41 };
+          // Langue des mentions imposées telles quelles (champ facultatif mentionLang).
+          for (const source of pays.sources) {
+            const langue = source.type === 2 ? 'en' : { it_agcom: 'it', es_mtd: 'es' }[source.id];
+            if (langue) source.mentionLang = langue;
+          }
         }
         await route.fulfill({ response: reponse, json: donnees });
       });
@@ -868,6 +878,14 @@ try {
     // Une seule fois : les données d'origine ont été transformées pour ce site (licences CC BY, regles-02c).
     const transformees = panneau.split('Para este sitio, los datos originales se han transformado').length - 1;
     controle('es : transformation des données d\'origine dite une fois', transformees === 1, `${transformees} fois`);
+    // Mentions imposées dans une autre langue : attribut lang donné par le manifest, au panneau comme au pied de carte.
+    const marquees = await page.evaluate(() => ({
+      avis: [...document.querySelectorAll('.panel__body small[lang]')].map((s) => s.getAttribute('lang')),
+      pied: [...document.querySelectorAll('.attribution__text [lang]')].map((s) => `${s.getAttribute('lang')} ${s.textContent.slice(0, 24)}`),
+    }));
+    const avisAttendus = publies.flatMap((pays) => pays.sources.filter((s) => s.licenceNotice).map((s) => (s.type === 2 ? 'en' : { it_agcom: 'it', es_mtd: 'es' }[s.id] ?? 'mul')));
+    const piedEspagnol = !paysPublies.includes('ES') || marquees.pied.some((m) => m.startsWith('es Origen de los datos'));
+    controle('es : mentions en langue étrangère marquées de leur langue (attribut lang)', marquees.avis.join() === avisAttendus.join() && piedEspagnol, `${marquees.avis.join()} | ${marquees.pied.join(' ; ')}`);
     controle('es : textes traduits, aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
