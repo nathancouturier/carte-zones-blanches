@@ -423,6 +423,9 @@ export class Ui {
   /** Marges à laisser libres quand on cadre la carte : barres et panneau ouvert. */
   padding(): Padding {
     const padding: Padding = { top: 84, right: 56, bottom: 110, left: 40 };
+    // Le pied de carte est posé au-dessus de la barre d'outils : rien n'est cadré dessous.
+    const attribution = this.attribution.getBoundingClientRect();
+    if (attribution.height > 0) padding.bottom = Math.max(padding.bottom, Math.round(window.innerHeight - attribution.top) + 8);
     if (this.panel.hidden) return padding;
     const rect = this.panel.getBoundingClientRect();
     if (window.matchMedia(DESKTOP).matches) padding.left = Math.round(rect.right) + 32;
