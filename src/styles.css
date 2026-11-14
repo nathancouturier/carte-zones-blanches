@@ -656,6 +656,14 @@ input[type="range"] {
   overflow-wrap: anywhere;
 }
 
+.licence-logo {
+  display: block;
+  max-width: 160px;
+  height: auto;
+  margin-top: 6px;
+  border-radius: 4px;
+}
+
 .facts dd small {
   font-weight: 400;
   color: var(--c-muted);

@@ -7,6 +7,7 @@
 # vérifié, son résultat est gardé 7 jours en artefact, mais il ne remplace jamais les
 # données du site.
 name: Données
+run-name: "Données : ${{ inputs.scope || (github.event_name == 'push' && 'essai (DEMANDE-DONNEES)') || 'production' }}"
 
 on:
   workflow_dispatch:

@@ -178,10 +178,10 @@
   "profile.at": "km {km}, {ele} m",
   "profile.outside": "fuera de la zona de datos",
   "profile.unknown": "sin datos para este servicio",
-  "network.allNOperators": "Los {count} operadores a la vez",
-  "network.atLeastOperators_one": "Al menos {count} operador",
-  "network.atLeastOperators_other": "Al menos {count} operadores",
-  "network.thresholdHint": "Esta fuente no indica qué operador da cobertura. «Los {count} operadores a la vez» muestra dónde tendrás red sea cual sea el operador utilizado en itinerancia.",
+  "network.allNOperators": "Las {count} redes a la vez",
+  "network.atLeastOperators_one": "Al menos {count} red",
+  "network.atLeastOperators_other": "Al menos {count} redes",
+  "network.thresholdHint": "Esta fuente no indica qué operadores dan cobertura, solo cuántas redes. «Las {count} redes a la vez» muestra dónde tendrás red sea cual sea el operador utilizado en itinerancia.",
   "offline.heading": "Sin conexión",
   "offline.intro": "Guarda en este navegador la ruta, su cobertura y el mapa de fondo a lo largo del recorrido, para consultarlos sin red.",
   "offline.prepare": "Preparar esta ruta para usarla sin conexión",
@@ -197,5 +197,9 @@
   "offline.error": "No se ha podido guardar. Comprueba tu conexión y el espacio disponible.",
   "offline.unsupported": "Este navegador no permite el modo sin conexión.",
   "offline.restored": "Ruta sin conexión recuperada: {name}",
-  "offline.resume": "Recuperar la ruta guardada: {name}"
+  "offline.resume": "Recuperar la ruta guardada: {name}",
+  "sources.missing": "Todavía no hay datos para: {countries}.",
+  "sources.binaryNote": "Esta fuente solo indica «con cobertura» o «sin cobertura». En el mapa y en el informe, «buena cobertura» significa aquí «con cobertura», sin indicación de calidad.",
+  "report.binaryNote": "{countries}: la fuente solo indica si un lugar tiene cobertura o no. «Buena cobertura» significa aquí «con cobertura», sin indicación de calidad.",
+  "sources.estimatedNote": "A falta de mapa oficial, la cobertura se calcula a partir de posiciones de antenas recogidas por voluntarios (OpenCellID) y del relieve. No es un mapa de operador: una antena que falta en la base crea una falsa zona sin cobertura, y una antena mal situada desplaza los límites varios cientos de metros. No cuentes con una zona estimada para una llamada de emergencia."
 }

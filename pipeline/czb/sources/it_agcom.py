@@ -83,7 +83,7 @@ class ItAgcom(Source):
         import numpy as np
         from osgeo import ogr
 
-        from ..raster import geometry_windows, polygonal
+        from ..raster import geometry_windows, polygonal, quiet_features
         from ..witness import VectorWitnesses
 
         canvas, layers = ctx.canvas, ctx.layers
@@ -125,7 +125,7 @@ class ItAgcom(Source):
             srs = layer.GetSpatialRef()
             if srs is None or srs.GetAuthorityCode(None) != "3857":
                 raise RuntimeError(f"{self.source_id} : SCR inattendu dans la réponse ({srs.GetAuthorityCode(None) if srs else None}), EPSG:3857 attendu")
-            for feat in layer:
+            for feat in quiet_features(layer):
                 raw = feat.GetField(count_field)
                 if raw is None or int(raw) not in allowed:
                     # On ne devine pas le sens d'une valeur nouvelle : on s'arrête.

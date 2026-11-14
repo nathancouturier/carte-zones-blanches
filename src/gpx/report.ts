@@ -63,6 +63,8 @@ export interface Report {
   estimated: boolean;
   /** Pays traversés qui n'ont pas de données pour le service choisi. */
   missingService: ManifestCountry[];
+  /** Pays traversés dont la source dit seulement « couvert » ou « non couvert » pour le service choisi. */
+  binaryCountries: ManifestCountry[];
 }
 
 export function analyzeTrack(samples: Sample[], raw: RawCoverage): TrackAnalysis {
@@ -89,6 +91,7 @@ export function buildReport(analysis: TrackAnalysis, manifest: Manifest, setting
     specificOperator: countries.some((c) => effectiveOperator(c, settings) !== null),
     estimated: hasEstimatedData(analysis.raw),
     missingService: countries.filter((c) => !countryHasService(c, settings.service)),
+    binaryCountries: countries.filter((c) => c.sources.some((source) => source.levels === 'binary' && source.services.includes(settings.service))),
   };
 }
 
@@ -208,6 +211,9 @@ export function reportText(
     lines.push(t('report.roamingWarning', { country: countryName(country.iso) }));
   }
   if (report.estimated) lines.push(t('report.estimatedWarning'));
+  if (report.binaryCountries.length > 0) {
+    lines.push(t('report.binaryNote', { countries: report.binaryCountries.map((c) => countryName(c.iso)).join(', ') }));
+  }
   lines.push(t('sources.disclaimer'));
   const sources = report.countries.flatMap((country) =>
     country.sources

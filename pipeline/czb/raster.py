@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Iterator
 
 import numpy as np
@@ -62,6 +63,27 @@ def _memory_vector() -> ogr.DataSource:
     raise RuntimeError("aucun pilote vecteur en mémoire disponible dans GDAL")
 
 
+@contextlib.contextmanager
+def quiet_gdal() -> Iterator[None]:
+    """Fait taire les avertissements de GDAL le temps d'un bloc (un par polygone invalide, des milliers par source)."""
+    gdal.PushErrorHandler("CPLQuietErrorHandler")
+    try:
+        yield
+    finally:
+        gdal.PopErrorHandler()
+
+
+def quiet_features(layer: ogr.Layer) -> Iterator[ogr.Feature]:
+    """Parcourt une couche sans les avertissements de lecture (anneaux très nombreux des réponses ESRI JSON)."""
+    layer.ResetReading()
+    while True:
+        with quiet_gdal():
+            feat = layer.GetNextFeature()
+        if feat is None:
+            return
+        yield feat
+
+
 def make_valid(geom: ogr.Geometry) -> ogr.Geometry | None:
     """Répare une géométrie en gardant toute la surface de ses parties.
 
@@ -79,9 +101,11 @@ def polygonal(geom: ogr.Geometry) -> ogr.Geometry | None:
     """
     if geom is None or geom.IsEmpty():
         return None
-    if geom.IsValid() and geom.GetGeometryName() in ("POLYGON", "MULTIPOLYGON"):
-        return geom
-    valid = geom if geom.IsValid() else make_valid(geom)
+    with quiet_gdal():
+        is_valid = geom.IsValid()
+        if is_valid and geom.GetGeometryName() in ("POLYGON", "MULTIPOLYGON"):
+            return geom
+        valid = geom if is_valid else make_valid(geom)
     if valid is None:
         return None
     parts: list[ogr.Geometry] = []

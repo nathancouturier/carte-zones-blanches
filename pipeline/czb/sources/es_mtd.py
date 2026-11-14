@@ -159,7 +159,7 @@ class EsMtd(Source):
         import numpy as np
         from osgeo import gdal, ogr, osr
 
-        from ..raster import polygonal
+        from ..raster import polygonal, quiet_features
 
         cfg = self.source_cfg
         oid_field, operator_field = cfg["oid_field"], cfg["operator_field"]
@@ -194,7 +194,7 @@ class EsMtd(Source):
                 if page_srs is None or page_srs.GetAuthorityCode(None) != "4258":
                     raise RuntimeError(f"{self.source_id} : SCR inattendu dans la réponse ({page_srs.GetAuthorityCode(None) if page_srs else None}), EPSG:4258 attendu")
                 layer.StartTransaction()
-                for feat in src:
+                for feat in quiet_features(src):
                     value = self.bits_of(feat.GetField(operator_field) or "")
                     geom = polygonal(feat.GetGeometryRef())
                     if value == 0 or geom is None:

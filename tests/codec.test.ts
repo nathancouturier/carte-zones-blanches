@@ -23,7 +23,7 @@ import {
   parseManifest,
   selectableSlots,
 } from '../src/coverage/manifest';
-import { hasThresholdSlots, slotLabel } from '../src/coverage/slotLabel';
+import { hasThresholdSlots, networkCount, slotLabel } from '../src/coverage/slotLabel';
 import { setLanguage } from '../src/i18n';
 import { sampleManifest } from './helpers';
 
@@ -110,13 +110,26 @@ describe('lecture du manifest', () => {
     const [france, suisse] = sampleManifest().countries;
     setLanguage('fr');
     expect(slotLabel(france.slots[1], france)).toBe('SFR');
-    expect(slotLabel(suisse.slots[1], suisse)).toBe('Les 3 opérateurs à la fois');
-    expect(slotLabel(suisse.slots[0], suisse)).toBe('Au moins 1 opérateur');
-    expect(slotLabel({ id: 'deux', minOperators: 2 }, suisse)).toBe('Au moins 2 opérateurs');
+    expect(slotLabel(suisse.slots[1], suisse)).toBe('Les 3 réseaux à la fois');
+    expect(slotLabel(suisse.slots[0], suisse)).toBe('Au moins 1 réseau');
+    expect(slotLabel({ id: 'deux', minOperators: 2 }, suisse)).toBe('Au moins 2 réseaux');
     expect(hasThresholdSlots(suisse)).toBe(true);
     expect(hasThresholdSlots(france)).toBe(false);
+    expect(networkCount(suisse)).toBe(3);
+    expect(networkCount(france)).toBe(0);
+    // Italie : la source compte de 1 à 4 réseaux sans nommer les opérateurs. Le seuil le plus élevé vaut « tous ».
+    const italie = { ...suisse, iso: 'IT', code: 3, operators: undefined, slots: [1, 2, 3, 4].map((n) => ({ id: `it_${n}`, minOperators: n })) };
+    expect(networkCount(italie)).toBe(4);
+    expect(italie.slots.map((slot) => slotLabel(slot, italie))).toEqual(['Au moins 1 réseau', 'Au moins 2 réseaux', 'Au moins 3 réseaux', 'Les 4 réseaux à la fois']);
+    expect(selectableSlots(italie).map((slot) => slot.id)).toEqual(['it_2', 'it_3', 'it_4']);
+    // Andorre : un seul emplacement « au moins un réseau », donc pas de choix et pas de formule « les 1 réseaux ».
+    const andorre = { ...suisse, iso: 'AD', code: 5, operators: undefined, slots: [{ id: 'ad_1', minOperators: 1 }] };
+    expect(slotLabel(andorre.slots[0], andorre)).toBe('Au moins 1 réseau');
+    expect(countryHasOperatorChoice(andorre)).toBe(false);
     setLanguage('de');
-    expect(slotLabel(suisse.slots[1], suisse)).toBe('Alle 3 Anbieter gleichzeitig');
+    expect(slotLabel(suisse.slots[1], suisse)).toBe('Alle 3 Netze zugleich');
+    setLanguage('it');
+    expect(slotLabel(italie.slots[3], italie)).toBe('Tutte e 4 le reti');
     setLanguage('fr');
     const bad = JSON.parse(JSON.stringify(sampleManifest()));
     bad.countries[1].slots[0] = { id: 'x' };

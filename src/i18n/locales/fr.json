@@ -178,10 +178,10 @@
   "profile.at": "km {km}, {ele} m",
   "profile.outside": "hors de la zone de données",
   "profile.unknown": "pas de donnée pour ce service",
-  "network.allNOperators": "Les {count} opérateurs à la fois",
-  "network.atLeastOperators_one": "Au moins {count} opérateur",
-  "network.atLeastOperators_other": "Au moins {count} opérateurs",
-  "network.thresholdHint": "Cette source ne dit pas quel opérateur couvre. « Les {count} opérateurs à la fois » montre où vous aurez du réseau quel que soit l'opérateur utilisé en itinérance.",
+  "network.allNOperators": "Les {count} réseaux à la fois",
+  "network.atLeastOperators_one": "Au moins {count} réseau",
+  "network.atLeastOperators_other": "Au moins {count} réseaux",
+  "network.thresholdHint": "Cette source ne dit pas quels opérateurs couvrent, seulement combien de réseaux. « Les {count} réseaux à la fois » montre où vous aurez du réseau quel que soit l'opérateur utilisé en itinérance.",
   "offline.heading": "Hors ligne",
   "offline.intro": "Enregistre dans ce navigateur le tracé, sa couverture et le fond de carte le long du parcours, pour les consulter sans réseau.",
   "offline.prepare": "Préparer ce tracé pour le hors ligne",
@@ -197,5 +197,9 @@
   "offline.error": "L'enregistrement a échoué. Vérifiez votre connexion et l'espace disponible.",
   "offline.unsupported": "Ce navigateur ne permet pas le mode hors ligne.",
   "offline.restored": "Tracé hors ligne rechargé : {name}",
-  "offline.resume": "Reprendre le tracé enregistré : {name}"
+  "offline.resume": "Reprendre le tracé enregistré : {name}",
+  "sources.missing": "Pas encore de données pour : {countries}.",
+  "sources.binaryNote": "Cette source dit seulement « couvert » ou « non couvert ». Sur la carte et dans le rapport, « bonne couverture » y signifie donc « couvert », sans indication de qualité.",
+  "report.binaryNote": "{countries} : la source indique seulement si un lieu est couvert ou non. « Bonne couverture » y signifie « couvert », sans indication de qualité.",
+  "sources.estimatedNote": "Faute de carte officielle, la couverture est calculée à partir de positions d'antennes relevées par des bénévoles (OpenCellID) et du relief. Ce n'est pas une carte d'opérateur : une antenne absente de la base crée une fausse zone blanche, une antenne mal placée déplace les limites de plusieurs centaines de mètres. Ne comptez pas sur une zone estimée pour un appel d'urgence."
 }

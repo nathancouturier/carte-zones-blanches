@@ -178,10 +178,10 @@
   "profile.at": "km {km}, {ele} m",
   "profile.outside": "außerhalb des Datengebiets",
   "profile.unknown": "keine Daten für diesen Dienst",
-  "network.allNOperators": "Alle {count} Anbieter gleichzeitig",
-  "network.atLeastOperators_one": "Mindestens {count} Anbieter",
-  "network.atLeastOperators_other": "Mindestens {count} Anbieter",
-  "network.thresholdHint": "Diese Quelle gibt nicht an, welcher Anbieter abdeckt. „Alle {count} Anbieter gleichzeitig“ zeigt, wo du Netz hast, egal welchen Anbieter dein Roaming nutzt.",
+  "network.allNOperators": "Alle {count} Netze zugleich",
+  "network.atLeastOperators_one": "Mindestens {count} Netz",
+  "network.atLeastOperators_other": "Mindestens {count} Netze",
+  "network.thresholdHint": "Diese Quelle gibt nicht an, welche Anbieter abdecken, sondern nur, wie viele Netze. „Alle {count} Netze zugleich“ zeigt, wo du Netz hast, egal welchen Anbieter dein Roaming nutzt.",
   "offline.heading": "Offline",
   "offline.intro": "Speichert die Route, ihre Abdeckung und die Hintergrundkarte entlang der Strecke in diesem Browser, damit du sie ohne Netz ansehen kannst.",
   "offline.prepare": "Diese Route für die Offline-Nutzung vorbereiten",
@@ -197,5 +197,9 @@
   "offline.error": "Das Speichern ist fehlgeschlagen. Prüfe deine Verbindung und den freien Speicherplatz.",
   "offline.unsupported": "Dieser Browser unterstützt den Offline-Modus nicht.",
   "offline.restored": "Offline-Route geladen: {name}",
-  "offline.resume": "Gespeicherte Route laden: {name}"
+  "offline.resume": "Gespeicherte Route laden: {name}",
+  "sources.missing": "Noch keine Daten für: {countries}.",
+  "sources.binaryNote": "Diese Quelle unterscheidet nur „abgedeckt“ und „nicht abgedeckt“. Auf der Karte und im Bericht bedeutet „gute Abdeckung“ hier also „abgedeckt“, ohne Angabe zur Qualität.",
+  "report.binaryNote": "{countries}: Die Quelle gibt nur an, ob ein Ort abgedeckt ist oder nicht. „Gute Abdeckung“ bedeutet hier „abgedeckt“, ohne Angabe zur Qualität.",
+  "sources.estimatedNote": "Mangels offizieller Karte wird die Abdeckung aus Antennenstandorten berechnet, die Freiwillige erfasst haben (OpenCellID), und aus dem Gelände. Das ist keine Karte eines Anbieters: Fehlt eine Antenne in der Datenbank, entsteht ein falsches Funkloch, und eine falsch verortete Antenne verschiebt die Grenzen um mehrere hundert Meter. Verlass dich bei einem Notruf nicht auf ein geschätztes Gebiet."
 }

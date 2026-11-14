@@ -178,10 +178,10 @@
   "profile.at": "km {km}, {ele} m",
   "profile.outside": "fuori dalla zona dei dati",
   "profile.unknown": "nessun dato per questo servizio",
-  "network.allNOperators": "Tutti e {count} gli operatori",
-  "network.atLeastOperators_one": "Almeno {count} operatore",
-  "network.atLeastOperators_other": "Almeno {count} operatori",
-  "network.thresholdHint": "Questa fonte non indica quale operatore copre. «Tutti e {count} gli operatori» mostra dove avrai rete qualunque sia l'operatore usato in roaming.",
+  "network.allNOperators": "Tutte e {count} le reti",
+  "network.atLeastOperators_one": "Almeno {count} rete",
+  "network.atLeastOperators_other": "Almeno {count} reti",
+  "network.thresholdHint": "Questa fonte non indica quali operatori coprono, solo quante reti. «Tutte e {count} le reti» mostra dove avrai rete qualunque sia l'operatore usato in roaming.",
   "offline.heading": "Offline",
   "offline.intro": "Salva in questo browser il percorso, la sua copertura e la mappa di sfondo lungo il tragitto, per consultarli senza rete.",
   "offline.prepare": "Prepara questo percorso per l'uso offline",
@@ -197,5 +197,9 @@
   "offline.error": "Salvataggio non riuscito. Controlla la connessione e lo spazio disponibile.",
   "offline.unsupported": "Questo browser non supporta la modalità offline.",
   "offline.restored": "Percorso offline ricaricato: {name}",
-  "offline.resume": "Riprendi il percorso salvato: {name}"
+  "offline.resume": "Riprendi il percorso salvato: {name}",
+  "sources.missing": "Non ci sono ancora dati per: {countries}.",
+  "sources.binaryNote": "Questa fonte indica solo «coperto» o «non coperto». Sulla mappa e nel rapporto, «buona copertura» qui significa «coperto», senza indicazione di qualità.",
+  "report.binaryNote": "{countries}: la fonte indica solo se un luogo è coperto o no. «Buona copertura» qui significa «coperto», senza indicazione di qualità.",
+  "sources.estimatedNote": "In mancanza di una mappa ufficiale, la copertura è calcolata a partire da posizioni di antenne rilevate da volontari (OpenCellID) e dal rilievo. Non è una mappa di un operatore: un'antenna assente dalla base crea una falsa zona senza copertura, e un'antenna mal posizionata sposta i limiti di alcune centinaia di metri. Non contare su una zona stimata per una chiamata di emergenza."
 }

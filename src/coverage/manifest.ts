@@ -48,6 +48,10 @@ export interface ManifestSource {
   date: string;
   licence: string;
   licenceUrl?: string;
+  /** Mention que la licence demande d'afficher telle quelle (non traduite). */
+  licenceNotice?: string;
+  /** Logo que la licence demande d'afficher : chemin d'un fichier du site, relatif à sa racine. */
+  licenceLogo?: string;
   /** Mention courte pour le pied de carte. */
   attribution: string;
   /** Services fournis par cette source. */
@@ -109,6 +113,8 @@ export interface Manifest {
   bounds: [number, number, number, number];
   archives: ManifestArchive[];
   countries: ManifestCountry[];
+  /** Pays prévus mais absents de ces données (codes ISO), faute de source disponible à la construction. */
+  missing: string[];
 }
 
 export const SOURCE_TYPE_KEYS: Record<number, string> = {
@@ -235,6 +241,11 @@ export function parseManifest(raw: unknown): Manifest {
       if (levelMap) source.levelMap = levelMap;
       if (typeof s.url === 'string') source.url = s.url;
       if (typeof s.licenceUrl === 'string') source.licenceUrl = s.licenceUrl;
+      if (typeof s.licenceNotice === 'string' && s.licenceNotice !== '') source.licenceNotice = s.licenceNotice;
+      // Un chemin simple à l'intérieur du site : jamais une adresse externe.
+      if (typeof s.licenceLogo === 'string' && /^[a-z0-9][a-z0-9/_.-]*\.(?:png|jpe?g|svg|webp)$/i.test(s.licenceLogo) && !s.licenceLogo.includes('..')) {
+        source.licenceLogo = s.licenceLogo;
+      }
       if (isObject(s.technology)) source.technology = s.technology as Partial<Record<ServiceId, string>>;
       if (typeof s.resolutionM === 'number') source.resolutionM = s.resolutionM;
       return source;
@@ -250,6 +261,10 @@ export function parseManifest(raw: unknown): Manifest {
     return country;
   });
 
+  const missing = Array.isArray(raw.missing)
+    ? raw.missing.flatMap((m) => (isObject(m) && typeof m.iso === 'string' && /^[A-Za-z]{2}$/.test(m.iso) ? [m.iso.toUpperCase()] : []))
+    : [];
+
   return {
     version: 1,
     generated,
@@ -257,6 +272,7 @@ export function parseManifest(raw: unknown): Manifest {
     bounds: bounds as [number, number, number, number],
     archives,
     countries,
+    missing,
   };
 }
 

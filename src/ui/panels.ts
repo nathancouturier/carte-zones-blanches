@@ -14,7 +14,7 @@ import {
   type ManifestCountry,
 } from '../coverage/manifest';
 import { LEVEL_SOLID } from '../coverage/render';
-import { hasThresholdSlots, slotLabel } from '../coverage/slotLabel';
+import { hasThresholdSlots, networkCount, slotLabel } from '../coverage/slotLabel';
 import type { CoverageStats } from '../gpx/analyze';
 import { describeOperators, describeZone, LEVEL_KEYS } from '../gpx/report';
 import { WHITE_ZONE_MIN_LENGTH_M } from '../config';
@@ -104,8 +104,13 @@ function operatorSelect(app: App, country: ManifestCountry): HTMLElement {
     'div',
     { class: 'country-choice' },
     h('div', { class: 'field field--row' }, h('label', { for: id, class: 'field__label' }, countryName(country.iso)), control),
-    hasThresholdSlots(country) && country.operators
-      ? h('p', { class: 'hint' }, t('network.thresholdHint', { count: country.operators.length }), ' ', t('sources.operators', { operators: country.operators.join(', ') }))
+    hasThresholdSlots(country) && networkCount(country) > 1
+      ? h(
+          'p',
+          { class: 'hint' },
+          t('network.thresholdHint', { count: networkCount(country) }),
+          country.operators ? ` ${t('sources.operators', { operators: country.operators.join(', ') })}` : null,
+        )
       : null,
   );
 }
@@ -469,6 +474,9 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
     );
   }
   if (report.estimated) parts.push(note(t('report.estimatedWarning')));
+  if (report.binaryCountries.length > 0) {
+    parts.push(note(t('report.binaryNote', { countries: report.binaryCountries.map((c) => countryName(c.iso)).join(', ') })));
+  }
 
   if (report.stats.measured > 0 || report.statsAll.measured > 0) {
     parts.push(
@@ -677,13 +685,32 @@ export function sourcesPanel(app: App): Node_[] {
                     : null,
                 ),
               ),
-              h('div', null, h('dt', null, t('sources.licence')), h('dd', null, externalLink(source.licence, source.licenceUrl))),
+              h(
+                'div',
+                null,
+                h('dt', null, t('sources.licence')),
+                h(
+                  'dd',
+                  null,
+                  externalLink(source.licence, source.licenceUrl),
+                  // Mention et logo que la licence demande d'afficher tels quels (dans la langue de la source).
+                  source.licenceNotice ? [h('br'), h('small', { lang: 'mul' }, source.licenceNotice)] : null,
+                  source.licenceLogo
+                    ? [h('br'), h('img', { class: 'licence-logo', src: `${import.meta.env.BASE_URL}${source.licenceLogo}`, alt: source.attribution, loading: 'lazy' })]
+                    : null,
+                ),
+              ),
+              source.levels === 'binary' ? h('p', { class: 'hint' }, t('sources.binaryNote')) : null,
+              source.type === SOURCE_ESTIMATED ? h('p', { class: 'hint' }, t('sources.estimatedNote')) : null,
             ),
           ),
           operatorNames(country).length > 0 ? h('p', { class: 'hint' }, t('sources.operators', { operators: operatorNames(country).join(', ') })) : null,
           country.euRoaming ? null : h('p', { class: 'hint' }, t('report.roamingWarning', { country: countryName(country.iso) })),
         ),
       );
+    }
+    if (manifest.missing.length > 0) {
+      parts.push(note(t('sources.missing', { countries: manifest.missing.map((iso) => countryName(iso)).join(', ') })));
     }
     parts.push(h('p', { class: 'hint' }, t('sources.generated', { date: formatDataDate(manifest.generated) })));
   } else if (dataStatus === 'missing') {

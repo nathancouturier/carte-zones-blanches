@@ -88,10 +88,11 @@ class VectorWitnesses:
         near = [w for w in self.candidates if minx - m <= w["sx"] <= maxx + m and miny - m <= w["sy"] <= maxy + m]
         if not near:
             return
-        if not geom.IsValid():
-            from .raster import make_valid
+        from .raster import make_valid, quiet_gdal
 
-            geom = make_valid(geom)
+        with quiet_gdal():
+            if not geom.IsValid():
+                geom = make_valid(geom)
         tester = geom.CreatePreparedGeometry() if hasattr(geom, "CreatePreparedGeometry") else geom
         for w in near:
             results = [bool(tester.Contains(pt)) for pt in w["points"]]
