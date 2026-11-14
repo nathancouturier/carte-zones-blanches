@@ -194,6 +194,20 @@ describe('choix de la langue', () => {
     }
   });
 
+  it('écrit les nombres insérés dans les textes selon la langue, sans changer le pluriel (lang-11)', () => {
+    const espaces = (text: string): string => text.replace(/\s/g, ' ');
+    setLanguage('fr');
+    expect(espaces(t('gpx.discarded', { count: 1234, km: formatNumber(10) }))).toBe('1 234 points aberrants ont été écartés : position (0, 0) ou points isolés à plus de 10 km du tracé.');
+    expect(t('gpx.discarded', { count: 1, km: '10' })).toMatch(/^Un point aberrant/); // le pluriel lit le nombre brut
+    expect(espaces(t('offline.basemapMissing', { basemap: 'Plan IGN', count: 1500, total: formatNumber(2000) }))).toBe('Plan IGN : il manque 1 500 éléments sur 2 000.');
+    setLanguage('de');
+    expect(t('gpx.jumps', { count: 1234, km: '10' })).toMatch(/^Die Route springt 1\.234-mal /);
+    expect(t('offline.basemapStored', { basemap: 'Plan IGN', count: 2500 })).toBe('Plan IGN: 2.500 Kacheln gespeichert.');
+    expect(tParts('report.zonesHeading', { count: 1200 })).toEqual(['Funklöcher (', '1.200', ')']);
+    setLanguage('ca');
+    expect(t('gpx.discarded', { count: 1234, km: '10' })).toMatch(/^S'han descartat 1\.234 punts /);
+  });
+
   it('dit les textes des données dans la langue choisie, sinon en français (lang-06)', () => {
     const traductions = { es: 'Límites administrativos', de: 'Verwaltungsgrenzen' };
     setLanguage('es');
