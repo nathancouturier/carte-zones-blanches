@@ -246,7 +246,7 @@ export class MapView {
     return Math.max(minzoom, Math.min(maxzoom, Math.round(this.map.getZoom() + 1)));
   }
 
-  /** Met à jour les infobulles des contrôles après un changement de langue. */
+  /** Met à jour les infobulles des contrôles et le nom de la carte après un changement de langue. */
   updateLabels(): void {
     const labels = this.options.labels();
     const set = (selector: string, key: string): void => {
@@ -259,5 +259,7 @@ export class MapView {
     set('.maplibregl-ctrl-zoom-in', 'NavigationControl.ZoomIn');
     set('.maplibregl-ctrl-zoom-out', 'NavigationControl.ZoomOut');
     set('.maplibregl-ctrl-geolocate', 'GeolocateControl.FindMyLocation');
+    // Le canevas n'a pas d'infobulle : seul son nom accessible change.
+    if (labels['Map.Title']) this.map.getCanvas().setAttribute('aria-label', labels['Map.Title']);
   }
 }

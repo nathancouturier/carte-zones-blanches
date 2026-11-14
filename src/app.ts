@@ -81,6 +81,8 @@ export class App {
     this.mapView = new MapView({
       container: mapContainer,
       labels: () => ({
+        // Nom du canevas de la carte, lu par les lecteurs d'écran (« Map » sinon, dans toutes les langues).
+        'Map.Title': t('app.mapLabel'),
         'NavigationControl.ZoomIn': t('action.zoomIn'),
         'NavigationControl.ZoomOut': t('action.zoomOut'),
         'GeolocateControl.FindMyLocation': t('action.locate'),

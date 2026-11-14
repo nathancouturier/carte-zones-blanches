@@ -689,19 +689,10 @@ export function sourcesPanel(app: App): Node_[] {
                   t(`sources.method.${SOURCE_TYPE_KEYS[source.type] ?? 'estimated'}`),
                   h('br'),
                   h('small', null, t(`sources.levels.${source.levels}`)),
-                  source.technology
-                    ? [
-                        h('br'),
-                        h(
-                          'small',
-                          null,
-                          source.services
-                            .filter((s) => source.technology?.[s])
-                            .map((s) => t('sources.technology', { service: t(`service.${s}`), techno: source.technology?.[s] ?? '' }))
-                            .join(' ; '),
-                        ),
-                      ]
-                    : null,
+                  // Une ligne par service : pas de séparateur à traduire entre eux.
+                  source.services
+                    .filter((s) => source.technology?.[s])
+                    .map((s) => [h('br'), h('small', null, t('sources.technology', { service: t(`service.${s}`), techno: source.technology?.[s] ?? '' }))]),
                 ),
               ),
               h(
@@ -736,11 +727,12 @@ export function sourcesPanel(app: App): Node_[] {
     parts.push(note(t('network.noData'), 'warning'));
   }
 
-  const basemapItems = BASEMAP_ORDER.map((id) => BASEMAPS[id]).map((b) => h('li', null, `${t(b.labelKey)} : ${b.attribution}`));
+  // « Plan IGN classique : © IGN » ; la ponctuation suit la langue (« Plan IGN klassisch: © IGN »).
+  const credit = (name: string, attribution: string): HTMLElement => h('li', null, t('sources.basemapItem', { name, attribution }));
   parts.push(
     section(
       t('sources.basemaps'),
-      h('ul', { class: 'plain' }, basemapItems, h('li', null, `${t('basemap.hillshade')} : ${HILLSHADE.attribution}`)),
+      h('ul', { class: 'plain' }, BASEMAP_ORDER.map((id) => credit(t(BASEMAPS[id].labelKey), BASEMAPS[id].attribution)), credit(t('basemap.hillshade'), HILLSHADE.attribution)),
     ),
     section(t('sources.search'), h('ul', { class: 'plain' }, h('li', null, t('sources.searchIgn')), h('li', null, t('sources.searchOsm')))),
     h('p', null, h('a', { href: `${REPO_URL}/blob/main/docs/sources.md`, target: '_blank', rel: 'noopener noreferrer' }, t('sources.details'))),
