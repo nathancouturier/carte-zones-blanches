@@ -40,6 +40,11 @@ vi.mock('../src/map/mapView', () => ({
     viewSamplePoints(): { lon: number; lat: number }[] {
       return carte.vue;
     }
+    viewBounds(): [number, number, number, number] {
+      const lons = carte.vue.map((p) => p.lon);
+      const lats = carte.vue.map((p) => p.lat);
+      return [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+    }
     dataZoom(min: number, max: number): number {
       return Math.max(min, Math.min(max, Math.round(carte.zoom + 1)));
     }

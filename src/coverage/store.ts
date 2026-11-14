@@ -7,7 +7,7 @@ import { untilAborted } from './abort';
 import { TILE_SIZE } from './codec';
 import { LruCache } from './lru';
 import { archiveForTile, type Manifest } from './manifest';
-import { lonLatToTilePixel, tileKey } from './tilemath';
+import { lonLatToTilePixel, lonLatToWorldPixel, tileKey } from './tilemath';
 import type { TileDecoder } from './decode';
 
 /**
@@ -107,6 +107,42 @@ export class TileStore {
     return [tile[o], tile[o + 1], tile[o + 2], tile[o + 3]];
   }
 
+  /**
+   * Valeurs du canal B (pays et type de source) de tous les pixels de données d'une
+   * emprise (ouest, sud, est, nord), lues au zoom donné dans les tuiles qui la couvrent :
+   * tout ce que la carte affiche, même un petit pays (Monaco) entre deux points de la vue.
+   * Au-delà de maxTiles tuiles (très grand écran), la lecture se fait au zoom inférieur.
+   * Une tuile illisible est ignorée : rien n'y est affiché.
+   */
+  async metaInBounds(bounds: readonly [number, number, number, number], zoom: number, maxTiles = 64): Promise<number[]> {
+    const { minzoom } = this.manifest.tiles;
+    let z = Math.max(minzoom, Math.min(this.maxZoom, Math.round(zoom)));
+    let area = pixelArea(bounds, z);
+    while (z > minzoom && tileCount(area) > maxTiles) area = pixelArea(bounds, --z);
+    const seen = new Uint8Array(256);
+    const reads: Promise<void>[] = [];
+    for (let ty = Math.floor(area.top / TILE_SIZE); ty <= Math.floor(area.bottom / TILE_SIZE); ty++) {
+      for (let tx = Math.floor(area.left / TILE_SIZE); tx <= Math.floor(area.right / TILE_SIZE); tx++) {
+        const read = this.get(z, tx, ty).then((tile) => {
+          if (!tile) return;
+          // Partie de la tuile à l'intérieur de l'emprise.
+          const x0 = Math.max(0, area.left - tx * TILE_SIZE);
+          const x1 = Math.min(TILE_SIZE - 1, area.right - tx * TILE_SIZE);
+          const y0 = Math.max(0, area.top - ty * TILE_SIZE);
+          const y1 = Math.min(TILE_SIZE - 1, area.bottom - ty * TILE_SIZE);
+          for (let py = y0; py <= y1; py++) {
+            for (let o = (py * TILE_SIZE + x0) * 4, end = (py * TILE_SIZE + x1) * 4; o <= end; o += 4) {
+              if (tile[o + 3] !== 0) seen[tile[o + 2]] = 1;
+            }
+          }
+        });
+        reads.push(read.catch(() => undefined));
+      }
+    }
+    await Promise.all(reads);
+    return Array.from(seen.keys()).filter((meta) => seen[meta] === 1);
+  }
+
   clear(): void {
     this.cache.clear();
   }
@@ -114,4 +150,26 @@ export class TileStore {
 
 function key3(z: number, x: number, y: number): string {
   return `${z}/${x}/${y}`;
+}
+
+/** Pixels « monde » d'une emprise au zoom z : premières et dernières colonnes et lignes, incluses. */
+interface PixelArea {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+function pixelArea([west, south, east, north]: readonly [number, number, number, number], z: number): PixelArea {
+  const size = 2 ** z * TILE_SIZE;
+  const clamp = (v: number): number => Math.min(size - 1, Math.max(0, Math.floor(v)));
+  const nw = lonLatToWorldPixel(west, north, z);
+  const se = lonLatToWorldPixel(east, south, z);
+  return { left: clamp(nw.x), top: clamp(nw.y), right: clamp(se.x), bottom: clamp(se.y) };
+}
+
+function tileCount(area: PixelArea): number {
+  const columns = Math.floor(area.right / TILE_SIZE) - Math.floor(area.left / TILE_SIZE) + 1;
+  const rows = Math.floor(area.bottom / TILE_SIZE) - Math.floor(area.top / TILE_SIZE) + 1;
+  return columns * rows;
 }

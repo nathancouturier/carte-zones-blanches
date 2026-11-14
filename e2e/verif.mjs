@@ -709,6 +709,31 @@ try {
     await contexte.close();
   }
 
+  // --- 2i. Ordinateur, français : chaque source de données à l'écran est créditée en pied de carte ---
+  // Les mentions suivent ce que la carte affiche, lu dans toutes les tuiles de la vue : un pays visible
+  // entre les points de la vue (l'Italie au bord d'une vue des Alpes, Monaco à côté du centre) compte aussi.
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '#7/45.3/6.5');
+    const pied = () =>
+      page.evaluate(() => {
+        const texte = document.querySelector('.attribution__text');
+        return { texte: texte?.innerText.replace(/\s+/g, ' ') ?? '', liens: [...(texte?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href')) };
+      });
+    if (paysPublies.includes('IT')) {
+      const alpes = await pied();
+      controle('mentions : données italiennes au bord de la vue, source italienne créditée', alpes.texte.includes('BroadbandMap di Agcom'), alpes.texte);
+    }
+    if (paysPublies.includes('MC')) {
+      await page.evaluate(() => (location.hash = '#12/43.74/7.42'));
+      await page.waitForTimeout(3500);
+      const monaco = await pied();
+      const credite = monaco.texte.includes('Cell tower data from OpenCellID, licensed under CC BY-SA 4.0') && monaco.liens.includes('https://opencellid.org') && monaco.liens.includes('https://creativecommons.org/licenses/by-sa/4.0/');
+      controle('mentions : Monaco à l\'écran à côté du centre, crédit d\'OpenCellID avec ses liens', credite, monaco.texte);
+    }
+    controle('mentions : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
   // --- 3. Téléphone, espagnol : sources et changement de langue -----------------
   {
     const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '?lang=es#9/42.6/0.9');

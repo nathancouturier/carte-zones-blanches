@@ -203,6 +203,37 @@ describe('lecture des archives PMTiles produites par le pipeline', () => {
     expect(pixel?.[3]).toBe(255);
   });
 
+  it('trouve tout ce que la vue affiche, même un petit pays entre deux points de la vue, et rien au-delà', async () => {
+    // Deux tuiles voisines au zoom 8 : la France, avec 2 x 2 pixels d'Andorre estimée ; la Suisse, sur la moitié est de l'autre.
+    const tuiles = new Map<number, Uint8ClampedArray>();
+    const france = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    for (let i = 0; i < TILE_SIZE * TILE_SIZE; i++) writePixel(france, i, { data: [2], country: 1 });
+    for (const [px, py] of [[200, 10], [201, 10], [200, 11], [201, 11]]) writePixel(france, py * TILE_SIZE + px, { data: [0], country: 5, sourceType: 2 });
+    const suisse = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    for (let py = 0; py < TILE_SIZE; py++) for (let px = 128; px < TILE_SIZE; px++) writePixel(suisse, py * TILE_SIZE + px, { data: [3], country: 2, sourceType: 1 });
+    tuiles.set(132, france);
+    tuiles.set(133, suisse);
+    const lues: string[] = [];
+    const store = new TileStore(
+      sampleManifest(),
+      async (_file, z, x, y) => {
+        lues.push(`${z}/${x}/${y}`);
+        return z === 8 && y === 92 && tuiles.has(x) ? new Uint8Array([x]).buffer : undefined;
+      },
+      async (bytes) => tuiles.get(new Uint8Array(bytes)[0])!,
+    );
+    const ouest = tileToLonLat(132, 92, 8);
+    const sud = tileToLonLat(133, 93, 8).lat;
+    // Toute la tuile française, et la tuile suisse jusqu'à son 100e pixel : pas de Suisse à l'écran.
+    const jusqua = (px: number): number => tileToLonLat(133 + px / TILE_SIZE, 92, 8).lon;
+    expect(await store.metaInBounds([ouest.lon, sud, jusqua(100), ouest.lat], 8)).toEqual([packMeta(1, 0), packMeta(5, 2)]);
+    expect(await store.metaInBounds([ouest.lon, sud, jusqua(200), ouest.lat], 8)).toEqual([packMeta(1, 0), packMeta(2, 1), packMeta(5, 2)]);
+    // Une vue qui demanderait trop de tuiles est lue au zoom inférieur.
+    lues.length = 0;
+    await store.metaInBounds([ouest.lon, sud, jusqua(200), ouest.lat], 8, 1);
+    expect(lues).toEqual(['7/66/46']);
+  });
+
   it('propage une erreur de lecture sans la mettre en cache', async () => {
     const manifest = sampleManifest();
     let calls = 0;

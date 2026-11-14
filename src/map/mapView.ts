@@ -366,6 +366,12 @@ export class MapView {
     return points;
   }
 
+  /** Emprise de la vue : ouest, sud, est, nord. */
+  viewBounds(): [number, number, number, number] {
+    const bounds = this.map.getBounds();
+    return [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+  }
+
   /** Zoom des tuiles de données actuellement affichées. */
   dataZoom(minzoom: number, maxzoom: number): number {
     return Math.max(minzoom, Math.min(maxzoom, Math.round(this.map.getZoom() + 1)));
