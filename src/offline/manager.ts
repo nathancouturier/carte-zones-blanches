@@ -150,15 +150,15 @@ async function pool<T>(items: readonly T[], worker: (item: T) => Promise<void>, 
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(new DOMException('Annulé', 'AbortError'));
-      },
-      { once: true },
-    );
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(new DOMException('Annulé', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -227,14 +227,17 @@ function forbiddenHost(url: string): boolean {
 async function download(cache: Cache, urls: readonly string[], policy: PreloadPolicy, step: () => void, signal?: AbortSignal): Promise<Set<string>> {
   const stored = new Set<string>();
   const spacing = policy.perSecond > 0 ? 1000 / policy.perSecond : 0;
-  let nextAt = 0; // aucune requête ne part avant cet instant
+  let lastStart = -Infinity; // départ réel de la dernière requête de ce fond
+  let pausedUntil = 0; // fin de l'attente demandée par le serveur (Retry-After)
   let failures = 0;
   let gaveUp = false;
+  // Attend son tour. L'écart se compte depuis le départ réel de la requête précédente, et tout
+  // se revérifie au réveil : une minuterie en retard ne rapproche pas deux requêtes, et une
+  // requête déjà prévue ne part pas pendant l'attente demandée entre-temps par le serveur.
+  const remaining = (): number => Math.max(lastStart + spacing, pausedUntil) - Date.now();
   const slot = async (): Promise<void> => {
-    const now = Date.now();
-    const at = Math.max(now, nextAt);
-    nextAt = at + spacing;
-    if (at > now) await sleep(at - now, signal);
+    while (remaining() > 0) await sleep(remaining(), signal);
+    lastStart = Date.now();
   };
   await pool(
     urls,
@@ -265,7 +268,7 @@ async function download(cache: Cache, urls: readonly string[], policy: PreloadPo
           if (response.status !== 429 && response.status !== 503) return; // tuile absente ou refusée : elle manquera
           const wait = retryAfterMs(response.headers.get('retry-after'));
           if (attempt >= RETRY_TRIES || wait > RETRY_MAX_WAIT_MS) gaveUp = true;
-          else nextAt = Math.max(nextAt, Date.now() + wait); // tout le fond ralentit, pas seulement cette tuile
+          else pausedUntil = Math.max(pausedUntil, Date.now() + wait); // tout le fond attend, pas seulement cette tuile
         }
       } finally {
         step();
