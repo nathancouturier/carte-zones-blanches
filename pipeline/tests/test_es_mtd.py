@@ -289,6 +289,32 @@ def test_spain_new_edition_is_detected_on_the_ministry_page(spain: dict, monkeyp
         routes[PAGE] = ministry_page(ITEM, FIXED)
 
 
+def test_spain_ministry_page_identifiers_ignore_case(spain: dict):
+    """Un identifiant écrit en majuscules, dans la page ou dans item_url, désigne le même élément : pas d'erreur à tort,
+    et le même état (identifiants en minuscules), donc pas de reconstruction."""
+    import copy
+
+    from czb.context import load_config
+    from czb.sources import create_source
+
+    routes = spain["server"].routes
+    cfg = load_config(spain["config"])
+    upper = copy.deepcopy(cfg)
+    upper["sources"]["es_mtd"]["item_url"] = upper["sources"]["es_mtd"]["item_url"].replace(ITEM, ITEM.upper())
+    try:
+        routes[PAGE] = ministry_page(ITEM.upper(), FIXED.upper())
+        assert create_source("es_mtd", cfg).page_items() == sorted([ITEM, FIXED])
+        assert create_source("es_mtd", upper).page_items() == sorted([ITEM, FIXED])
+        routes[PAGE] = ministry_page(ITEM, FIXED)
+        assert create_source("es_mtd", upper).page_items() == sorted([ITEM, FIXED])
+        # Une autre expérience en majuscules, sans celle de item_url : c'est bien une nouvelle édition.
+        routes[PAGE] = ministry_page("C0FFEE00C0FFEE00C0FFEE00C0FFEE00", FIXED.upper())
+        with pytest.raises(RuntimeError, match="nouvelle édition probable"):
+            create_source("es_mtd", upper).page_items()
+    finally:
+        routes[PAGE] = ministry_page(ITEM, FIXED)
+
+
 def test_spain_grid_phase_is_measured(spain: dict):
     """Le décalage de la grille est mesuré sur les sommets ; des polygones qui ne dessinent pas une grille arrêtent la lecture."""
     from czb.context import load_config
