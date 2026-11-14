@@ -110,6 +110,9 @@ def italy(tmp_path_factory: pytest.TempPathFactory):
                 "name": "AGCOM, Broadband Map",
                 "attribution": "BroadbandMap di Agcom",
                 "licence": "CC BY 4.0",
+                # Le vrai logo du site (public/licences/) : la construction doit le joindre aux données.
+                "licence_logo": "licences/agcom-bbmap.jpg",
+                "licence_logo_url": "https://maps.agcom.it/",
                 "service_url": f"{services}/Grid100/mobile_4G/MapServer",
                 "query_url": f"{services}/Grid100/mobile_4G/MapServer/0/query",
                 "date_url": f"{services}/Grid100/data_pubblicazione/FeatureServer/0/query",
@@ -175,6 +178,13 @@ def test_italy_manifest_and_state(italy: dict):
     # Les mentions de la source suivent les tuiles dans un fichier lisible.
     notices = (italy["out"] / "SOURCES.md").read_text(encoding="utf-8")
     assert source["name"] in notices and source["licence"] in notices and source["attribution"] in notices
+    # La licence exige le logo dans toute œuvre dérivée : il est publié avec les données, et SOURCES.md le cite.
+    from czb.notices import PUBLIC_DIR
+
+    assert source["licenceLogo"] == "licences/agcom-bbmap.jpg" and source["licenceLogoUrl"] == "https://maps.agcom.it/"
+    assert (italy["out"] / "agcom-bbmap.jpg").read_bytes() == (PUBLIC_DIR / "licences" / "agcom-bbmap.jpg").read_bytes()
+    assert "agcom-bbmap.jpg, joint à ces données (lien du logo : https://maps.agcom.it/)" in notices
+    assert "  - Modifications : données rastérisées sur la grille commune des tuiles (EPSG:3857, pixels du zoom 12), puis ramenées à des seuils de nombre d'opérateurs (au moins 1, 2, 3, 4)." in notices
     # Le masque est lu dans l'archive zip, qui est ensuite supprimée du dossier de travail.
     assert not (italy["root"] / "work" / "Limiti01012026.zip").exists()
     assert italy["archive"].exists()
