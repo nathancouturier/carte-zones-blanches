@@ -147,6 +147,11 @@ a,
   color: #fff;
 }
 
+/* « Ma position » en attente du GPS. */
+.fab--busy svg {
+  animation: pulse 1s ease-in-out infinite;
+}
+
 .search {
   position: relative;
   flex: 1 1 auto;

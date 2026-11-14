@@ -66,6 +66,8 @@ export class Ui {
   /** Panneau Rapport réduit à son titre (téléphone), pour voir la carte. */
   private panelCollapsed = false;
   private dragDepth = 0;
+  /** « Ma position » attend le GPS. */
+  private locating = false;
 
   constructor(
     private readonly app: App,
@@ -97,7 +99,7 @@ export class Ui {
     this.searchResults = h('ul', { class: 'search__results', role: 'listbox' });
     this.searchBox = h('div', { class: 'search', hidden: true, role: 'search' }, this.searchInput, this.searchResults);
     this.searchButton = h('button', { type: 'button', class: 'fab', onclick: () => (this.searchOpen ? this.closeSearch() : this.openSearch()) });
-    this.locateButton = h('button', { type: 'button', class: 'fab', onclick: () => this.app.locate() }, icon(ICONS.locate));
+    this.locateButton = h('button', { type: 'button', class: 'fab', onclick: () => this.locate() }, icon(ICONS.locate));
     this.settingsButton = h('button', { type: 'button', class: 'fab', onclick: () => this.app.openPanel('settings') }, icon(ICONS.settings));
     this.topbar = h('div', { class: 'topbar' }, this.searchButton, this.searchBox, h('div', { class: 'topbar__spacer' }), this.locateButton, this.settingsButton);
     this.tools = TOOLS.map(({ id, icon: path }) =>
@@ -231,8 +233,22 @@ export class Ui {
     this.searchButton.setAttribute('aria-expanded', String(this.searchOpen));
     setChildren(this.searchButton, icon(this.searchOpen ? ICONS.close : ICONS.search));
     label(this.locateButton, 'action.locate');
+    this.locateButton.classList.toggle('fab--busy', this.locating);
+    if (this.locating) this.locateButton.setAttribute('aria-busy', 'true');
+    else this.locateButton.removeAttribute('aria-busy');
     label(this.settingsButton, 'action.settings');
     this.settingsButton.classList.toggle('fab--on', this.isPanel('settings', 'sources'));
+  }
+
+  /** « Ma position » : le bouton montre l'attente du GPS ; un nouvel appui pendant l'attente ne relance rien. */
+  private locate(): void {
+    if (this.locating) return;
+    this.locating = true;
+    this.renderTopbar();
+    void this.app.locate().finally(() => {
+      this.locating = false;
+      this.renderTopbar();
+    });
   }
 
   private isPanel(...ids: PanelId[]): boolean {

@@ -614,8 +614,9 @@ export class App {
 
   // -- divers ---------------------------------------------------------------
 
-  locate(): void {
-    this.mapView.locate();
+  /** « Ma position » : se termine quand la position est affichée ou indisponible. */
+  locate(): Promise<void> {
+    return this.mapView.locate();
   }
 
   changeLanguage(code: string): void {
