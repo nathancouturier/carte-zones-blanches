@@ -120,6 +120,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     from .layers import Layers
     from .manifest import build_manifest
     from .masks import canvas_for_geometries, load_mask_geometries, rasterize_masks
+    from .notices import sources_markdown
     from .tiles import TileStore, build_tiles
 
     cfg = apply_scope(load_config(args.config), args.scope)
@@ -208,6 +209,9 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     manifest = build_manifest(ctx, archives, generated)
     (outdir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    # Les mentions des sources et des licences accompagnent les tuiles là où elles sont publiées.
+    names = {iso: c["name"] for iso, c in cfg["countries"].items() if c.get("name")}
+    (outdir / "SOURCES.md").write_text(sources_markdown(manifest, names), encoding="utf-8")
     (outdir / "temoins.json").write_text(json.dumps(ctx.witnesses, ensure_ascii=False) + "\n", encoding="utf-8")
     (outdir / "temoins-contours.json").write_text(json.dumps(ctx.mask_witnesses, ensure_ascii=False) + "\n", encoding="utf-8")
     # Ce que le test de cohérence doit trouver : un minimum de points pour chaque source, service et emplacement

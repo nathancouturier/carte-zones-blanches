@@ -178,8 +178,10 @@ jobs:
             echo
             echo "- Périmètre : ${{ needs.construire.outputs.scope }} (${{ needs.construire.outputs.services }})"
             echo "- Taille des tuiles : $(du -ch out/*.pmtiles | tail -1 | cut -f1)"
-            echo "- Sources, dates et licences : voir manifest.json et docs/sources.md"
+            echo "- Sources, dates et licences : ci-dessous, dans SOURCES.md et manifest.json ; méthodes et limites dans docs/sources.md"
             echo "- Les fichiers cache-*.tif sont des copies de travail reprises par la construction suivante ; le site ne les utilise pas."
+            # Les mentions des sources suivent les données : elles sont redites dans le texte de la release.
+            if [ -s out/SOURCES.md ]; then echo; cat out/SOURCES.md; fi
           } > notes.md
           # Pas d'option --target : l'étiquette est posée sur la branche par défaut. Le jeton d'Actions n'a pas
           # le droit de créer une étiquette sur un commit dont les workflows diffèrent de ceux de cette branche.

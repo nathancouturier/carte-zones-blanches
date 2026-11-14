@@ -29,12 +29,14 @@ production:
 # ---------------------------------------------------------------------------
 # Emprise : pays couverts, dans l'ordre de priorité aux frontières (le premier
 # pays qui revendique un pixel le garde).
+#   name      : nom du pays dans le fichier SOURCES.md de la release (le site a ses propres traductions)
 #   code      : valeur du pays dans les bits 0 à 3 du canal B des tuiles
 #   eu_roaming: faux pour les pays hors de l'itinérance UE (avertissement dans le rapport)
 #   slots     : opérateurs rangés dans les emplacements 0 à 3 des canaux R et G
 # ---------------------------------------------------------------------------
 countries:
   FR:
+    name: France
     code: 1
     eu_roaming: true
     mask:
@@ -52,6 +54,7 @@ countries:
     sources: [fr_arcep]
 
   CH:
+    name: Suisse
     code: 2
     eu_roaming: false
     # Contour : swisstopo, swissBOUNDARIES3D (état au 1er janvier 2026). Adresse à mettre à jour une fois par an.
@@ -71,6 +74,7 @@ countries:
     sources: [ch_bakom]
 
   IT:
+    name: Italie
     code: 3
     eu_roaming: true
     # Contour : ISTAT, limites administratives non généralisées au 1er janvier 2026 (Piemonte, Valle d'Aosta, Liguria).
@@ -91,6 +95,7 @@ countries:
     sources: [it_agcom]
 
   ES:
+    name: Espagne
     code: 4
     eu_roaming: true
     # Contour : IGN España, unités administratives (Aragón, Cataluña, Navarra, País Vasco), une requête par communauté.
@@ -112,6 +117,7 @@ countries:
     sources: [es_mtd]
 
   AD:
+    name: Andorre
     code: 5
     eu_roaming: false
     # Contour : OpenStreetMap (relation 9407), extrait quotidien de Geofabrik.
@@ -130,6 +136,7 @@ countries:
     sources: [ad_estimation]
 
   MC:
+    name: Monaco
     code: 6
     eu_roaming: false
     # Contour : OpenStreetMap, terre ferme de Monaco (relation 36990, sans les eaux territoriales).

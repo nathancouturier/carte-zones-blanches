@@ -172,6 +172,9 @@ def test_italy_manifest_and_state(italy: dict):
         "publication": "Dati del 27 gennaio 2026 - Pubblicazione del 2 feb 2026",
         "entites": 8,
     }
+    # Les mentions de la source suivent les tuiles dans un fichier lisible.
+    notices = (italy["out"] / "SOURCES.md").read_text(encoding="utf-8")
+    assert source["name"] in notices and source["licence"] in notices and source["attribution"] in notices
     # Le masque est lu dans l'archive zip, qui est ensuite supprimée du dossier de travail.
     assert not (italy["root"] / "work" / "Limiti01012026.zip").exists()
     assert italy["archive"].exists()
