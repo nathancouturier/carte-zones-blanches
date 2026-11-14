@@ -173,6 +173,7 @@
   "sources.levels.binary": "2 Stufen: abgedeckt oder nicht abgedeckt",
   "sources.technology": "{service}: {techno}",
   "sources.operators": "Anbieter: {operators}",
+  "sources.boundary": "Landesgrenzen: {boundary}",
   "sources.generated": "Kacheln erzeugt am {date}.",
   "sources.basemaps": "Hintergrundkarten",
   "sources.basemapItem": "{name}: {attribution}",

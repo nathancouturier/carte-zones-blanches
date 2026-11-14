@@ -23,12 +23,26 @@ export interface PreloadPolicy {
   perSecond: number;
 }
 
+/** Morceau d'une mention : un texte, et l'adresse vers laquelle il renvoie s'il en a une. */
+export interface CreditPart {
+  text: string;
+  href?: string;
+}
+
+/**
+ * Mention d'une source, avec ses liens. Elle s'affiche telle que le fournisseur
+ * la demande, sans traduction (conditions lues : voir docs/sources.md).
+ */
+export type Credit = readonly CreditPart[];
+
 interface BasemapBase {
   id: BasemapId;
   /** Clé de traduction du nom. */
   labelKey: string;
-  /** Mention à afficher dans le pied de carte. */
-  attribution: string;
+  /** Mention à afficher dans le pied de carte et dans le panneau Sources. */
+  attribution: Credit;
+  /** Forme courte admise par le fournisseur, pour le pied de carte sur téléphone. */
+  shortAttribution?: Credit;
   /** Préchargement pour le mode hors ligne, selon les conditions du fournisseur (voir docs/sources.md). */
   offline: PreloadPolicy;
 }
@@ -76,12 +90,37 @@ const IGN_RASTER_OFFLINE: PreloadPolicy = { allowed: true, maxTiles: 600, minZoo
 /** Plan IGN en images, quand le style vectoriel est injoignable. */
 export const PLAN_IGN_RASTER_OFFLINE: PreloadPolicy = { ...IGN_RASTER_OFFLINE, maxZoom: 15 };
 
+// Mentions, mot pour mot, avec les adresses vérifiées (recherche « conditions » du 14 novembre 2026).
+
+/** Géoplateforme : données sous Licence Ouverte 2.0, lien vers les conditions générales d'utilisation. */
+const IGN_CREDIT: Credit = [{ text: '© IGN', href: 'https://cartes.gouv.fr/cgu/' }];
+
+/** Adresse des droits d'auteur et de la licence (ODbL) des données OpenStreetMap. */
+export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
+
+/** Liens de la mention demandée par OpenTopoMap (page https://opentopomap.org/about). */
+const OSM_DATA = { text: 'OpenStreetMap', href: 'https://openstreetmap.org/copyright' };
+const OPENTOPOMAP = { text: 'OpenTopoMap', href: 'http://opentopomap.org' };
+const CC_BY_SA_3 = { text: 'CC-BY-SA', href: 'https://creativecommons.org/licenses/by-sa/3.0/' };
+
+/**
+ * Zones estimées : elles sont calculées à partir des antennes d'OpenCellID, qui
+ * demande ce crédit à côté de la carte. La mention complète (relief Copernicus
+ * compris) est dans le manifest (licenceNotice), affichée dans le panneau Sources.
+ */
+export const ESTIMATED_CREDIT: Credit = [
+  { text: 'Cell tower data from ' },
+  { text: 'OpenCellID', href: 'https://opencellid.org' },
+  { text: ', licensed under ' },
+  { text: 'CC BY-SA 4.0', href: 'https://creativecommons.org/licenses/by-sa/4.0/' },
+];
+
 export const BASEMAPS: Record<BasemapId, Basemap> = {
   'ign-classique': {
     id: 'ign-classique',
     kind: 'vector',
     labelKey: 'basemap.ignClassique',
-    attribution: '© IGN',
+    attribution: IGN_CREDIT,
     offline: IGN_OFFLINE,
     styleUrl: `${IGN_STYLES}/classique.json`,
     fallback: PLAN_IGN_RASTER,
@@ -90,7 +129,7 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     id: 'ign-standard',
     kind: 'vector',
     labelKey: 'basemap.ignStandard',
-    attribution: '© IGN',
+    attribution: IGN_CREDIT,
     offline: IGN_OFFLINE,
     styleUrl: `${IGN_STYLES}/standard.json`,
     fallback: PLAN_IGN_RASTER,
@@ -99,7 +138,8 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     id: 'swisstopo',
     kind: 'raster',
     labelKey: 'basemap.swisstopo',
-    attribution: '© swisstopo',
+    // Sans espace : c'est la forme courte de la liste des mentions admises par swisstopo.
+    attribution: [{ text: '©swisstopo', href: 'https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices' }],
     // Usage équitable (1 200 requêtes par minute), cache local prévu par la documentation : 2 requêtes par seconde au plus.
     offline: { allowed: true, maxTiles: 600, minZoom: 9, maxZoom: 15, concurrency: 2, perSecond: 2 },
     tiles: ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg'],
@@ -112,7 +152,8 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     id: 'ign-es',
     kind: 'raster',
     labelKey: 'basemap.ignEs',
-    attribution: 'CC BY 4.0 ign.es',
+    // Formule du service (AccessConstraints), visible en pied de carte comme le demande la licence.
+    attribution: [{ text: 'CC BY 4.0 ' }, { text: 'ign.es', href: 'https://www.ign.es' }],
     // CC BY 4.0, aucune limite publiée : prudence, 5 requêtes par seconde au plus.
     offline: { allowed: true, maxTiles: 600, minZoom: 9, maxZoom: 15, concurrency: 2, perSecond: 5 },
     tiles: [
@@ -127,7 +168,17 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     id: 'osm',
     kind: 'raster',
     labelKey: 'basemap.osm',
-    attribution: '© OpenStreetMap, SRTM | © OpenTopoMap (CC BY-SA)',
+    // La mention demandée par OpenTopoMap, et sa forme courte quand la place manque.
+    attribution: [
+      { text: 'Kartendaten: © ' },
+      OSM_DATA,
+      { text: '-Mitwirkende, SRTM | Kartendarstellung: © ' },
+      OPENTOPOMAP,
+      { text: ' (' },
+      CC_BY_SA_3,
+      { text: ')' },
+    ],
+    shortAttribution: [{ text: '© ' }, OSM_DATA, { text: ', SRTM | © ' }, OPENTOPOMAP, { text: ' (' }, CC_BY_SA_3, { text: ')' }],
     // Le fournisseur ne garantit pas la disponibilité de son serveur et demande d'éviter les
     // téléchargements en masse : pas d'enregistrement à l'avance.
     offline: { allowed: false, maxTiles: 0, minZoom: 0, maxZoom: 0, concurrency: 0, perSecond: 0 },
@@ -140,7 +191,7 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
     id: 'ortho',
     kind: 'raster',
     labelKey: 'basemap.ortho',
-    attribution: '© IGN',
+    attribution: IGN_CREDIT,
     offline: IGN_RASTER_OFFLINE,
     tiles: [`${GEOPF_WMTS}&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&FORMAT=image/jpeg&STYLE=normal`],
     tileSize: 256,
@@ -153,13 +204,13 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
 export const BASEMAP_ORDER: BasemapId[] = ['ign-classique', 'ign-standard', 'swisstopo', 'ign-es', 'osm', 'ortho'];
 
 /** Estompage du relief (IGN), proposé en option par-dessus le fond. France uniquement. */
-export const HILLSHADE: RasterSpec & { attribution: string; offline: PreloadPolicy } = {
+export const HILLSHADE: RasterSpec & { attribution: Credit; offline: PreloadPolicy } = {
   tiles: [`${GEOPF_WMTS}&LAYER=ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW&FORMAT=image/png&STYLE=estompage_grayscale`],
   tileSize: 256,
   minzoom: 0,
   maxzoom: 15,
   bounds: [-5.6, 41.2, 9.9, 51.3],
-  attribution: '© IGN',
+  attribution: IGN_CREDIT,
   offline: { ...IGN_RASTER_OFFLINE, maxZoom: 15 },
 };
 

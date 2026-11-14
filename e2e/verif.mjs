@@ -118,6 +118,12 @@ try {
     controle('fr : titre', (await page.title()) === 'Carte des zones blanches', await page.title());
     if (!HORS_LIGNE) controle('fr : fond Plan IGN chargé', ok(suivi, 'data.geopf.fr') >= 4, `${ok(suivi, 'data.geopf.fr')} réponses de data.geopf.fr`);
     controle('fr : manifest et tuiles de couverture lus', suivi.manifest >= 1 && suivi.archives >= 1, `manifest lu ${suivi.manifest} fois, ${suivi.archives} lectures dans les archives PMTiles`);
+    // La mention du fond est un lien vers ses conditions, ouvert dans un nouvel onglet (carte-4).
+    const lienFond = await page.evaluate(() => {
+      const a = document.querySelector('.attribution a[href="https://cartes.gouv.fr/cgu/"]');
+      return a ? `${a.textContent} | ${a.target} | ${a.rel} | ${a.getClientRects().length > 0 ? 'visible' : 'caché'}` : 'aucun lien';
+    });
+    controle('fr : la mention du fond renvoie vers ses conditions d\'utilisation', lienFond === '© IGN | _blank | noopener noreferrer | visible', lienFond);
     await capture(page, '1-ordinateur-fr-carte');
 
     // Clavier : le focus va sur le titre du panneau ouvert, puis revient à son bouton à la fermeture.
@@ -539,6 +545,8 @@ try {
     await page.tap('button[aria-label="Rechercher un lieu"]');
     await page.type('.search__input', 'Bri');
     await page.waitForSelector('.search__item', { timeout: 10000 });
+    const credits = await page.evaluate(() => [...document.querySelectorAll('.search__credits a')].map((a) => `${a.textContent} ${a.getAttribute('href')} ${a.target}`).join(' | '));
+    controle('interface : les crédits de la recherche renvoient vers la licence d\'OpenStreetMap', credits === 'OpenStreetMap https://www.openstreetmap.org/copyright _blank', credits);
     await page.tap('.tool[data-panel="network"]');
     await page.waitForTimeout(500);
     controle('interface : ouvrir un panneau ferme la recherche', await page.locator('.search').isHidden());
@@ -556,6 +564,12 @@ try {
     await page.tap('.tool[data-panel="basemap"]');
     const auto = (await page.locator('.radio:has(input[value="auto"]) small').textContent()) ?? '';
     await page.tap('.icon-btn[data-role="close"]');
+    // Mention du fond OpenStreetMap : forme courte sur téléphone, avec les liens demandés par OpenTopoMap (carte-4).
+    const mentionOsm = await page.evaluate(() => {
+      const courte = document.querySelector('.attribution .credit-short');
+      return courte ? `${courte.textContent} | ${[...courte.querySelectorAll('a')].map((a) => a.getAttribute('href')).join(' ')}` : '';
+    });
+    controle('interface : mention du fond OpenStreetMap avec ses liens', mentionOsm === '© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA) | https://openstreetmap.org/copyright http://opentopomap.org https://creativecommons.org/licenses/by-sa/3.0/', mentionOsm);
     await page.evaluate(() => (location.hash = '#10/44.9/6.45'));
     await page.waitForTimeout(2500);
     await page.tap('.tool[data-panel="basemap"]');
@@ -579,6 +593,22 @@ try {
     const credits = await page.locator('.panel .plain li').allTextContents();
     const francais = credits.find((c) => /\s[:;]/.test(c));
     controle('es : ponctuation des mentions selon la langue (pas de « : » à la française)', credits.length > 0 && !francais, francais ?? credits[0]);
+    // Champs du manifest : contour de chaque pays, logo de licence en lien, mention imposée des zones estimées ;
+    // tous les liens s'ouvrent dans un nouvel onglet et ne mènent qu'à des pages https (sauf l'adresse d'OpenTopoMap).
+    const publies = manifest?.countries ?? [];
+    const panneau = await page.evaluate(() => ({
+      contours: [...document.querySelectorAll('.panel__body p.hint')].filter((p) => p.textContent.startsWith('Límites del país: ')).length,
+      logos: [...document.querySelectorAll('.panel__body a img.licence-logo')].map((img) => img.closest('a').getAttribute('href')),
+      avis: [...document.querySelectorAll('.panel__body small')].map((s) => s.textContent),
+      douteux: [...document.querySelectorAll('.panel__body a')].filter((a) => a.target !== '_blank' || !a.rel.includes('noopener') || !(a.protocol === 'https:' || a.href === 'http://opentopomap.org/')).map((a) => a.href),
+    }));
+    const contoursAttendus = publies.filter((c) => c.boundary?.text).length;
+    controle('es : contour de chaque pays avec sa mention', contoursAttendus > 0 && panneau.contours === contoursAttendus, `${panneau.contours} sur ${contoursAttendus}`);
+    const logosAttendus = publies.flatMap((c) => c.sources.filter((s) => s.licenceLogo && s.licenceLogoUrl).map((s) => s.licenceLogoUrl));
+    controle('es : logo de licence en lien vers l\'adresse du manifest', panneau.logos.join() === logosAttendus.join(), panneau.logos.join() || 'aucun');
+    const avisAttendus = publies.flatMap((c) => c.sources.filter((s) => s.type === 2 && s.licenceNotice).map((s) => s.licenceNotice));
+    controle('es : mention de licence imposée des zones estimées', avisAttendus.every((a) => panneau.avis.includes(a)), `${avisAttendus.length} mention(s) attendue(s)`);
+    controle('es : liens des sources dans un nouvel onglet, vers des pages https', panneau.douteux.length === 0, panneau.douteux.join(', '));
     await capture(page, '9-telephone-es-sources');
     await page.click('.icon-btn[aria-label="Volver"]');
     await page.selectOption('#langue', 'ca');

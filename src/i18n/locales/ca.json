@@ -173,6 +173,7 @@
   "sources.levels.binary": "2 nivells: amb cobertura o sense cobertura",
   "sources.technology": "{service}: {techno}",
   "sources.operators": "Operadors: {operators}",
+  "sources.boundary": "Límits del país: {boundary}",
   "sources.generated": "Tessel·les generades el {date}.",
   "sources.basemaps": "Mapes de fons",
   "sources.basemapItem": "{name}: {attribution}",

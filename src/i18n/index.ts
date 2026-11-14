@@ -144,6 +144,15 @@ function lookup(key: string): string | undefined {
  * langue (clé suffixée par _one, _other, etc.).
  */
 export function t(key: string, params?: Params): string {
+  const text = template(key, params);
+  if (!params) return text;
+  return text.replace(/\{(\w+)\}/g, (match, name: string) =>
+    name in params ? String(params[name]) : match,
+  );
+}
+
+/** Texte de la clé, avant remplacement des paramètres (forme plurielle choisie selon « count »). */
+function template(key: string, params?: Record<string, unknown>): string {
   let text: string | undefined;
   if (params && typeof params.count === 'number') {
     let category = 'other';
@@ -155,11 +164,27 @@ export function t(key: string, params?: Params): string {
     text = lookup(`${key}_${category}`) ?? lookup(`${key}_other`);
   }
   text ??= lookup(key);
-  if (text === undefined) return key;
-  if (!params) return text;
-  return text.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in params ? String(params[name]) : match,
-  );
+  return text ?? key;
+}
+
+/**
+ * Comme t(), mais les paramètres peuvent être autre chose que du texte (des liens,
+ * par exemple) : renvoie les morceaux du texte traduit, dans l'ordre, avec les
+ * valeurs des paramètres à leur place. La ponctuation reste celle de la langue.
+ */
+export function tParts<T>(key: string, params: Record<string, T | string | number>): (T | string)[] {
+  const parts: (T | string)[] = [];
+  let last = 0;
+  const text = template(key, params);
+  for (const match of text.matchAll(/\{(\w+)\}/g)) {
+    if (!(match[1] in params)) continue;
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    const value = params[match[1]];
+    parts.push(typeof value === 'number' ? String(value) : value);
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
 }
 
 /** Vrai si la clé existe dans la langue courante ou en français. */

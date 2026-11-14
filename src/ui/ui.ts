@@ -4,13 +4,14 @@
 
 import type { App } from '../app';
 import { SEARCH_DEBOUNCE_MS, SEARCH_MIN_CHARS, MAX_BOUNDS } from '../config';
+import { SOURCE_ESTIMATED } from '../coverage/codec';
 import { countryByIso } from '../coverage/manifest';
-import { getLanguage, onLanguageChange, t } from '../i18n';
-import { BASEMAPS, HILLSHADE } from '../map/basemaps';
+import { getLanguage, onLanguageChange, t, tParts } from '../i18n';
+import { BASEMAPS, ESTIMATED_CREDIT, HILLSHADE, OSM_COPYRIGHT_URL } from '../map/basemaps';
 import type { Padding } from '../map/mapView';
 import { searchPlaces, type Place } from '../search/geocode';
 import type { AppState, PanelId } from '../state';
-import { h, icon, ICONS, setChildren } from './dom';
+import { creditNodes, h, icon, ICONS, linkName, setChildren, type Child } from './dom';
 import { basemapPanel, gpxPanel, networkPanel, reportPanel, settingsPanel, sourcesPanel } from './panels';
 
 const PANEL_TITLES: Record<PanelId, string> = {
@@ -353,19 +354,33 @@ export class Ui {
 
   private renderAttribution(): void {
     const { activeBasemap, basemap, manifest, visibleCountries, network } = this.app.state;
-    const mentions = [BASEMAPS[activeBasemap].attribution];
-    if (basemap.hillshade && !mentions.includes(HILLSHADE.attribution)) mentions.push(HILLSHADE.attribution);
+    const fond = BASEMAPS[activeBasemap];
+    // Mention du fond avec ses liens ; sur téléphone, sa forme courte quand le fournisseur en admet une.
+    const basemaps: Child[] = [
+      fond.shortAttribution
+        ? [h('span', { class: 'credit-long' }, creditNodes(fond.attribution)), h('span', { class: 'credit-short' }, creditNodes(fond.shortAttribution))]
+        : creditNodes(fond.attribution),
+    ];
+    if (basemap.hillshade && HILLSHADE.attribution !== fond.attribution) basemaps.push(', ', creditNodes(HILLSHADE.attribution));
+    // Mentions des données de couverture des pays à l'écran (textes du manifest, affichés tels quels).
     const coverage: string[] = [];
+    let estimated = false;
     if (manifest) {
       for (const iso of visibleCountries) {
         const country = countryByIso(manifest, iso);
         for (const source of country?.sources ?? []) {
-          if (source.services.includes(network.service) && !coverage.includes(source.attribution)) coverage.push(source.attribution);
+          if (!source.services.includes(network.service)) continue;
+          // Zones estimées : le crédit qu'OpenCellID demande à côté de la carte, avec ses liens.
+          if (source.type === SOURCE_ESTIMATED) estimated = true;
+          else if (!coverage.includes(source.attribution)) coverage.push(source.attribution);
         }
       }
     }
-    const text = [t('attribution.basemap', { names: mentions.join(', ') })];
-    if (coverage.length > 0) text.push(t('attribution.coverage', { names: coverage.join(', ') }));
+    const coverageNodes: Child[] = coverage.map((text, i) => (i > 0 ? `, ${text}` : text));
+    if (estimated) coverageNodes.push(coverage.length > 0 ? ', ' : null, creditNodes(ESTIMATED_CREDIT));
+    const text: Child[] = [tParts<Child>('attribution.basemap', { names: basemaps })];
+    // Une ligne par groupe : la mention d'OpenTopoMap contient elle-même une barre « | ».
+    if (coverageNodes.length > 0) text.push(h('br'), tParts<Child>('attribution.coverage', { names: coverageNodes }));
     setChildren(
       this.attribution,
       h(
@@ -386,7 +401,7 @@ export class Ui {
       h(
         'div',
         { class: `attribution__text${this.attributionOpen ? ' attribution__text--open' : ''}` },
-        text.join(' | '),
+        text,
         ' ',
         h('button', { type: 'button', class: 'link', onclick: () => this.app.openPanel('sources') }, t('attribution.more')),
       ),
@@ -519,7 +534,8 @@ export class Ui {
           ),
         ),
       ),
-      h('li', { class: 'search__credits' }, t('search.credits')),
+      // Les résultats étrangers viennent d'OpenStreetMap : le nom renvoie vers sa page des droits et de la licence.
+      h('li', { class: 'search__credits' }, linkName(t('search.credits'), 'OpenStreetMap', OSM_COPYRIGHT_URL)),
     );
   }
 

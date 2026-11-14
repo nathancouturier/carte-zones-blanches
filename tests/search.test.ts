@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { autoBasemap, autoBasemapForView, BASEMAP_ORDER, BASEMAPS, isBasemapChoice } from '../src/map/basemaps';
+import {
+  autoBasemap,
+  autoBasemapForView,
+  BASEMAP_ORDER,
+  BASEMAPS,
+  ESTIMATED_CREDIT,
+  HILLSHADE,
+  isBasemapChoice,
+  OSM_COPYRIGHT_URL,
+  type Credit,
+} from '../src/map/basemaps';
 import { buildStyle, COVERAGE_LAYER } from '../src/map/style';
 import { EMPTY_COLLECTION, trackToGeoJson, zoneToGeoJson } from '../src/map/trackGeojson';
 import { mergePlaces, parseIgnCompletion, parsePhoton, type Place } from '../src/search/geocode';
@@ -70,6 +80,31 @@ describe('fonds de carte et style', () => {
       const tiles = b.kind === 'raster' ? b.tiles : [b.styleUrl, ...b.fallback.tiles];
       expect(tiles.every((u) => u.startsWith('https://'))).toBe(true);
     }
+  });
+
+  it('donne les mentions des fonds mot pour mot, avec leurs liens (carte-4)', () => {
+    const texte = (credit: Credit): string => credit.map((part) => part.text).join('');
+    const liens = (credit: Credit): Record<string, string> => Object.fromEntries(credit.filter((p) => p.href).map((p) => [p.text, p.href!]));
+    for (const id of ['ign-classique', 'ign-standard', 'ortho'] as const) {
+      expect(texte(BASEMAPS[id].attribution)).toBe('© IGN');
+      expect(liens(BASEMAPS[id].attribution)).toEqual({ '© IGN': 'https://cartes.gouv.fr/cgu/' });
+    }
+    expect(HILLSHADE.attribution).toBe(BASEMAPS['ign-classique'].attribution);
+    expect(texte(BASEMAPS.swisstopo.attribution)).toBe('©swisstopo');
+    expect(liens(BASEMAPS.swisstopo.attribution)).toEqual({ '©swisstopo': 'https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices' });
+    expect(texte(BASEMAPS['ign-es'].attribution)).toBe('CC BY 4.0 ign.es');
+    expect(liens(BASEMAPS['ign-es'].attribution)).toEqual({ 'ign.es': 'https://www.ign.es' });
+    // OpenTopoMap : sa mention, et la forme courte admise en pied de carte, avec les mêmes liens.
+    const osm = BASEMAPS.osm;
+    expect(texte(osm.attribution)).toBe('Kartendaten: © OpenStreetMap-Mitwirkende, SRTM | Kartendarstellung: © OpenTopoMap (CC-BY-SA)');
+    expect(texte(osm.shortAttribution!)).toBe('© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA)');
+    const attendus = { OpenStreetMap: 'https://openstreetmap.org/copyright', OpenTopoMap: 'http://opentopomap.org', 'CC-BY-SA': 'https://creativecommons.org/licenses/by-sa/3.0/' };
+    expect(liens(osm.attribution)).toEqual(attendus);
+    expect(liens(osm.shortAttribution!)).toEqual(attendus);
+    // Zones estimées : le crédit d'OpenCellID.
+    expect(texte(ESTIMATED_CREDIT)).toBe('Cell tower data from OpenCellID, licensed under CC BY-SA 4.0');
+    expect(liens(ESTIMATED_CREDIT)).toEqual({ OpenCellID: 'https://opencellid.org', 'CC BY-SA 4.0': 'https://creativecommons.org/licenses/by-sa/4.0/' });
+    expect(OSM_COPYRIGHT_URL).toBe('https://www.openstreetmap.org/copyright');
   });
 
   const coverage = { tilesUrl: 'couverture://{z}/{x}/{y}', minzoom: 0, maxzoom: 12, bounds: [-5, 41, 10, 51] as [number, number, number, number], opacity: 0.6 };

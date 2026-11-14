@@ -173,6 +173,7 @@
   "sources.levels.binary": "2 livelli: coperto o non coperto",
   "sources.technology": "{service}: {techno}",
   "sources.operators": "Operatori: {operators}",
+  "sources.boundary": "Confini del paese: {boundary}",
   "sources.generated": "Tessere generate il {date}.",
   "sources.basemaps": "Mappe di sfondo",
   "sources.basemapItem": "{name}: {attribution}",

@@ -173,6 +173,7 @@
   "sources.levels.binary": "2 niveaux : couvert ou non couvert",
   "sources.technology": "{service} : {techno}",
   "sources.operators": "Opérateurs : {operators}",
+  "sources.boundary": "Contour du pays : {boundary}",
   "sources.generated": "Tuiles générées le {date}.",
   "sources.basemaps": "Fonds de carte",
   "sources.basemapItem": "{name} : {attribution}",

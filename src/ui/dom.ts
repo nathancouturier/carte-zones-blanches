@@ -1,6 +1,6 @@
 // Petits outils pour bâtir l'interface sans bibliothèque.
 
-type Child = Node | string | number | null | undefined | false | Child[];
+export type Child = Node | string | number | null | undefined | false | Child[];
 
 type Attrs = Record<string, unknown>;
 
@@ -40,6 +40,23 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Attrs |
   }
   append(el, children);
   return el;
+}
+
+/** Lien vers un autre site : il s'ouvre dans un nouvel onglet, sans accès à la page du site. */
+export function externalLink(text: string, href: string): HTMLAnchorElement {
+  return h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, text);
+}
+
+/** Mention faite de morceaux de texte, dont certains renvoient vers une adresse. */
+export function creditNodes(parts: readonly { text: string; href?: string }[]): (Node | string)[] {
+  return parts.map((part) => (part.href ? externalLink(part.text, part.href) : part.text));
+}
+
+/** Texte traduit dont un nom propre (« OpenStreetMap », par exemple) devient un lien. */
+export function linkName(text: string, name: string, href: string): (Node | string)[] {
+  const at = text.indexOf(name);
+  if (at === -1) return [text];
+  return [text.slice(0, at), externalLink(name, href), text.slice(at + name.length)];
 }
 
 /** Remplace le contenu d'un élément. */

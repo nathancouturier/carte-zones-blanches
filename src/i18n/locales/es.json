@@ -173,6 +173,7 @@
   "sources.levels.binary": "2 niveles: con cobertura o sin cobertura",
   "sources.technology": "{service}: {techno}",
   "sources.operators": "Operadores: {operators}",
+  "sources.boundary": "Límites del país: {boundary}",
   "sources.generated": "Teselas generadas el {date}.",
   "sources.basemaps": "Mapas de fondo",
   "sources.basemapItem": "{name}: {attribution}",
