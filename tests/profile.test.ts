@@ -79,9 +79,9 @@ describe('profil altimétrique : portions estimées, clavier, lecteurs d\'écran
   it('dit, pour un point, le km, l\'altitude, la couverture et si elle est estimée', () => {
     setLanguage('fr');
     const sample = { lon: 6, lat: 45, ele: 1850, dist: 12400, seg: 0 };
-    expect(profilePointText(sample, 0, true).replace(/\s/g, ' ')).toBe('km 12,4, 1 850 m, Pas de couverture, estimée');
-    expect(profilePointText({ ...sample, ele: null }, 3, false)).toBe('km 12,4, altitude inconnue, Très bonne couverture');
-    expect(profilePointText(sample, -1, false).replace(/\s/g, ' ')).toBe('km 12,4, 1 850 m');
+    expect(profilePointText(sample, 0, true).replace(/\s/g, ' ')).toBe('km 12,4, altitude 1 850 m, Pas de couverture, estimée');
+    expect(profilePointText({ ...sample, ele: null }, 3, false)).toBe('km\u00a012,4, altitude inconnue, Très bonne couverture');
+    expect(profilePointText(sample, -1, false).replace(/\s/g, ' ')).toBe('km 12,4, altitude 1 850 m');
   });
 
   it('se parcourt au clavier : flèches, pages, Début et Fin', () => {

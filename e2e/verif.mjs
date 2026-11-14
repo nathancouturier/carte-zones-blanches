@@ -161,12 +161,12 @@ try {
 
     await importer(page, gpx('test-alpes.gpx'));
     const texte = await page.locator('.report-text').inputValue().catch(() => '');
-    controle('fr : le rapport liste les zones blanches avec leurs km', /Zones? blanches? \(\d+\)/.test(texte) && /km \d+,\d à \d+,\d/.test(texte), (texte.match(/Zones? blanches? \(\d+\)/) ?? [''])[0]);
+    controle('fr : le rapport liste les zones blanches avec leurs km', /Zones? blanches? \(\d+\)/.test(texte) && /km\s\d+,\d à \d+,\d/.test(texte), (texte.match(/Zones? blanches? \(\d+\)/) ?? [''])[0]);
     controle('fr : le rapport rappelle la limite des données', texte.includes('Couverture théorique, des écarts locaux sont possibles.'));
     controle('fr : le rapport texte ne garde aucune variable entre accolades', texte !== '' && !/[{}]/.test(texte), (texte.match(/.*[{}].*/) ?? [''])[0]);
     // « km 12,4 à 14,1, soit 1,7 km » : la longueur annoncée est la différence des bornes affichées.
     const nombre = (s) => Number(s.replace(',', '.'));
-    const bornes = [...texte.matchAll(/km (\d+,\d) à (\d+,\d), soit (\d+,\d) km/g)];
+    const bornes = [...texte.matchAll(/km\s(\d+,\d) à (\d+,\d), soit (\d+,\d)\skm/g)];
     const discordantes = bornes.filter(([, debut, fin, longueur]) => Math.abs(nombre(fin) - nombre(debut) - nombre(longueur)) > 0.05);
     controle('fr : bornes et longueur des zones concordent', bornes.length > 0 && discordantes.length === 0, discordantes.map((m) => m[0]).join(' | ') || `${bornes.length} zone(s)`);
     console.log('--- rapport (début) ---\n' + texte.split('\n').slice(0, 22).join('\n') + '\n-----------------------');
@@ -192,7 +192,7 @@ try {
       await page.mouse.move(boite.x + boite.width * 0.6, boite.y + boite.height / 2);
       await page.waitForTimeout(500);
       const lecture = (await page.locator('.profile__readout').textContent()) ?? '';
-      controle('fr : le profil altimétrique situe un point', /^km \d/.test(lecture) && (await page.locator('.track-cursor').count()) === 1, lecture);
+      controle('fr : le profil altimétrique situe un point', /^km\s\d/.test(lecture) && (await page.locator('.track-cursor').count()) === 1, lecture);
       await capture(page, '5b-ordinateur-fr-profil');
       // Au clavier : le profil prend le focus, les touches déplacent le curseur, la valeur et le résumé sont dits.
       await page.mouse.move(5, 5);
@@ -201,7 +201,7 @@ try {
       await page.keyboard.press('ArrowLeft');
       const clavier = { role: await profil.getAttribute('role'), valeur: (await profil.getAttribute('aria-valuetext')) ?? '', resume: (await profil.getAttribute('aria-label')) ?? '' };
       const repere = (await page.locator('.track-cursor').count()) === 1;
-      controle('fr : le profil se parcourt au clavier et se résume', clavier.role === 'slider' && /^km \d/.test(clavier.valeur) && repere && /sans couverture\.$/.test(clavier.resume), `${clavier.valeur} | ${clavier.resume}`);
+      controle('fr : le profil se parcourt au clavier et se résume', clavier.role === 'slider' && /^km\s\d/.test(clavier.valeur) && repere && /sans couverture\.$/.test(clavier.resume), `${clavier.valeur} | ${clavier.resume}`);
     } else {
       controle('fr : profil altimétrique', false, 'absent alors que le GPX a des altitudes');
     }
@@ -632,7 +632,8 @@ try {
     await page.tap('.tool[data-panel="basemap"]');
     const retour = (await page.locator('.radio:has(input[value="auto"]) small').textContent()) ?? '';
     await page.tap('.icon-btn[data-role="close"]');
-    controle('interface : fond Auto hors des données, fond OpenStreetMap', /OpenTopoMap/.test(auto) && /Plan IGN/.test(retour), `${auto} | ${retour}`);
+    // L'indication du mode Auto cite OpenTopoMap : c'est le fond affiché, nommé ensuite, qui compte.
+    controle('interface : fond Auto hors des données, fond OpenStreetMap', /Fond affiché\s*:\s*OpenTopoMap/.test(auto) && /Fond affiché\s*:\s*Plan IGN/.test(retour), `${auto} | ${retour}`);
 
     controle('interface : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
@@ -645,8 +646,8 @@ try {
     const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
     const invalide = { version: 8, sources: {}, layers: [{ id: 'noms', type: 'symbol', source: 'absente', layout: { 'text-field': 'x' } }] };
     for (const [cas, repondre, attendu] of [
-      ['style sans réponse', () => undefined, /Le style du Plan IGN est injoignable/],
-      ['style refusé par la carte', (route) => route.fulfill({ json: invalide, headers: { 'access-control-allow-origin': '*' } }), /Le style du Plan IGN n'a pas pu être lu/],
+      ['style sans réponse', () => undefined, /Le Plan IGN ne se charge pas/],
+      ['style refusé par la carte', (route) => route.fulfill({ json: invalide, headers: { 'access-control-allow-origin': '*' } }), /Le Plan IGN n'a pas pu être lu/],
     ]) {
       let images = 0;
       const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42', async (c) => {
@@ -813,7 +814,7 @@ try {
     const cas = [
       { nom: 'test-alpes.gpx', iso: 'IT', pays: 'Italie', zoneAttendue: null },
       // Côté espagnol, l'arrivée au refuge de Góriz n'a aucun réseau 4G dans la carte du ministère.
-      { nom: 'test-pyrenees.gpx', iso: 'ES', pays: 'Espagne', zoneAttendue: /km \d+,\d à \d+,\d, soit [^\n]*, Espagne/ },
+      { nom: 'test-pyrenees.gpx', iso: 'ES', pays: 'Espagne', zoneAttendue: /km\s\d+,\d à \d+,\d, soit [^\n]*, Espagne/ },
     ];
     for (const { nom, iso, pays, zoneAttendue } of cas) {
       const fichier = echantillon(nom);
@@ -826,7 +827,7 @@ try {
       const texte = await page.locator('.report-text').inputValue();
       controle(`étranger : ${nom} traverse la France et l'${pays}`, texte.includes(`Pays traversés : France, ${pays}`), (texte.match(/Pays traversés[^\n]*/) ?? [''])[0]);
       controle(`étranger : ${nom}, la couverture est lue des deux côtés`, new RegExp(`Opérateur : [^\\n]*\\(France\\)[^\\n]*\\(${pays}\\)`).test(texte) && !texte.includes('Hors de la zone couverte par les données'), (texte.match(/Opérateur[^\n]*/) ?? [''])[0]);
-      controle(`étranger : ${nom}, source qui dit seulement couvert ou non`, texte.includes(`${pays} : la source indique seulement si un lieu est couvert ou non.`));
+      controle(`étranger : ${nom}, source qui dit seulement couvert ou non`, texte.includes(`${pays} : les données indiquent seulement si un lieu est couvert ou non.`));
       if (zoneAttendue) controle(`étranger : ${nom}, zone blanche côté ${pays}`, zoneAttendue.test(texte), (texte.match(zoneAttendue) ?? [''])[0]);
       controle(`étranger : ${nom}, aucune erreur JavaScript`, suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
       await capture(page, `10-ordinateur-fr-${nom.replace('.gpx', '')}`);

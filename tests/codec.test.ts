@@ -152,7 +152,7 @@ describe('lecture du manifest', () => {
     setLanguage('de');
     expect(slotLabel(suisse.slots[1], suisse)).toBe('Alle 3 Netze zugleich');
     setLanguage('it');
-    expect(slotLabel(italie.slots[3], italie)).toBe('Tutte e 4 le reti');
+    expect(slotLabel(italie.slots[3], italie)).toBe('Le 4 reti allo stesso tempo');
     setLanguage('fr');
     const bad = JSON.parse(JSON.stringify(sampleManifest()));
     bad.countries[1].slots[0] = { id: 'x' };
