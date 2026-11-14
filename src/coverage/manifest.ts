@@ -105,7 +105,11 @@ export interface Manifest {
     size: number;
     minzoom: number;
     maxzoom: number;
-    format: 'png' | 'webp';
+    /**
+     * Toujours du PNG : le décodeur de secours en JavaScript, qui garantit des
+     * pixels exacts quand le navigateur bruite le canvas, ne lit que ce format.
+     */
+    format: 'png';
     /** Zoom des blocs servant à répartir les tuiles entre les archives. */
     blockZoom?: number;
   };
@@ -156,7 +160,10 @@ export function parseManifest(raw: unknown): Manifest {
   const minzoom = int(raw.tiles.minzoom, 'tiles.minzoom', 0, 24);
   const maxzoom = int(raw.tiles.maxzoom, 'tiles.maxzoom', minzoom, 24);
   const format = raw.tiles.format;
-  if (format !== 'png' && format !== 'webp') fail('tiles.format doit valoir png ou webp');
+  if (format === 'webp') {
+    fail('tiles.format doit valoir png : les tuiles WebP ne sont pas prises en charge (le décodeur de secours en JavaScript, qui garantit des pixels exacts, ne lit que le PNG)');
+  }
+  if (format !== 'png') fail('tiles.format doit valoir png');
   const blockZoom =
     raw.tiles.blockZoom === undefined ? undefined : int(raw.tiles.blockZoom, 'tiles.blockZoom', 0, maxzoom);
 
