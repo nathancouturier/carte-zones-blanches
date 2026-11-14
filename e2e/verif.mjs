@@ -295,6 +295,42 @@ try {
     await contexte.close();
   }
 
+  // --- 2d. Ordinateur, français : nouvelle publication des données pendant la visite --
+  {
+    let lus = 0;
+    let nouvelles = 0;
+    const { contexte, page, suivi } = await ouvrir(navigateur, ordinateur, '#11/44.9/6.42', async (c) => {
+      // Le premier manifest lu est celui d'une publication précédente, dont l'archive a disparu du serveur.
+      await c.route(/\/data\/manifest\.json(\?|$)/, async (route) => {
+        if (++lus > 1) return route.fallback();
+        const reponse = await route.fetch();
+        const manifest = await reponse.json();
+        manifest.generated = '2000-01-01';
+        for (const archive of manifest.archives) archive.file = `ancienne-${archive.file}`;
+        await route.fulfill({ response: reponse, json: manifest });
+      });
+      c.on('response', (r) => {
+        if (r.url().endsWith('.pmtiles') && !r.url().includes('/ancienne-') && r.status() === 206) nouvelles += 1;
+      });
+      // Messages brefs affichés pendant le chargement (ils disparaissent au bout de quelques secondes).
+      await c.addInitScript(() => {
+        window.messagesVus = [];
+        new MutationObserver(() => {
+          const toast = document.querySelector('.toast');
+          if (toast && !toast.hidden && !window.messagesVus.includes(toast.textContent)) window.messagesVus.push(toast.textContent);
+        }).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+      });
+    });
+    const etat = await page.evaluate(() => ({
+      bandeau: document.querySelector('.coverage-alert')?.hidden === false,
+      message: window.messagesVus.find((m) => /Nouvelles données/.test(m)) ?? window.messagesVus.join(' | '),
+    }));
+    controle('publication : l\'onglet ouvert relit le manifest et passe aux nouvelles archives', lus >= 2 && nouvelles >= 1 && !etat.bandeau, `manifest lu ${lus} fois, ${nouvelles} lectures dans les nouvelles archives${etat.bandeau ? ', bandeau affiché' : ''}`);
+    controle('publication : l\'utilisateur est prévenu', /Nouvelles données de couverture publiées/.test(etat.message), etat.message);
+    controle('publication : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
   // --- 3. Téléphone, espagnol : sources et changement de langue -----------------
   {
     const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '?lang=es#9/42.6/0.9');

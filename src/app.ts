@@ -5,6 +5,7 @@ import { DATA_BASE_URL, MAX_GPX_BYTES, TILE_READ_TIMEOUT_MS } from './config';
 import { createArchiveReader, type OnlineArchiveReader } from './coverage/archives';
 import { unpackCountry } from './coverage/codec';
 import { createTileDecoder } from './coverage/decode';
+import { NewDataWatcher } from './coverage/freshness';
 import {
   ALL_OPERATORS,
   buildLevelTables,
@@ -41,6 +42,13 @@ import {
   type PanelId,
 } from './state';
 
+/** Lit et vérifie manifest.json. « no-cache » le fait revalider par le serveur, « reload » ne lit pas du tout le cache. */
+async function fetchManifest(cache: RequestCache, signal?: AbortSignal): Promise<Manifest> {
+  const response = await fetch(`${DATA_BASE_URL}manifest.json`, { cache, signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return parseManifest(await response.json());
+}
+
 export interface AppHooks {
   /** Affiche un message bref. */
   toast: (message: string) => void;
@@ -55,6 +63,7 @@ export class App {
   private renderState: CoverageRenderState | null = null;
   private importSeq = 0;
   private readArchive: OnlineArchiveReader | null = null;
+  private dataWatcher: NewDataWatcher | null = null;
   private offlineAbort: AbortController | null = null;
   private moveTimer: ReturnType<typeof setTimeout> | undefined;
   private hooks: AppHooks = { toast: () => undefined, padding: () => ({ top: 40, right: 40, bottom: 40, left: 40 }) };
@@ -100,15 +109,17 @@ export class App {
   private async loadManifest(): Promise<void> {
     let manifest: Manifest;
     try {
-      const response = await fetch(`${DATA_BASE_URL}manifest.json`, { cache: 'no-cache' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      manifest = parseManifest(await response.json());
+      manifest = await fetchManifest('no-cache');
     } catch (error) {
       console.warn('Données de couverture indisponibles :', error);
       this.store.set({ dataStatus: 'missing' });
       return;
     }
-    const online = createArchiveReader((file) => new PMTiles(`${DATA_BASE_URL}${file}`));
+    // Une archive illisible peut venir d'une nouvelle publication des données : on relit alors le manifest.
+    const online = createArchiveReader(
+      (file) => new PMTiles(`${DATA_BASE_URL}${file}`),
+      (error) => void this.dataWatcher?.report(error),
+    );
     // Sans réseau, on sert les tuiles enregistrées par « Préparer le hors ligne ».
     const read: ArchiveReader = async (file, z, x, y, signal) => {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -125,14 +136,40 @@ export class App {
     };
     this.readArchive = online;
     const decoder = createTileDecoder((reason) => console.warn(`Décodage des tuiles en JavaScript : ${reason}`));
-    this.tileStore = new TileStore(manifest, read, decoder);
-    const network = this.sanitizeNetwork(this.state.network, manifest);
-    this.store.set({ manifest, dataStatus: 'ready', network });
-    this.rebuildTables();
+    this.dataWatcher = new NewDataWatcher(
+      manifest,
+      () => fetchManifest('reload', AbortSignal.timeout(TILE_READ_TIMEOUT_MS)),
+      (next) => void this.switchData(new TileStore(next, read, decoder)),
+    );
+    this.useTiles(new TileStore(manifest, read, decoder));
     await this.applyStyle();
     this.scheduleViewUpdate();
     // Sans réseau, on recharge tout seul le tracé préparé pour le hors ligne.
     if (typeof navigator !== 'undefined' && navigator.onLine === false && !this.state.track) void this.restoreOfflineTrack();
+  }
+
+  /** Branche l'application sur un magasin de tuiles et sur son manifest. */
+  private useTiles(tileStore: TileStore): void {
+    const { manifest } = tileStore;
+    this.tileStore = tileStore;
+    const network = this.sanitizeNetwork(this.state.network, manifest);
+    this.store.set({ manifest, dataStatus: 'ready', network, coverageErrors: 0 });
+    this.rebuildTables();
+  }
+
+  /**
+   * De nouvelles données ont été publiées pendant que la page était ouverte (les
+   * anciennes archives ont disparu du serveur) : on repart sur le nouveau manifest,
+   * on redessine la couche et on refait l'analyse du tracé chargé.
+   */
+  private async switchData(tileStore: TileStore): Promise<void> {
+    this.readArchive?.reset();
+    this.useTiles(tileStore);
+    await this.applyStyle();
+    this.mapView.refreshCoverage();
+    this.scheduleViewUpdate();
+    this.hooks.toast(t('network.dataUpdated'));
+    if (this.state.track) void this.retryAnalysis();
   }
 
   /** Écarte les réglages mémorisés qui ne correspondent plus aux données. */

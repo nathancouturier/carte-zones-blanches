@@ -37,6 +37,7 @@
   "network.loading": "S'estan carregant les dades de cobertura",
   "network.noData": "Les dades de cobertura no estan disponibles de moment.",
   "network.tilesUnavailable": "Dades de cobertura no disponibles a les zones ratllades en gris.",
+  "network.dataUpdated": "S'han publicat dades de cobertura noves: el mapa està actualitzat.",
   "network.service": "Servei",
   "network.serviceMissing": "{service}: no hi ha dades per a {countries}.",
   "network.operator": "Operador",

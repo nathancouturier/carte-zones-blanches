@@ -41,7 +41,7 @@ async function unavailableTile(): Promise<ImageBitmap> {
  * tuile n'a pas pu être lue.
  */
 export function coverageTileLoader(getState: () => CoverageRenderState | null, onError?: (error: unknown) => void): TileLoader {
-  return async (params, abortController) => {
+  const load: TileLoader = async (params, abortController) => {
     const match = URL_RE.exec(params.url);
     const state = getState();
     if (!match || !state) return { data: await transparentTile() };
@@ -54,18 +54,23 @@ export function coverageTileLoader(getState: () => CoverageRenderState | null, o
       data = await untilAborted(state.store.get(z, x, y), abortController.signal);
     } catch (error) {
       if (abortController.signal.aborted) throw error;
+      // Les données ont changé pendant la lecture (nouvelle publication) : on lit dans les nouvelles.
+      if (getState()?.store !== state.store) return load(params, abortController);
       // Une tuile vide passerait pour une zone bien couverte : on montre que les données manquent.
       onError?.(error);
       return { data: await unavailableTile() };
     }
-    if (!data) return { data: await transparentTile() };
-    // L'état a pu changer pendant le téléchargement : on dessine avec le plus récent.
+    // L'état a pu changer pendant le téléchargement : on dessine avec le plus récent,
+    // et dans les nouvelles données si elles ont changé.
     const current = getState() ?? state;
+    if (current.store !== state.store) return load(params, abortController);
+    if (!data) return { data: await transparentTile() };
     const image = new ImageData(TILE_SIZE, TILE_SIZE);
     const visible = renderTile(data, current.tables, current.settings, image.data);
     if (!visible) return { data: await transparentTile() };
     return { data: await createImageBitmap(image) };
   };
+  return load;
 }
 
 /** Enregistre le protocole auprès de MapLibre. */

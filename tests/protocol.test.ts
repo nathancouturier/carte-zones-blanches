@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TILE_SIZE } from '../src/coverage/codec';
+import { LEVEL_NONE, TILE_SIZE, writePixel } from '../src/coverage/codec';
 import { decodeWithJs } from '../src/coverage/decode';
 import { buildLevelTables } from '../src/coverage/manifest';
 import { coverageTileLoader, type CoverageRenderState } from '../src/coverage/protocol';
-import { UNAVAILABLE_STRIPE, UNAVAILABLE_VEIL } from '../src/coverage/render';
+import { LEVEL_COLORS, UNAVAILABLE_STRIPE, UNAVAILABLE_VEIL } from '../src/coverage/render';
 import { TileStore } from '../src/coverage/store';
 import { sampleManifest } from './helpers';
 
@@ -73,6 +73,32 @@ describe('tuile illisible', () => {
     const alpha = (x: number, y: number): number => image.data[(y * TILE_SIZE + x) * 4 + 3];
     expect([alpha(10, 10), alpha(100, 100), alpha(200, 200)]).toEqual(Array(3).fill(UNAVAILABLE_STRIPE[3]));
     expect([alpha(16, 10), alpha(10, 16)]).toEqual(Array(2).fill(UNAVAILABLE_VEIL[3]));
+  });
+
+  it('relit dans les nouvelles données quand elles ont changé pendant la lecture', async () => {
+    const manifest = sampleManifest();
+    const tables = buildLevelTables(manifest, { service: 'data', operators: {} });
+    const settings = { service: 'data', showAll: false } as const;
+    // Nouvelles données : partout « pas de couverture » en France.
+    const red = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    for (let i = 0; i < TILE_SIZE * TILE_SIZE; i++) writePixel(red, i, { data: [0], country: 1 });
+    const fresh: CoverageRenderState = { store: new TileStore(manifest, async () => new ArrayBuffer(8), async () => red), tables, settings };
+    let current: CoverageRenderState | null = null;
+    // L'ancienne archive a disparu : sa lecture échoue, et pendant ce temps l'application passe aux nouvelles données.
+    const stale: CoverageRenderState = {
+      store: new TileStore(manifest, async () => {
+        current = fresh;
+        throw new Error('Bad response code: 404');
+      }, decodeWithJs),
+      tables,
+      settings,
+    };
+    current = stale;
+    const errors: unknown[] = [];
+    const response = await coverageTileLoader(() => current, (error) => errors.push(error))({ url: 'couverture://5/16/11' }, new AbortController());
+    const image = response.data as unknown as FakeImageData;
+    expect(Array.from(image.data.slice(0, 4))).toEqual([...LEVEL_COLORS[LEVEL_NONE]]);
+    expect(errors).toHaveLength(0);
   });
 
   it('une annulation ne compte pas comme un échec', async () => {

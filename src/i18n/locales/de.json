@@ -37,6 +37,7 @@
   "network.loading": "Abdeckungsdaten werden geladen",
   "network.noData": "Die Abdeckungsdaten sind im Moment nicht verfügbar.",
   "network.tilesUnavailable": "Abdeckungsdaten in den grau schraffierten Bereichen nicht verfügbar.",
+  "network.dataUpdated": "Neue Abdeckungsdaten veröffentlicht: Die Karte ist auf dem neuesten Stand.",
   "network.service": "Dienst",
   "network.serviceMissing": "{service}: keine Daten für {countries}.",
   "network.operator": "Anbieter",
