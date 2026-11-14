@@ -174,6 +174,14 @@ try {
       const lecture = (await page.locator('.profile__readout').textContent()) ?? '';
       controle('fr : le profil altimétrique situe un point', /^km \d/.test(lecture) && (await page.locator('.track-cursor').count()) === 1, lecture);
       await capture(page, '5b-ordinateur-fr-profil');
+      // Au clavier : le profil prend le focus, les touches déplacent le curseur, la valeur et le résumé sont dits.
+      await page.mouse.move(5, 5);
+      await profil.focus();
+      await page.keyboard.press('End');
+      await page.keyboard.press('ArrowLeft');
+      const clavier = { role: await profil.getAttribute('role'), valeur: (await profil.getAttribute('aria-valuetext')) ?? '', resume: (await profil.getAttribute('aria-label')) ?? '' };
+      const repere = (await page.locator('.track-cursor').count()) === 1;
+      controle('fr : le profil se parcourt au clavier et se résume', clavier.role === 'slider' && /^km \d/.test(clavier.valeur) && repere && /sans couverture\.$/.test(clavier.resume), `${clavier.valeur} | ${clavier.resume}`);
     } else {
       controle('fr : profil altimétrique', false, 'absent alors que le GPX a des altitudes');
     }
@@ -256,14 +264,40 @@ try {
       return true;
     });
     controle('hors ligne : Service Worker enregistré', controleParSw);
+    // La coque (index.html et ses fichiers) est enregistrée en entier à l'installation, dans un seul cache versionné.
+    const coque = await page.evaluate(async () => {
+      const noms = (await caches.keys()).filter((nom) => nom.startsWith('czb-coque-'));
+      if (noms.length !== 1) return `${noms.length} caches de coque`;
+      const cache = await caches.open(noms[0]);
+      const liste = await cache.match(new URL('coque.json', location.href).href);
+      if (!liste) return 'coque.json absent';
+      const { files } = await liste.json();
+      const absents = [];
+      for (const f of files) if (!(await cache.match(new URL(f, location.href).href))) absents.push(f);
+      const scripts = [...document.querySelectorAll('script[src], link[rel=stylesheet]')].map((e) => new URL(e.src || e.href).pathname.split('/').pop());
+      const horsListe = scripts.filter((s) => !files.some((f) => f.endsWith(s)));
+      return absents.length || horsListe.length ? `manquent : ${[...absents, ...horsListe].join(', ')}` : `${noms[0]}, ${files.length} fichiers`;
+    });
+    controle('hors ligne : coque complète, une seule version', /^czb-coque-\w+, \d+ fichiers$/.test(coque), coque);
     await importer(page, TRACE_FRANCE);
     await page.locator('[data-focus="hors-ligne"]').scrollIntoViewIfNeeded();
     await page.click('[data-focus="hors-ligne"]');
     const pret = await page.waitForSelector('.offline-ready', { timeout: 180000 }).then(() => true, () => false);
     const bilan = pret ? ((await page.locator('.offline-ready').textContent()) ?? '') : '';
     controle('hors ligne : le tracé est enregistré', pret && /tuiles de couverture/.test(bilan), bilan);
-    if (!HORS_LIGNE) controle('hors ligne : le fond Plan IGN est enregistré', /et \d[\d\s\u202f]* tuiles de fond/.test(bilan), bilan);
+    const fonds = (await page.locator('.offline-basemaps li').allTextContents()).join(' | ');
+    if (!HORS_LIGNE) controle('hors ligne : le fond Plan IGN est enregistré', /Plan IGN classique\s*:\s*\d[\d\s\u202f]* tuiles? enregistrées?/.test(fonds), fonds);
     await capture(page, '8b-telephone-fr-hors-ligne-pret');
+    // La suppression des données hors ligne demande confirmation : refusée, rien n'est effacé.
+    const confirmations = [];
+    page.once('dialog', async (d) => {
+      confirmations.push(d.message());
+      await d.dismiss();
+    });
+    await page.click('[data-focus="hors-ligne-effacer"]');
+    await page.waitForTimeout(800);
+    const garde = (await page.locator('.offline-ready').count()) === 1;
+    controle('hors ligne : la suppression demande confirmation', confirmations.length === 1 && /^Supprimer le tracé/.test(confirmations[0]) && garde, confirmations[0] ?? 'aucune confirmation');
 
     // Coupure du réseau, puis rechargement complet de la page.
     const servies = [];
@@ -286,6 +320,11 @@ try {
       await page.waitForTimeout(2500);
     }
     await capture(page, '8c-telephone-fr-hors-ligne-carte');
+    // Sans réseau, une adresse avec ?lang (un signet par exemple) retrouve la même page, dans sa langue.
+    await page.goto(`${SITE}?lang=es#11/44.9/6.42`, { waitUntil: 'load' }).catch(() => null);
+    await page.waitForTimeout(1500);
+    const signet = { lang: await page.evaluate(() => document.documentElement.lang).catch(() => ''), titre: await page.title().catch(() => '') };
+    controle('hors ligne : ?lang=es retrouve la page sans réseau', signet.lang === 'es' && signet.titre === 'Mapa de zonas sin cobertura', `${signet.lang} | ${signet.titre}`);
     // Vue plus large que le couloir enregistré (au plus le zoom 9, quel que soit le tracé) : les tuiles
     // manquantes sont signalées, puis relues toutes seules au retour du réseau, sans recharger la page.
     await page.evaluate(() => {
@@ -354,6 +393,51 @@ try {
     controle('publication : l\'onglet ouvert relit le manifest et passe aux nouvelles archives', lus >= 2 && nouvelles >= 1 && !etat.bandeau, `manifest lu ${lus} fois, ${nouvelles} lectures dans les nouvelles archives${etat.bandeau ? ', bandeau affiché' : ''}`);
     controle('publication : l\'utilisateur est prévenu', /Nouvelles données de couverture publiées/.test(etat.message), etat.message);
     controle('publication : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
+    await contexte.close();
+  }
+
+  // --- 2e. Téléphone : fonds enregistrés selon leur fournisseur (réponses simulées) ---
+  // Photos aériennes et estompage du relief de l'IGN, servis ici par une image simulée :
+  // on vérifie le plafond du fournisseur, le bilan fond par fond et l'affichage sans réseau.
+  {
+    const { contexte, page, suivi } = await ouvrir(navigateur, telephone, '#11/44.9/6.42');
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    let demandes = 0;
+    await contexte.route(/^https:\/\/data\.geopf\.fr\/wmts\?/, (route) => {
+      demandes += 1;
+      route.fulfill({ status: 200, contentType: 'image/png', body: image, headers: { 'access-control-allow-origin': '*' } });
+    });
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.click('[data-panel="basemap"]');
+    await page.click('label:has-text("Photos aériennes")');
+    await page.click('label:has-text("Estompage du relief")');
+    await page.click('.icon-btn[data-role="close"]');
+    await importer(page, gpx('test-alpes.gpx'));
+    await page.locator('[data-focus="hors-ligne"]').scrollIntoViewIfNeeded();
+    const avant = demandes;
+    await page.click('[data-focus="hors-ligne"]');
+    const pret = await page.waitForSelector('.offline-ready', { timeout: 180000 }).then(() => true, () => false);
+    const fonds = (await page.locator('.offline-basemaps li').allTextContents()).join(' | ');
+    const prechargees = demandes - avant;
+    controle('fonds : photos aériennes et estompage enregistrés, fond par fond', pret && /Photos aériennes \(IGN\)\s*:\s*\d+ tuiles enregistrées/.test(fonds) && /Estompage du relief\s*:\s*\d+ tuiles enregistrées/.test(fonds), fonds);
+    controle('fonds : plafond du fournisseur respecté', prechargees > 0 && prechargees <= 600 + 600, `${prechargees} requêtes pour les deux fonds`);
+    await capture(page, '8d-telephone-fr-fonds-enregistres');
+    const servies = [];
+    page.on('response', (r) => {
+      if (r.fromServiceWorker() && r.status() === 200 && new URL(r.url()).host === 'data.geopf.fr') servies.push(r.url());
+    });
+    // Sans réseau, plus aucune réponse simulée : ce qui s'affiche vient de la copie locale.
+    await contexte.unrouteAll();
+    await contexte.route(/^https:\/\/data\.geopf\.fr\//, (route) => route.abort('internetdisconnected'));
+    await contexte.setOffline(true);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForSelector('.panel[data-panel="report"] .stats', { timeout: 60000 }).catch(() => null);
+    await page.click('.icon-btn[data-role="close"]').catch(() => null);
+    await page.waitForTimeout(3000);
+    controle('fonds : photos aériennes servies sans réseau depuis la copie locale', servies.length >= 3, `${servies.length} tuiles servies par le Service Worker`);
+    await capture(page, '8e-telephone-fr-fonds-sans-reseau');
+    await contexte.setOffline(false);
+    controle('fonds : aucune erreur JavaScript', suivi.erreurs.length === 0, suivi.erreurs.slice(0, 3).join(' | '));
     await contexte.close();
   }
 

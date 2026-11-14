@@ -29,7 +29,7 @@ import {
 } from '../i18n';
 import { BASEMAP_ORDER, BASEMAPS, HILLSHADE, type BasemapChoice } from '../map/basemaps';
 import { OUTSIDE_COLOR } from '../map/style';
-import { offlineSupported } from '../offline/manager';
+import { offlineOutdated, offlineSupported, type BasemapRecord } from '../offline/manager';
 import { h, icon, ICONS } from './dom';
 import { elevationProfile } from './profile';
 
@@ -327,6 +327,7 @@ export function gpxPanel(app: App, chooseFile: () => void): Node_[] {
           { class: 'actions' },
           h('button', { type: 'button', class: 'btn', dataset: { focus: 'reprendre' }, onclick: () => void app.restoreOfflineTrack() }, icon(ICONS.report, 20), t('offline.resume', { name: stored.name })),
         ),
+        clearOfflineButton(app),
       );
     }
   }
@@ -497,6 +498,7 @@ export function reportPanel(app: App, chooseFile: () => void): Node_[] {
   const profile = elevationProfile({
     samples: track.samples,
     classes: report.classes,
+    raw: track.analysis.raw,
     onHover: (index) => app.showTrackCursor(index),
   });
   if (profile) parts.push(section(t('report.profile'), profile));
@@ -566,26 +568,38 @@ function offlineSection(app: App): Node_ {
   if (!offlineSupported()) return section(t('offline.heading'), h('p', { class: 'muted' }, t('offline.unsupported')));
   const basemap = BASEMAPS[activeBasemap];
   const parts: Node_[] = [h('p', { class: 'hint hint--first' }, t('offline.intro'))];
-  if (!basemap.offline.allowed) parts.push(note(t('offline.basemapNotAllowed', { name: t(basemap.labelKey) })));
+  // En mode Auto, le fond national de chaque pays traversé est enregistré, quel que soit le fond affiché.
+  if (app.state.basemap.choice !== 'auto' && !basemap.offline.allowed) parts.push(note(t('offline.basemapNotAllowed', { name: t(basemap.labelKey) })));
   if (offline.status === 'preparing') {
     parts.push(
       h('div', { class: 'progress', role: 'status' }, h('span', null, t('offline.preparing')), h('progress', { max: '1', value: String(offline.progress), dataset: { role: 'offline-progress' } })),
+      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', dataset: { focus: 'hors-ligne-annuler' }, onclick: () => app.cancelOffline() }, t('offline.cancel'))),
     );
   } else {
-    if (offline.status === 'error') parts.push(note(t('offline.error'), 'warning'));
-    const info = offline.info;
-    if (info) {
-      parts.push(
-        h(
-          'p',
-          { class: 'offline-ready' },
-          info.basemapTiles > 0
-            ? t('offline.ready', { name: info.name, coverage: formatNumber(info.coverageTiles), basemap: formatNumber(info.basemapTiles) })
-            : t('offline.readyNoBasemap', { name: info.name, coverage: formatNumber(info.coverageTiles) }),
-        ),
-      );
-      if (info.failed > 0) parts.push(note(t('offline.failed', { count: info.failed }), 'warning'));
+    if (offline.status === 'error') {
+      const reason = offline.error === 'shell' ? t('offline.shellMissing') : offline.error === 'quota' ? t('offline.quota') : t('offline.error');
+      parts.push(note(reason, 'warning'));
     }
+    const info = offline.info;
+    const sameTrack = info?.name === (track.parsed.name ?? track.fileName);
+    // Interrompu, annulé ou en échec : on le dit, plutôt que « Prêt ».
+    if (info && !info.complete) parts.push(note(t('offline.incomplete', { name: info.name }), 'warning'));
+    else if (info) {
+      parts.push(h('p', { class: 'offline-ready' }, t('offline.ready', { name: info.name, coverage: formatNumber(info.coverageTiles) })));
+      // Ce qui a été enregistré ou non, fond par fond.
+      const stored = info.basemaps.filter((record) => record.allowed && record.total > 0 && record.stored === record.total);
+      if (stored.length > 0) parts.push(h('ul', { class: 'offline-basemaps' }, stored.map((record) => h('li', null, t('offline.basemapStored', { basemap: recordLabel(record), count: record.tiles })))));
+      for (const record of info.basemaps.filter((r) => !stored.includes(r))) {
+        if (record.allowed && record.total === 0) parts.push(h('p', { class: 'hint' }, t('offline.basemapOutside', { basemap: recordLabel(record) })));
+        else if (record.allowed) parts.push(note(t('offline.basemapMissing', { basemap: recordLabel(record), count: record.total - record.stored, total: formatNumber(record.total) }), 'warning'));
+        else if (record.countries.length > 0) parts.push(note(t('offline.basemapRefusedIn', { countries: record.countries.map(countryName).join(', '), basemap: recordLabel(record) }), 'warning'));
+        else parts.push(note(t('offline.basemapRefused', { basemap: recordLabel(record) }), 'warning'));
+      }
+      // Données publiées depuis : l'enregistrement garde les siennes (et leur manifest), à mettre à jour.
+      if (app.state.manifest && offlineOutdated(info, app.state.manifest)) parts.push(note(t('offline.outdated', { date: formatDataDate(info.date.slice(0, 10)) }), 'warning'));
+      if (!info.persisted) parts.push(note(t('offline.notPersisted'), 'warning'));
+    }
+    if (info && !sameTrack) parts.push(h('p', { class: 'hint' }, t('offline.replaces', { name: info.name })));
     parts.push(
       h(
         'div',
@@ -594,15 +608,38 @@ function offlineSection(app: App): Node_ {
           'button',
           { type: 'button', class: 'btn', dataset: { focus: 'hors-ligne' }, onclick: () => void app.prepareOffline() },
           icon(ICONS.download, 20),
-          info ? t('offline.update') : t('offline.prepare'),
+          !info || !sameTrack ? t('offline.prepare') : info.complete ? t('offline.update') : t('offline.resumePreparation'),
         ),
-        info
-          ? h('button', { type: 'button', class: 'btn btn--danger', dataset: { focus: 'hors-ligne-effacer' }, onclick: () => void app.clearOfflineData() }, icon(ICONS.trash, 20), t('offline.clear'))
-          : null,
       ),
+      info ? clearOfflineButton(app) : null,
     );
   }
   return section(t('offline.heading'), parts);
+}
+
+function recordLabel(record: BasemapRecord): string {
+  return record.id === 'hillshade' ? t('basemap.hillshade') : t(BASEMAPS[record.id].labelKey);
+}
+
+/** Suppression des données hors ligne : à l'écart des autres boutons, et confirmée (sans réseau, rien ne se retélécharge). */
+function clearOfflineButton(app: App): HTMLElement {
+  return h(
+    'div',
+    { class: 'actions actions--apart' },
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn--danger',
+        dataset: { focus: 'hors-ligne-effacer' },
+        onclick: () => {
+          if (window.confirm(t('offline.clearConfirm'))) void app.clearOfflineData();
+        },
+      },
+      icon(ICONS.trash, 20),
+      t('offline.clear'),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
